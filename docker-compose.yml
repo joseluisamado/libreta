@@ -1,0 +1,34 @@
+services:
+  api:
+    build: ./backend
+    image: libreta-api:dev
+    restart: unless-stopped
+    environment:
+      LIBRETA_CONTENT_DIR: /content
+      LIBRETA_DRAWIO_URL: http://drawio:8080
+    volumes:
+      - ./data/content:/content
+    ports:
+      - "8080:8080"
+    depends_on:
+      - drawio
+
+  frontend:
+    profiles: ["dev"]
+    build: ./frontend
+    image: libreta-frontend:dev
+    environment:
+      VITE_API_BASE: http://api:8080
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    ports:
+      - "5173:5173"
+    depends_on:
+      - api
+
+  drawio:
+    image: jgraph/drawio:latest
+    restart: unless-stopped
+    ports:
+      - "8081:8080"

@@ -1,0 +1,27 @@
+# macOS
+.DS_Store
+
+# The user's wiki content lives here. It is its own git repo.
+# Per CLAUDE.md §6.3, do NOT commit it as part of the project repo.
+/data/
+
+# Python / backend
+backend/.venv/
+backend/.pytest_cache/
+backend/.mypy_cache/
+backend/.ruff_cache/
+**/__pycache__/
+*.pyc
+
+# Node / frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Editor
+.vscode/
+.idea/
+
+# Env
+.env
+.env.local
