@@ -47,7 +47,9 @@
           <line x1="3" y1="18" x2="21" y2="18" />
         </svg>
       </button>
-      <h1 class="text-base font-semibold">Libreta</h1>
+      <RouterLink to="/w/index" class="hover:underline">
+        <h1 class="text-base font-semibold">Libreta</h1>
+      </RouterLink>
     </header>
 
     <!-- Drawer backdrop (mobile only) -->
@@ -63,7 +65,9 @@
       class="bg-slate-50 border-slate-200 overflow-y-auto p-4 z-40 md:static md:w-64 md:shrink-0 md:border-r md:block fixed inset-y-0 left-0 w-72 border-r transition-transform duration-200 md:translate-x-0"
       :class="drawerOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'"
     >
-      <h1 class="text-lg font-semibold mb-4 hidden md:block">Libreta</h1>
+      <RouterLink to="/w/index" class="hover:underline">
+        <h1 class="text-lg font-semibold mb-4 hidden md:block">Libreta</h1>
+      </RouterLink>
       <p v-if="tree.error" class="text-red-600 text-sm">{{ tree.error }}</p>
       <PageTree :nodes="tree.nodes" />
     </aside>
