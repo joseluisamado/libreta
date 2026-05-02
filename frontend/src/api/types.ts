@@ -5,6 +5,15 @@ export interface PageMeta {
   tags: string[]
 }
 
+export interface PageWrite {
+  body: string
+  is_index?: boolean
+}
+
+export interface PageMove {
+  new_path: string
+}
+
 export interface PageRead {
   path: string
   meta: PageMeta

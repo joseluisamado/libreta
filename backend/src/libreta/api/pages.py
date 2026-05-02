@@ -4,8 +4,21 @@ from fastapi import APIRouter, Depends
 
 from libreta.config import Settings
 from libreta.deps import get_settings
-from libreta.models import PageNode, PageRead
-from libreta.storage.pages import read_page, walk_tree
+from libreta.models import PageMove, PageNode, PageRead, PageWrite
+from libreta.storage.pages import (
+    delete_page as delete_page_storage,
+    move_page as move_page_storage,
+    read_page,
+    walk_tree,
+    write_page,
+)
+from libreta.storage.paths import normalize_page_path, page_to_file
+from libreta.storage.repo import (
+    commit_page,
+    delete_commit,
+    move_commit,
+    open_repo,
+)
 
 router = APIRouter(prefix="/pages")
 
@@ -15,9 +28,52 @@ async def get_tree(settings: Annotated[Settings, Depends(get_settings)]) -> list
     return await walk_tree(settings.content_dir)
 
 
+# NOTE: /{path:path}/move must be registered before /{path:path} routes so that
+# the literal "/move" suffix takes priority over the greedy path parameter.
+@router.post("/{path:path}/move", response_model=PageRead)
+async def move_page(
+    path: str,
+    body: PageMove,
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> PageRead:
+    old_rel, new_rel, is_dir_move = await move_page_storage(
+        settings.content_dir, path, body.new_path
+    )
+    repo = open_repo(settings.content_dir)
+    await move_commit(repo, old_rel, new_rel, is_dir_move)
+    return await read_page(settings.content_dir, body.new_path)
+
+
 @router.get("/{path:path}", response_model=PageRead)
 async def get_page(
     path: str,
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> PageRead:
     return await read_page(settings.content_dir, path)
+
+
+@router.put("/{path:path}", response_model=PageRead)
+async def put_page(
+    path: str,
+    body: PageWrite,
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> PageRead:
+    page, verb = await write_page(
+        settings.content_dir, path, body.body, prefer_index=body.is_index
+    )
+    # Compute the file path relative to content_dir for the commit message
+    file_path = page_to_file(settings.content_dir, normalize_page_path(path))
+    rel_path = str(file_path.relative_to(settings.content_dir))
+    repo = open_repo(settings.content_dir)
+    await commit_page(repo, rel_path, verb)
+    return page
+
+
+@router.delete("/{path:path}", status_code=204)
+async def delete_page(
+    path: str,
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> None:
+    rel_path = await delete_page_storage(settings.content_dir, path)
+    repo = open_repo(settings.content_dir)
+    await delete_commit(repo, rel_path)

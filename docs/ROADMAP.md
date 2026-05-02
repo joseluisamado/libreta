@@ -64,9 +64,9 @@ A milestone-based plan, not a calendar. Each milestone is a coherent slice of va
 
 - [x] Tiptap editor with the v1 extension set: headings, lists, links, code, blockquote, hard-break, history
 - [x] Markdown serializer round-trips a fixture corpus byte-identically (the invariant from `ARCHITECTURE.md` "Editor and markdown roundtrip")
-- [ ] `PUT /api/pages/{path}` writes file + git commit via pygit2
-- [ ] `DELETE /api/pages/{path}` and `POST /api/pages/{path}/move` (rename)
-- [ ] Auto-set `updated` frontmatter on save; preserve `created`
+- [x] `PUT /api/pages/{path}` writes file + git commit via pygit2
+- [x] `DELETE /api/pages/{path}` and `POST /api/pages/{path}/move` (rename)
+- [x] Auto-set `updated` frontmatter on save; preserve `created`
 - [ ] Page history view: read git log for a file, render commit list
 - [ ] Diff view: side-by-side or inline diff between two revisions
 - [ ] External-edit watcher: editing a `.md` file in another tool updates the UI on next reload

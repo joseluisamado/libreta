@@ -1,6 +1,7 @@
 from collections.abc import Iterator
 from pathlib import Path
 
+import pygit2
 import pytest
 from fastapi.testclient import TestClient
 
@@ -11,6 +12,9 @@ from libreta.main import create_app
 
 @pytest.fixture
 def content_dir(tmp_path: Path) -> Path:
+    # Initialize a git repo so save/commit operations work
+    pygit2.init_repository(str(tmp_path))
+
     pages = tmp_path / "pages"
     pages.mkdir()
     (pages / "index.md").write_text(

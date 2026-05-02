@@ -12,6 +12,11 @@ class PageMeta(BaseModel):
     tags: list[str] = Field(default_factory=list)
 
 
+class PageWrite(BaseModel):
+    body: str
+    is_index: bool = False
+
+
 class PageRead(BaseModel):
     path: str
     meta: PageMeta
@@ -19,6 +24,10 @@ class PageRead(BaseModel):
     # True when the page is stored as ``<path>/index.md``. Lets the client
     # resolve relative asset references against the right base directory.
     is_index: bool = False
+
+
+class PageMove(BaseModel):
+    new_path: str
 
 
 class PageNode(BaseModel):

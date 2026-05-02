@@ -16,3 +16,11 @@ class InvalidPathError(LibretaError):
 
 class ContentRepoUnavailableError(LibretaError):
     status_code = 503
+
+
+class PageAlreadyExistsError(LibretaError):
+    status_code = 409
+
+
+class PageNotEmptyError(LibretaError):
+    status_code = 409

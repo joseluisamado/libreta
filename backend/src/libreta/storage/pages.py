@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime
-from pathlib import Path
+from datetime import UTC, datetime
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 import frontmatter
+from frontmatter import Post
 
-from libreta.errors import PageNotFoundError
+from libreta.errors import PageAlreadyExistsError, PageNotEmptyError, PageNotFoundError
 from libreta.models import PageMeta, PageNode, PageRead
 from libreta.storage.paths import normalize_page_path, page_to_file
 
@@ -65,6 +66,162 @@ def _read_page_sync(content_dir: Path, raw_path: str) -> PageRead:
 
 async def read_page(content_dir: Path, raw_path: str) -> PageRead:
     return await asyncio.to_thread(_read_page_sync, content_dir, raw_path)
+
+
+def _determine_write_file(
+    content_dir: Path, page: PurePosixPath, prefer_index: bool = False
+) -> tuple[Path, bool]:
+    """Return (target_file, existed_before).
+
+    Prefers ``<page>.md`` if it exists; otherwise falls back to ``<page>/index.md``
+    if the directory already exists; otherwise writes to ``<page>.md`` (or
+    ``<page>/index.md`` when *prefer_index* is True).
+    """
+    pages_root = content_dir / "pages"
+    direct = pages_root.joinpath(*page.parts).with_suffix(".md")
+    indexed = pages_root.joinpath(*page.parts) / "index.md"
+    if direct.exists():
+        return direct, True
+    if indexed.exists():
+        return indexed, True
+    if prefer_index:
+        return indexed, False
+    return direct, False
+
+
+def _write_page_sync(
+    content_dir: Path, raw_path: str, body: str, prefer_index: bool = False
+) -> tuple[PageRead, str]:
+    page = normalize_page_path(raw_path)
+    file, existed = _determine_write_file(content_dir, page, prefer_index=prefer_index)
+    fallback_title = page.parts[-1].replace("-", " ").replace("_", " ").title()
+
+    # Preserve frontmatter from the existing file if present
+    existing_meta: dict[str, Any] = {}
+    if existed:
+        post = frontmatter.load(file)
+        existing_meta = dict(post.metadata)
+
+    # Build metadata: preserve title/created/tags, set updated to now
+    now = datetime.now(UTC)
+    metadata: dict[str, Any] = {
+        "title": existing_meta.get("title", fallback_title),
+        "updated": now,
+    }
+    if "created" in existing_meta:
+        metadata["created"] = existing_meta["created"]
+    else:
+        metadata["created"] = now
+    if "tags" in existing_meta:
+        metadata["tags"] = existing_meta["tags"]
+
+    # Write
+    file.parent.mkdir(parents=True, exist_ok=True)
+    post = Post(body, **metadata)
+    file.write_text(frontmatter.dumps(post), encoding="utf-8")
+
+    verb = "update" if existed else "create"
+
+    result = PageRead(
+        path=str(page),
+        meta=PageMeta(
+            title=str(metadata["title"]),
+            created=metadata["created"] if isinstance(metadata["created"], datetime) else now,
+            updated=now,
+            tags=list(metadata.get("tags", [])),
+        ),
+        body=body,
+        is_index=file.name == "index.md",
+    )
+    return result, verb
+
+
+async def write_page(
+    content_dir: Path, raw_path: str, body: str, prefer_index: bool = False
+) -> tuple[PageRead, str]:
+    return await asyncio.to_thread(
+        _write_page_sync, content_dir, raw_path, body, prefer_index
+    )
+
+
+def _delete_page_sync(content_dir: Path, raw_path: str) -> str:
+    page = normalize_page_path(raw_path)
+    file = page_to_file(content_dir, page)
+
+    if file.exists():
+        # If this is a directory page backed by index.md, refuse to
+        # delete it while other files still live inside the folder.
+        if file.name == "index.md":
+            parent = file.parent
+            pages_root = content_dir / "pages"
+            siblings = [p for p in parent.iterdir() if p.name != "index.md"]
+            if parent != pages_root and siblings:
+                raise PageNotEmptyError(raw_path)
+        rel_path = str(file.relative_to(content_dir))
+        file.unlink()
+        # Clean up the parent directory when it became empty.
+        if file.name == "index.md":
+            parent = file.parent
+            if parent != pages_root and not any(parent.iterdir()):
+                parent.rmdir()
+        return rel_path
+
+    # No .md file — check whether this is a bare directory (a folder with
+    # children but no index.md or <dir>.md).
+    dir_path = content_dir / "pages" / Path(*page.parts)
+    if dir_path.is_dir():
+        if any(dir_path.iterdir()):
+            raise PageNotEmptyError(raw_path)
+        dir_path.rmdir()
+        return str(dir_path.relative_to(content_dir)) + "/"
+
+    raise PageNotFoundError(raw_path)
+
+
+async def delete_page(content_dir: Path, raw_path: str) -> str:
+    return await asyncio.to_thread(_delete_page_sync, content_dir, raw_path)
+
+
+def _move_page_sync(
+    content_dir: Path, old_raw: str, new_raw: str
+) -> tuple[str, str, bool]:
+    old_page = normalize_page_path(old_raw)
+    new_page = normalize_page_path(new_raw)
+    old_file = page_to_file(content_dir, old_page)
+    if not old_file.exists():
+        raise PageNotFoundError(old_raw)
+
+    pages_root = content_dir / "pages"
+    is_dir_move = old_file.name == "index.md" and old_file.parent != pages_root
+
+    if is_dir_move:
+        target_dir = pages_root.joinpath(*new_page.parts)
+        if target_dir.exists():
+            raise PageAlreadyExistsError(new_raw)
+        target_dir.parent.mkdir(parents=True, exist_ok=True)
+        old_file.parent.rename(target_dir)
+        return (
+            str(old_file.parent.relative_to(content_dir)) + "/",
+            str(target_dir.relative_to(content_dir)) + "/",
+            True,
+        )
+
+    target_file = pages_root.joinpath(*new_page.parts).with_suffix(".md")
+    if target_file.exists():
+        raise PageAlreadyExistsError(new_raw)
+    target_file.parent.mkdir(parents=True, exist_ok=True)
+    old_file.rename(target_file)
+    return (
+        str(old_file.relative_to(content_dir)),
+        str(target_file.relative_to(content_dir)),
+        False,
+    )
+
+
+async def move_page(
+    content_dir: Path, old_raw: str, new_raw: str
+) -> tuple[str, str, bool]:
+    return await asyncio.to_thread(_move_page_sync, content_dir, old_raw, new_raw)
 
 
 def _walk_tree_sync(content_dir: Path) -> list[PageNode]:

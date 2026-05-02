@@ -9,8 +9,8 @@ Living document. Update as work progresses. Latest at the top.
 ## Status
 
 **Current milestone**: M2 — Editing & git commits (in progress)
-**Phase**: Tiptap editor integrated (first element of M2); save/commit wiring is next
-**Next action**: Implement save endpoint and git commit on save
+**Phase**: Save, delete, and move endpoints + git commits implemented; next is page history and diff views
+**Next action**: Implement page history view (read git log for a file, render commit list)
 
 ## At a glance
 
@@ -29,6 +29,35 @@ Legend: ⚪ not started · 🟡 in progress · 🟢 done · 🔴 blocked
 ---
 
 ## Log
+
+### 2026-05-02 — M2 Delete, move, new page / new folder
+
+Implemented the remaining M2 CRUD operations: page deletion, page rename/move, and UI for creating new pages and folders from directory pages.
+
+- **`PageAlreadyExistsError`** (409) added to `errors.py` for move-target conflicts.
+- **`PageMove` model** (`new_path: str`) and `is_index: bool` field on `PageWrite` for distinguishing bare `.md` pages from directory `index.md` pages.
+- **`storage/pages.py`**: added `delete_page()` (unlinks the `.md` file), `move_page()` (renames files; moves the entire directory tree for `index.md`-backed pages), and plumbed `prefer_index` through `_determine_write_file` / `write_page` so the frontend can create `<dir>/index.md` pages for folders.
+- **`storage/repo.py`**: added `delete_commit()` (`index.remove` + commit with `"delete"` message) and `move_commit()` (handles single-file and directory-tree moves, removing old paths and staging new ones; commit message `"rename old -> new"`). All share the same asyncio lock.
+- **`api/pages.py`**: `DELETE /{path}` returns 204; `POST /{path}/move` returns the `PageRead` at the new location. PUT now passes `is_index` through to the storage layer.
+- **Frontend API**: `deletePage()`, `movePage()` added alongside a `requestNoContent()` helper for 204 responses. `PageWrite.is_index` and `PageMove` types added.
+- **PageView.vue**: "In this folder" section now renders for all directory pages (not just those with children). Two buttons — "+ New page" and "+ New folder" — prompt for a name, slugify it, create the page via the existing PUT endpoint (`is_index: true` for folders), refresh the tree, and navigate to the editor.
+- **Tests**: backend +10 tests (4 delete, 5 move, 1 is_index creation). All 37 backend tests pass; all 48 frontend tests pass.
+
+**Pre-flight**: backend 37/37 tests pass, ruff/mypy clean. Frontend 48/48 tests pass, vue-tsc clean, eslint clean (1 pre-existing `v-html` warning).
+
+### 2026-05-02 — M2 Save endpoint + git commit on save
+
+Wired the full save lifecycle: PUT endpoint → write file → git commit via pygit2 → frontend Save button. This is the core loop that makes Libreta an editing tool.
+
+- **`PageWrite` model** (`backend/src/libreta/models.py`): body-only request model. Frontmatter is preserved from existing file; `updated` is auto-set server-side.
+- **`storage/repo.py`**: new module for git operations. `open_repo()` wraps `pygit2.Repository`, `commit_page_sync()` stages + commits with HEAD parent (handles empty repo), `commit_page()` wraps it with asyncio lock serialization. Commit author: `Libreta <libreta@localhost>` per CLAUDE.md §6.3.
+- **`storage/pages.py`**: added `_write_page_sync` + `write_page()` wrapper. Preserves existing `title`, `created`, `tags`; sets `updated` to `datetime.now(UTC)`; determines verb (`create` vs `update`) from whether the file existed.
+- **`api/pages.py`**: added `PUT /pages/{path:path}`. Resolves the on-disk file path, calls `write_page` + `commit_page`, returns `PageRead`.
+- **Frontend API layer**: `PageWrite` type added; `request()` generalized with optional `RequestInit`; `savePage()` added.
+- **EditorView.vue**: Save button now has three states — muted/disabled (not dirty), blue/clickable (dirty), spinner + "Saving…" (in flight). Error text shown on failure. On success, `isDirty` resets and the page ref updates with the server response.
+- **Tests**: conftest inits a git repo via `pygit2.init_repository` before populating pages. 4 new PUT tests: update existing, create new, traversal blocked, frontmatter preserved. Frontend EditorView save tests (4): button rendering, disabled state, loading state, error display.
+
+**Pre-flight**: backend 27/27 tests pass, ruff/mypy clean. Frontend 47/47 tests pass, eslint clean (1 pre-existing `v-html` warning), vue-tsc clean, build succeeds.
 
 ### 2026-05-02 — M2 Tiptap editor integration (first element)
 

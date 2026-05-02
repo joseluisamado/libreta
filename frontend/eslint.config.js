@@ -23,6 +23,7 @@ export default [
         window: 'readonly',
         document: 'readonly',
         fetch: 'readonly',
+        RequestInit: 'readonly',
         console: 'readonly',
         process: 'readonly',
       },
