@@ -36,7 +36,8 @@ git -C ./data/content init
 # Start it
 docker compose up -d
 
-# Open http://localhost:8080
+# Open http://localhost:8092 (api / prod-style stack)
+# Or http://localhost:8091 when using the dev profile (Vite dev server)
 ```
 
 Your wiki content lives in `./data/content` — a normal git repository of markdown files. You can clone it elsewhere, edit it in any editor, push it to GitHub or a private Forgejo, and Libreta will pick up changes.

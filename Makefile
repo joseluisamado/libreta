@@ -38,10 +38,10 @@ install-frontend: ## pnpm install
 dev: ## Run the dev stack via docker compose (api + frontend + drawio)
 	docker compose --profile dev up
 
-dev-backend: ## Run only the backend with reload (no docker)
-	cd $(BACKEND) && LIBRETA_CONTENT_DIR=../data/content uv run uvicorn libreta.main:app --reload --host 0.0.0.0 --port 8080
+dev-backend: ## Run only the backend with reload (host port 8092, no docker)
+	cd $(BACKEND) && LIBRETA_CONTENT_DIR=../data/content uv run uvicorn libreta.main:app --reload --host 0.0.0.0 --port 8092
 
-dev-frontend: ## Run only the frontend Vite dev server (no docker)
+dev-frontend: ## Run only the frontend Vite dev server (host port 8091, no docker)
 	cd $(FRONTEND) && pnpm dev
 
 dev-stack: dev ## Alias for `dev`

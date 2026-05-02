@@ -19,11 +19,11 @@ def create_app() -> FastAPI:
         openapi_url="/api/v1/openapi.json",
     )
 
-    # Dev-only CORS so the Vite dev server (5173) can call the api (8080).
+    # Dev-only CORS so the Vite dev server (host port 8091) can call the api (host port 8092).
     # In production the SPA is served from the same origin and this is a no-op.
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+        allow_origins=["http://localhost:8091", "http://127.0.0.1:8091"],
         allow_methods=["*"],
         allow_headers=["*"],
     )

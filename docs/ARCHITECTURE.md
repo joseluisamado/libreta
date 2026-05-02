@@ -453,7 +453,7 @@ services:
       - ./data/content:/content
       - libreta-search:/var/lib/libreta
     ports:
-      - "8080:8080"
+      - "8092:8080"                   # api: host 8092 → container 8080
     depends_on:
       - drawio
 
@@ -466,7 +466,7 @@ services:
       - ./frontend:/app
       - /app/node_modules
     ports:
-      - "5173:5173"
+      - "8091:5173"                   # frontend: host 8091 → container 5173
     depends_on:
       - api
 
@@ -474,7 +474,7 @@ services:
     image: jgraph/drawio:latest
     restart: unless-stopped
     ports:
-      - "8081:8080"                   # exposed for the editor iframe
+      - "8093:8080"                   # drawio: host 8093 → container 8080 (for the editor iframe)
 
 volumes:
   libreta-search:

@@ -9,7 +9,7 @@ services:
     volumes:
       - ./data/content:/content
     ports:
-      - "8080:8080"
+      - "8092:8080"
     depends_on:
       - drawio
 
@@ -23,7 +23,7 @@ services:
       - ./frontend:/app
       - /app/node_modules
     ports:
-      - "5173:5173"
+      - "8091:5173"
     depends_on:
       - api
 
@@ -31,4 +31,4 @@ services:
     image: jgraph/drawio:latest
     restart: unless-stopped
     ports:
-      - "8081:8080"
+      - "8093:8080"
