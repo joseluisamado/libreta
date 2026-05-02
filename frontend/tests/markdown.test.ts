@@ -24,8 +24,8 @@ describe('renderMarkdown', () => {
 
   it('highlights fenced code', () => {
     const out = renderMarkdown('```python\nx = 1\n```')
-    expect(out).toContain('<pre>')
-    expect(out).toContain('<code')
+    expect(out).toContain('<pre class="hljs">')
+    expect(out).toContain('language-python')
   })
 
   it('rewrites relative image URLs to the assets endpoint', () => {
@@ -47,5 +47,39 @@ describe('renderMarkdown', () => {
     // Page stored as devel/concepts/saml/index.md → asset lives in saml/
     const out = renderMarkdown('![alt](foo.png)', 'devel/concepts/saml', true)
     expect(out).toContain('/api/v1/assets/pages/devel/concepts/saml/foo.png')
+  })
+
+  it('rewrites relative PDF/zip links through the assets endpoint', () => {
+    const out = renderMarkdown('[doc](report.pdf)', 'housing/espana/cancer', true)
+    expect(out).toContain('href="/api/v1/assets/pages/housing/espana/cancer/report.pdf"')
+  })
+
+  it('leaves wiki page links alone', () => {
+    const out = renderMarkdown('[other](/w/foo/bar)', 'housing/espana/cancer', true)
+    expect(out).toContain('href="/w/foo/bar"')
+    expect(out).not.toContain('/api/v1/assets/')
+  })
+
+  it('leaves anchor and external links alone', () => {
+    const out = renderMarkdown('[a](#x) [b](https://x.com/y.pdf)', 'foo', false)
+    expect(out).toContain('href="#x"')
+    expect(out).toContain('href="https://x.com/y.pdf"')
+  })
+
+  it('renders inline math', () => {
+    const out = renderMarkdown('Energy $E = mc^2$ is iconic.')
+    expect(out).toContain('class="katex"')
+    expect(out).toContain('mathnormal') // KaTeX glyph class
+  })
+
+  it('renders block math', () => {
+    const out = renderMarkdown('$$\n\\sum_{i=0}^{n} i\n$$')
+    expect(out).toContain('math-block')
+    expect(out).toContain('katex')
+  })
+
+  it('does not catch dollar amounts', () => {
+    const out = renderMarkdown('It costs $5 and $10.')
+    expect(out).not.toContain('katex')
   })
 })

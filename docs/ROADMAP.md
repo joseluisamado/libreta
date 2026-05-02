@@ -40,6 +40,24 @@ A milestone-based plan, not a calendar. Each milestone is a coherent slice of va
 
 ---
 
+## M0.5 — Read-experience polish
+
+**Goal**: Tighten the read-only wiki before starting M2. Real content (DokuWiki import) surfaced rough edges that are cheap to fix now and expensive to fix later once editing layers on top.
+
+- [x] Synthesised directory pages: when `<dir>/` has no `index.md` or `<dir>.md`, the API returns a generated stub so the frontend can still render breadcrumbs and a folder listing (e.g. `/w/devel/bash` shows `heredoc` as a child).
+- [x] Generic asset link rewriting: `<a href="foo.pdf">` (and other relative links to non-page files) resolve through `/api/v1/assets/...`, same as images. Fixes broken PDF/zip downloads.
+- [x] Sidebar: folders visually distinct from pages; folders are collapsible (state persisted in localStorage); icon + lighter weight signals "open me to expand."
+- [x] GitHub-style markdown rendering: prose width, type scale, code-block chrome (background, border-radius, language label), syntax-colour theme matching GitHub light. Theme toggle deferred.
+- [x] Math blocks: render LaTeX inside `$...$` (inline) and `$$...$$` (block) with KaTeX. No DSL; pure math passthrough.
+- [x] Reading-width toggle: upper-right button switches between "standard" (3xl prose) and "wide" (full viewport). Persisted in localStorage. Default: standard.
+- [x] Back-to-top floating button: appears once the page has scrolled past one viewport; smooth-scrolls to top on click.
+- [x] One-shot tag computation: a CLI / Make target walks every page, derives tags from titles + body, writes them into frontmatter only when tags are missing or empty. Idempotent.
+- [ ] M2 hand-off: in M2's save lifecycle, when a page is saved for the first time and has no tags, derive and persist them. Spec lives here, implementation lands with the editor.
+
+**Exit criteria**: navigating the imported corpus feels like reading a polished wiki — no broken links, every folder is browsable, code looks like GitHub, math renders, reading width is ergonomic.
+
+---
+
 ## M2 — Editing & git commits
 
 **Goal**: WYSIWYG editor with markdown round-trip, every save is a commit.

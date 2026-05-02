@@ -5,7 +5,11 @@
   import type { PageNode, PageRead } from '@/api/types'
   import { renderMarkdown } from '@/markdown'
   import { useTreeStore } from '@/stores/tree'
+  import { useReadingWidth } from '@/composables/usePrefs'
   import Breadcrumbs from '@/components/Breadcrumbs.vue'
+  import PageToolbar from '@/components/PageToolbar.vue'
+
+  const { width } = useReadingWidth()
 
   const route = useRoute()
   const tree = useTreeStore()
@@ -63,7 +67,8 @@
 </script>
 
 <template>
-  <article class="max-w-3xl mx-auto px-8 py-6">
+  <PageToolbar />
+  <article class="mx-auto px-8 py-6" :class="width === 'wide' ? 'max-w-none' : 'max-w-3xl'">
     <p v-if="error" class="text-red-600">{{ error }}</p>
     <template v-else-if="page">
       <Breadcrumbs :path="page.path" />
@@ -82,9 +87,11 @@
           <li v-for="child in directoryChildren" :key="child.path">
             <RouterLink
               :to="`/w/${child.path}`"
-              class="text-slate-700 hover:text-blue-600 hover:underline"
+              class="flex items-center text-slate-700 hover:text-blue-600 hover:underline"
             >
-              <span v-if="child.is_directory" class="text-slate-400 mr-1">📁</span>
+              <span class="inline-block w-6 shrink-0 text-slate-400">
+                <span v-if="child.children.length">📁</span>
+              </span>
               {{ child.title }}
             </RouterLink>
           </li>

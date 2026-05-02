@@ -39,10 +39,22 @@ def _as_datetime(value: Any) -> datetime | None:
 def _read_page_sync(content_dir: Path, raw_path: str) -> PageRead:
     page = normalize_page_path(raw_path)
     file = page_to_file(content_dir, page)
+    fallback_title = page.parts[-1].replace("-", " ").replace("_", " ").title()
     if not file.exists():
+        # Synthesise a directory page: if a directory with this path exists
+        # under pages/ but has no `<dir>.md` or `<dir>/index.md`, return an
+        # empty-body page so the frontend can still render breadcrumbs and
+        # the "In this folder" listing.
+        dir_path = content_dir / "pages" / Path(*page.parts)
+        if dir_path.is_dir():
+            return PageRead(
+                path=str(page),
+                meta=PageMeta(title=fallback_title),
+                body="",
+                is_index=True,
+            )
         raise PageNotFoundError(raw_path)
     post = frontmatter.load(file)
-    fallback_title = page.parts[-1].replace("-", " ").replace("_", " ").title()
     return PageRead(
         path=str(page),
         meta=_parse_meta(post.metadata, fallback_title),
@@ -63,7 +75,7 @@ def _walk_tree_sync(content_dir: Path) -> list[PageNode]:
     def build(dir_path: Path, url_prefix: str) -> list[PageNode]:
         nodes: list[PageNode] = []
         # collect entries; directories produce subtrees, .md files become leaves
-        entries = sorted(dir_path.iterdir(), key=lambda p: p.name)
+        entries = sorted(dir_path.iterdir(), key=lambda p: p.name.casefold())
         index_md = dir_path / "index.md"
         seen_dirs: set[str] = set()
 

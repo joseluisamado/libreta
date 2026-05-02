@@ -8,9 +8,9 @@ Living document. Update as work progresses. Latest at the top.
 
 ## Status
 
-**Current milestone**: M1 — Read-only wiki (complete) → ready to begin M2
-**Phase**: Read path complete end-to-end; CI + pre-commit landed
-**Next action**: Begin M2 — Tiptap editor, markdown round-trip, save-as-commit
+**Current milestone**: M0.5 — Read-experience polish (in progress)
+**Phase**: All eight M0.5 features landed; tag-on-save spec deferred to M2 implementation
+**Next action**: Last sweep on remaining feedback, then start M2
 
 ## At a glance
 
@@ -18,6 +18,7 @@ Living document. Update as work progresses. Latest at the top.
 |---|---|
 | M0 — Foundations | 🟢 Done |
 | M1 — Read-only wiki | 🟢 Done |
+| M0.5 — Read-experience polish | 🟢 Done (M2 hand-off pending) |
 | M2 — Editing & commits | ⚪ Not started |
 | M3 — Tables, attachments, search | ⚪ Not started |
 | M4 — Diagrams.net integration | ⚪ Not started |
@@ -28,6 +29,24 @@ Legend: ⚪ not started · 🟡 in progress · 🟢 done · 🔴 blocked
 ---
 
 ## Log
+
+### 2026-05-02 — M0.5 polish + DokuWiki import
+
+After importing a real DokuWiki corpus (96 pages / 74 media), several rough edges
+surfaced. Captured them as M0.5 in the roadmap and worked through in one pass.
+
+- **Synthesized directory pages**: backend returns an empty-body stub when a path resolves to a directory with no `<dir>.md` or `<dir>/index.md`, so the frontend can still render breadcrumbs + a folder listing (e.g. `/w/devel/bash`). Test in `backend/tests/test_pages.py`.
+- **Generic asset links**: markdown renderer now rewrites `<a href="foo.pdf">` (and other recognised non-page extensions) through `/api/v1/assets/...`, the same way images already work. Fixes broken PDF/zip/etc downloads in imported pages.
+- **KaTeX math**: small inline plugin renders `$x$` (avoiding `$5 and $10` false positives) and `$$ ... $$`. KaTeX CSS bundled.
+- **GitHub-style prose**: rewrote `.prose` styling top-to-bottom against the GitHub light palette; switched code blocks to `<pre class="hljs">` with the `highlight.js/styles/github.css` theme and a subtle language label.
+- **Sidebar**: folders get a chevron toggle, slightly heavier label weight, and a collapsed-by-default-no-but-persisted open state in localStorage. Pages and folders both navigate; the toggle controls just the subtree.
+- **Reading-width toggle + back-to-top**: floating buttons at the page upper-right. Width pref (`standard` / `wide`) persisted to localStorage. Back-to-top appears once the main pane has scrolled past one viewport.
+- **Tag computation**: `scripts/compute_tags.py` walks `pages/`, scores terms with TF-IDF (heading/title-boosted), writes 3–5 tags into frontmatter for any page that has none — or whose only tag is the `imported` placeholder. `make compute-tags` / `make compute-tags-dry`. 92 pages tagged on first run.
+- **M2 hand-off**: roadmap entry only — when the editor lands, save-for-the-first-time will trigger the same tag computation if the page has no tags.
+
+Bonus fix found mid-stream: the dev compose overlay needed `PYTHONPATH=/app/src` because `pip install` at image-build time copies the source into `site-packages`, which Python then prefers over the bind-mounted `/app/src`. Without this, uvicorn `--reload` would notice file changes but still execute the baked-in copy. Documented inline in [docker-compose.dev.yml](../docker-compose.dev.yml).
+
+**Pre-flight**: backend 23/23 tests pass, ruff/mypy clean. Frontend 15/15 tests pass, vue-tsc clean, eslint clean (one expected `v-html` warning), build succeeds.
 
 ### 2026-05-02 — Close out M0 + M1
 

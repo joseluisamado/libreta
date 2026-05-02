@@ -17,6 +17,7 @@ backend/.ruff_cache/
 frontend/node_modules/
 frontend/dist/
 frontend/.vite/
+frontend/.pnpm-store/
 
 # Editor
 .vscode/

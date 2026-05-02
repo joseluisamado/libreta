@@ -15,7 +15,8 @@
         build build-frontend \
         up up-dev rebuild rebuild-dev down logs ps \
         clean clean-backend clean-frontend \
-        import-dokuwiki import-dokuwiki-dry
+        import-dokuwiki import-dokuwiki-dry \
+        compute-tags compute-tags-dry
 
 BACKEND   := backend
 FRONTEND  := frontend
@@ -120,6 +121,10 @@ rebuild: ## Rebuild images and start the prod-style stack, detached
 rebuild-dev: ## Rebuild images and start the dev stack, detached
 	$(COMPOSE_DEV) up -d --build
 
+sync-frontend-deps: ## Sync host pnpm changes into the running dev frontend container
+	docker exec -e CI=true libreta-frontend-1 pnpm install
+	$(COMPOSE_DEV) restart frontend
+
 down: ## Stop the stack
 	docker compose down
 
@@ -147,3 +152,9 @@ import-dokuwiki: ## Import a DokuWiki installation into pages/ (override SOURCE=
 
 import-dokuwiki-dry: ## Dry-run the DokuWiki importer (override SOURCE=...)
 	cd $(BACKEND) && uv run python ../scripts/import_dokuwiki.py --dry-run $(if $(SOURCE),--source $(SOURCE))
+
+compute-tags: ## Compute frontmatter tags for any untagged pages
+	cd $(BACKEND) && uv run python ../scripts/compute_tags.py $(if $(FORCE),--force)
+
+compute-tags-dry: ## Dry-run tag computation (no files written)
+	cd $(BACKEND) && uv run python ../scripts/compute_tags.py --dry-run $(if $(FORCE),--force)

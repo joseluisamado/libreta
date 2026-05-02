@@ -15,6 +15,12 @@ services:
     volumes:
       - ./data/content:/content
       - ./backend/src:/app/src
+    # PYTHONPATH puts the bind-mounted source ahead of the baked-in site-packages
+    # copy, so edits on the host take effect on reload. The base Dockerfile
+    # `pip install`s the package at build time so the wheel is also present and
+    # we can ship the prod image unchanged.
+    environment:
+      PYTHONPATH: /app/src
     command:
       [
         "uvicorn",

@@ -19,9 +19,15 @@ services:
     image: libreta-frontend:dev
     environment:
       VITE_API_BASE: http://api:8080
+      # Keep pnpm's content-addressable store out of the bind-mounted source
+      # tree — without these the store ends up at frontend/.pnpm-store and
+      # pollutes git status with thousands of files.
+      PNPM_STORE_DIR: /pnpm-store
+      PNPM_HOME: /pnpm-home
     volumes:
       - ./frontend:/app
       - /app/node_modules
+      - pnpm-store:/pnpm-store
     ports:
       - "8091:5173"
     depends_on:
@@ -32,3 +38,6 @@ services:
     restart: unless-stopped
     ports:
       - "8093:8080"
+
+volumes:
+  pnpm-store:
