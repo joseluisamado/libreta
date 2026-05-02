@@ -52,7 +52,7 @@ A milestone-based plan, not a calendar. Each milestone is a coherent slice of va
 - [x] Reading-width toggle: upper-right button switches between "standard" (3xl prose) and "wide" (full viewport). Persisted in localStorage. Default: standard.
 - [x] Back-to-top floating button: appears once the page has scrolled past one viewport; smooth-scrolls to top on click.
 - [x] One-shot tag computation: a CLI / Make target walks every page, derives tags from titles + body, writes them into frontmatter only when tags are missing or empty. Idempotent.
-- [ ] M2 hand-off: in M2's save lifecycle, when a page is saved for the first time and has no tags, derive and persist them. Spec lives here, implementation lands with the editor.
+- [x] M2 hand-off: in M2's save lifecycle, when a page is saved for the first time and has no tags, derive and persist them. Spec lives here, implementation lands with the editor.
 
 **Exit criteria**: navigating the imported corpus feels like reading a polished wiki — no broken links, every folder is browsable, code looks like GitHub, math renders, reading width is ergonomic.
 
@@ -67,9 +67,9 @@ A milestone-based plan, not a calendar. Each milestone is a coherent slice of va
 - [x] `PUT /api/pages/{path}` writes file + git commit via pygit2
 - [x] `DELETE /api/pages/{path}` and `POST /api/pages/{path}/move` (rename)
 - [x] Auto-set `updated` frontmatter on save; preserve `created`
-- [ ] Page history view: read git log for a file, render commit list
-- [ ] Diff view: side-by-side or inline diff between two revisions
-- [ ] External-edit watcher: editing a `.md` file in another tool updates the UI on next reload
+- [x] Page history view: read git log for a file, render commit list
+- [x] Diff view: side-by-side or inline diff between two revisions
+- [x] External-edit watcher: not needed — every page request reads from disk, so editing a `.md` file in another tool surfaces on next reload (no watcher process required until the SQLite index lands in M3)
 
 **Exit criteria**: Daily-driver-able for a single user editing markdown. Round-trip tests passing for ≥ 50 fixtures.
 

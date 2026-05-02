@@ -1,12 +1,15 @@
 <script setup lang="ts">
   import { computed, ref, watch } from 'vue'
-  import { useRoute } from 'vue-router'
+  import { useRoute, useRouter } from 'vue-router'
   import { getPageHistory } from '@/api/client'
   import type { HistoryEntry } from '@/api/types'
 
   const route = useRoute()
+  const router = useRouter()
   const entries = ref<HistoryEntry[] | null>(null)
   const error = ref<string | null>(null)
+  const selA = ref<string | null>(null)
+  const selB = ref<string | null>(null)
 
   const path = computed(() => {
     const raw = route.params.path
@@ -17,14 +20,40 @@
   async function load(): Promise<void> {
     entries.value = null
     error.value = null
+    selA.value = null
+    selB.value = null
     try {
-      entries.value = await getPageHistory(path.value)
+      const loaded = await getPageHistory(path.value)
+      entries.value = loaded
+      // Pre-select the two newest commits when there are at least two.
+      if (loaded.length >= 2) {
+        selB.value = loaded[0]!.sha
+        selA.value = loaded[1]!.sha
+      }
     } catch (e) {
       error.value = e instanceof Error ? e.message : String(e)
     }
   }
 
   watch(path, load, { immediate: true })
+
+  const canCompare = computed(() => !!selA.value && !!selB.value && selA.value !== selB.value)
+
+  function compare(): void {
+    if (!canCompare.value) return
+    router.push({
+      path: `/diff/${path.value}`,
+      query: { a: selA.value!, b: selB.value! },
+    })
+  }
+
+  function diffWithPrevious(idx: number): void {
+    const list = entries.value
+    if (!list || idx >= list.length - 1) return
+    const newer = list[idx]!.sha
+    const older = list[idx + 1]!.sha
+    router.push({ path: `/diff/${path.value}`, query: { a: older, b: newer } })
+  }
 
   function timeAgo(ts: string): string {
     const then = new Date(ts).getTime()
@@ -62,15 +91,76 @@
       No history available. Save the page to create the first entry.
     </p>
 
-    <ul v-else class="border border-slate-200 rounded-lg divide-y divide-slate-200">
-      <li v-for="entry in entries" :key="entry.sha" class="px-4 py-3 flex gap-4 items-baseline">
-        <code class="text-xs text-slate-500 font-mono shrink-0 w-16">{{ entry.sha }}</code>
-        <span class="flex-1 min-w-0 truncate">{{ entry.message }}</span>
-        <span class="text-xs text-slate-400 shrink-0 hidden sm:inline">{{ entry.author }}</span>
-        <span class="text-xs text-slate-400 shrink-0 w-16 text-right">{{
-          timeAgo(entry.timestamp)
-        }}</span>
-      </li>
-    </ul>
+    <template v-else>
+      <div
+        v-if="entries.length >= 2"
+        class="mb-3 flex items-center justify-between text-xs text-slate-500"
+      >
+        <span>Pick two revisions and click Compare, or use “diff vs previous” on any row.</span>
+        <button
+          type="button"
+          class="px-3 py-1 rounded border text-xs cursor-pointer transition-colors"
+          :class="
+            canCompare
+              ? 'border-blue-300 text-blue-700 hover:bg-blue-50'
+              : 'border-slate-200 text-slate-400 cursor-not-allowed'
+          "
+          :disabled="!canCompare"
+          @click="compare"
+        >
+          Compare A &rarr; B
+        </button>
+      </div>
+
+      <ul class="border border-slate-200 rounded-lg divide-y divide-slate-200">
+        <li
+          v-for="(entry, idx) in entries"
+          :key="entry.sha"
+          class="px-4 py-3 flex gap-3 items-baseline group"
+        >
+          <label
+            class="shrink-0 flex items-center gap-1 text-xs text-slate-400 cursor-pointer"
+            title="Older revision (A)"
+          >
+            <input
+              type="radio"
+              name="diff-a"
+              :value="entry.sha"
+              v-model="selA"
+              class="cursor-pointer"
+            />
+            A
+          </label>
+          <label
+            class="shrink-0 flex items-center gap-1 text-xs text-slate-400 cursor-pointer"
+            title="Newer revision (B)"
+          >
+            <input
+              type="radio"
+              name="diff-b"
+              :value="entry.sha"
+              v-model="selB"
+              class="cursor-pointer"
+            />
+            B
+          </label>
+          <code class="text-xs text-slate-500 font-mono shrink-0 w-16">{{ entry.sha }}</code>
+          <span class="flex-1 min-w-0 truncate">{{ entry.message }}</span>
+          <button
+            v-if="idx < entries.length - 1"
+            type="button"
+            class="shrink-0 opacity-0 group-hover:opacity-100 text-xs text-blue-600 hover:underline cursor-pointer transition-opacity"
+            title="Diff against previous revision"
+            @click="diffWithPrevious(idx)"
+          >
+            diff vs prev
+          </button>
+          <span class="text-xs text-slate-400 shrink-0 hidden sm:inline">{{ entry.author }}</span>
+          <span class="text-xs text-slate-400 shrink-0 w-16 text-right">{{
+            timeAgo(entry.timestamp)
+          }}</span>
+        </li>
+      </ul>
+    </template>
   </article>
 </template>

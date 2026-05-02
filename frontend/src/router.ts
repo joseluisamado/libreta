@@ -17,6 +17,11 @@ const routes: RouteRecordRaw[] = [
     name: 'editor',
     component: () => import('./views/EditorView.vue'),
   },
+  {
+    path: '/diff/:path(.*)*',
+    name: 'diff',
+    component: () => import('./views/DiffView.vue'),
+  },
 ]
 
 export const router = createRouter({

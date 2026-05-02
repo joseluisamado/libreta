@@ -1,4 +1,4 @@
-import type { HistoryEntry, PageMove, PageNode, PageRead, PageWrite } from './types'
+import type { DiffEntry, HistoryEntry, PageMove, PageNode, PageRead, PageWrite } from './types'
 
 const BASE = '/api/v1'
 
@@ -41,6 +41,11 @@ export function deletePage(path: string): Promise<void> {
 
 export function getPageHistory(path: string): Promise<HistoryEntry[]> {
   return request<HistoryEntry[]>(`/pages/${path}/history`)
+}
+
+export function getPageDiff(path: string, a: string, b: string): Promise<DiffEntry> {
+  const qs = new URLSearchParams({ a, b }).toString()
+  return request<DiffEntry>(`/pages/${path}/diff?${qs}`)
 }
 
 export function movePage(path: string, data: PageMove): Promise<PageRead> {

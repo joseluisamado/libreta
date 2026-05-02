@@ -35,6 +35,14 @@ export interface HistoryEntry {
   timestamp: string
 }
 
+export interface DiffEntry {
+  old_sha: string
+  new_sha: string
+  old_path: string | null
+  new_path: string | null
+  patch: string
+}
+
 export interface ApiError {
   error: string
   detail: string

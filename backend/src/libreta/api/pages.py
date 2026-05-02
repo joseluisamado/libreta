@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends
 
 from libreta.config import Settings
 from libreta.deps import get_settings
-from libreta.models import HistoryEntry, PageMove, PageNode, PageRead, PageWrite
+from libreta.models import DiffEntry, HistoryEntry, PageMove, PageNode, PageRead, PageWrite
 from libreta.storage.pages import (
     delete_page as delete_page_storage,
     move_page as move_page_storage,
@@ -16,6 +16,7 @@ from libreta.storage.paths import normalize_page_path, page_to_file
 from libreta.storage.repo import (
     commit_page,
     delete_commit,
+    get_file_diff,
     get_file_history,
     move_commit,
     open_repo,
@@ -59,6 +60,20 @@ async def get_page_history(
     rel_path = str(file_path.relative_to(settings.content_dir))
     repo = open_repo(settings.content_dir)
     return await get_file_history(repo, rel_path)
+
+
+# NOTE: /{path:path}/diff must also be registered before /{path:path}.
+@router.get("/{path:path}/diff", response_model=DiffEntry)
+async def get_page_diff(
+    path: str,
+    a: str,
+    b: str,
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> DiffEntry:
+    file_path = page_to_file(settings.content_dir, normalize_page_path(path))
+    rel_path = str(file_path.relative_to(settings.content_dir))
+    repo = open_repo(settings.content_dir)
+    return await get_file_diff(repo, rel_path, a, b)
 
 
 @router.get("/{path:path}", response_model=PageRead)

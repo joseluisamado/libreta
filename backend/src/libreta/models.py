@@ -44,6 +44,14 @@ class HistoryEntry(BaseModel):
     timestamp: datetime
 
 
+class DiffEntry(BaseModel):
+    old_sha: str
+    new_sha: str
+    old_path: str | None
+    new_path: str | None
+    patch: str  # unified diff text; empty when contents are identical
+
+
 class HealthResponse(BaseModel):
     status: str
 

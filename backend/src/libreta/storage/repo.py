@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import difflib
 from datetime import UTC, datetime
 from pathlib import Path
 
 import pygit2
 
-from libreta.errors import ContentRepoUnavailableError
-from libreta.models import HistoryEntry
+from libreta.errors import ContentRepoUnavailableError, PageNotFoundError
+from libreta.models import DiffEntry, HistoryEntry
 
 _lock: asyncio.Lock | None = None
 
@@ -203,3 +204,63 @@ def _get_file_history_sync(repo: pygit2.Repository, rel_path: str) -> list[Histo
 
 async def get_file_history(repo: pygit2.Repository, rel_path: str) -> list[HistoryEntry]:
     return await asyncio.to_thread(_get_file_history_sync, repo, rel_path)
+
+
+# ── diff ────────────────────────────────────────────────────────────────
+
+
+def _resolve_commit(repo: pygit2.Repository, sha: str) -> pygit2.Commit:
+    try:
+        obj = repo.revparse_single(sha)
+    except (KeyError, ValueError, pygit2.GitError) as exc:
+        raise PageNotFoundError(f"unknown revision: {sha}") from exc
+    peeled = obj.peel(pygit2.Commit)
+    if not isinstance(peeled, pygit2.Commit):
+        raise PageNotFoundError(f"not a commit: {sha}")
+    return peeled
+
+
+def _blob_text_at(commit: pygit2.Commit, rel_path: str) -> str | None:
+    """Return file contents at *rel_path* in *commit*, or None if absent."""
+    try:
+        entry = commit.tree[rel_path]
+    except KeyError:
+        return None
+    blob = entry.peel(pygit2.Blob)
+    if not isinstance(blob, pygit2.Blob):
+        return None
+    raw = bytes(blob.data)
+    return raw.decode("utf-8", errors="replace")
+
+
+def _get_file_diff_sync(
+    repo: pygit2.Repository, rel_path: str, sha_a: str, sha_b: str
+) -> DiffEntry:
+    commit_a = _resolve_commit(repo, sha_a)
+    commit_b = _resolve_commit(repo, sha_b)
+
+    text_a = _blob_text_at(commit_a, rel_path)
+    text_b = _blob_text_at(commit_b, rel_path)
+
+    if text_a is None and text_b is None:
+        raise PageNotFoundError(f"{rel_path} present in neither {sha_a} nor {sha_b}")
+
+    lines_a = (text_a or "").splitlines(keepends=True)
+    lines_b = (text_b or "").splitlines(keepends=True)
+    label_a = f"a/{rel_path}" if text_a is not None else "/dev/null"
+    label_b = f"b/{rel_path}" if text_b is not None else "/dev/null"
+    patch = "".join(difflib.unified_diff(lines_a, lines_b, fromfile=label_a, tofile=label_b, n=3))
+
+    return DiffEntry(
+        old_sha=str(commit_a.id)[:7],
+        new_sha=str(commit_b.id)[:7],
+        old_path=rel_path if text_a is not None else None,
+        new_path=rel_path if text_b is not None else None,
+        patch=patch,
+    )
+
+
+async def get_file_diff(
+    repo: pygit2.Repository, rel_path: str, sha_a: str, sha_b: str
+) -> DiffEntry:
+    return await asyncio.to_thread(_get_file_diff_sync, repo, rel_path, sha_a, sha_b)

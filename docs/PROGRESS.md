@@ -8,9 +8,9 @@ Living document. Update as work progresses. Latest at the top.
 
 ## Status
 
-**Current milestone**: M2 — Editing & git commits (in progress)
-**Phase**: Save, delete, and move endpoints + git commits implemented; next is page history and diff views
-**Next action**: Implement page history view (read git log for a file, render commit list)
+**Current milestone**: M2 — Editing & git commits (done)
+**Phase**: Diff view between two revisions landed; external-edit watcher resolved as not-needed at this stage
+**Next action**: Start M3 — Tables, attachments, search
 
 ## At a glance
 
@@ -18,8 +18,8 @@ Living document. Update as work progresses. Latest at the top.
 |---|---|
 | M0 — Foundations | 🟢 Done |
 | M1 — Read-only wiki | 🟢 Done |
-| M0.5 — Read-experience polish | 🟢 Done (M2 hand-off pending) |
-| M2 — Editing & commits | 🟡 In progress (Tiptap landed, save pending) |
+| M0.5 — Read-experience polish | 🟢 Done |
+| M2 — Editing & commits | 🟢 Done |
 | M3 — Tables, attachments, search | ⚪ Not started |
 | M4 — Diagrams.net integration | ⚪ Not started |
 | M5 — v1.0 release | ⚪ Not started |
@@ -29,6 +29,19 @@ Legend: ⚪ not started · 🟡 in progress · 🟢 done · 🔴 blocked
 ---
 
 ## Log
+
+### 2026-05-02 — M2 Diff view + external-edit watcher closed out
+
+Closed the last two M2 items. The diff view lets users compare any two revisions of a page; the external-edit watcher turned out to be unnecessary at this stage.
+
+- **`DiffEntry` model** added to [models.py](../backend/src/libreta/models.py): `{ old_sha, new_sha, old_path, new_path, patch }`. `patch` is unified-diff text; empty string when contents are identical. `old_path` / `new_path` are null when the file didn't exist on that side (creation / deletion).
+- **`storage/repo.py`**: `_resolve_commit()` peels any object (tag → commit) via `revparse_single`, raising `PageNotFoundError` for unknown SHAs. `_blob_text_at()` reads the blob at a path in a commit's tree. `_get_file_diff_sync()` builds a unified diff with `difflib.unified_diff`. Async wrapper `get_file_diff()` runs it on a thread.
+- **`api/pages.py`**: `GET /pages/{path}/diff?a=<sha>&b=<sha>` — query params instead of path params so short SHAs don't tangle with the greedy `:path` matcher.
+- **Frontend**: `DiffEntry` type + `getPageDiff()` client function. New [DiffView.vue](../frontend/src/views/DiffView.vue) at `/diff/:path*?a=...&b=...` renders the unified diff line-by-line with green/red/blue tinting (add/del/hunk). [HistoryView.vue](../frontend/src/views/HistoryView.vue) gained two radio columns ("A" older / "B" newer) and a Compare button — pre-selects the two newest commits — plus a per-row "diff vs prev" shortcut.
+- **External-edit watcher**: marked done in the roadmap with a note. The read path already re-reads the file on every GET, so external edits surface on browser reload. The watchdog described in `ARCHITECTURE.md` is only useful once the SQLite search index lands (M3); it can be added then if cache invalidation actually needs it.
+- **Tests**: backend `test_diff.py` (4: round-trip, identical, creation, unknown SHA → 404). Frontend `DiffView.spec.ts` (4: empty patch, add/del/hunk classes, missing query params, API failure). All HistoryView tests still pass against the new layout.
+
+**Pre-flight**: backend 50/50 tests pass, ruff/mypy clean. Frontend 57/57 tests pass, vue-tsc clean, eslint clean (1 pre-existing `v-html` warning), prettier clean, build succeeds.
 
 ### 2026-05-02 — M2 Delete, move, new page / new folder
 
