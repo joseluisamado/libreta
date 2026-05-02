@@ -7,6 +7,11 @@ const routes: RouteRecordRaw[] = [
     name: 'page',
     component: () => import('./views/PageView.vue'),
   },
+  {
+    path: '/edit/:path(.*)*',
+    name: 'editor',
+    component: () => import('./views/EditorView.vue'),
+  },
 ]
 
 export const router = createRouter({

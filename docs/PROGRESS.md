@@ -8,9 +8,9 @@ Living document. Update as work progresses. Latest at the top.
 
 ## Status
 
-**Current milestone**: M0.5 — Read-experience polish (in progress)
-**Phase**: All eight M0.5 features landed; tag-on-save spec deferred to M2 implementation
-**Next action**: Last sweep on remaining feedback, then start M2
+**Current milestone**: M2 — Editing & git commits (in progress)
+**Phase**: Tiptap editor integrated (first element of M2); save/commit wiring is next
+**Next action**: Implement save endpoint and git commit on save
 
 ## At a glance
 
@@ -19,7 +19,7 @@ Living document. Update as work progresses. Latest at the top.
 | M0 — Foundations | 🟢 Done |
 | M1 — Read-only wiki | 🟢 Done |
 | M0.5 — Read-experience polish | 🟢 Done (M2 hand-off pending) |
-| M2 — Editing & commits | ⚪ Not started |
+| M2 — Editing & commits | 🟡 In progress (Tiptap landed, save pending) |
 | M3 — Tables, attachments, search | ⚪ Not started |
 | M4 — Diagrams.net integration | ⚪ Not started |
 | M5 — v1.0 release | ⚪ Not started |
@@ -29,6 +29,22 @@ Legend: ⚪ not started · 🟡 in progress · 🟢 done · 🔴 blocked
 ---
 
 ## Log
+
+### 2026-05-02 — M2 Tiptap editor integration (first element)
+
+Wired the WYSIWYG editor — loading page content into a functional Tiptap instance
+with toolbar and a Cancel back to read mode. No save/commit wiring yet.
+
+- **Dependencies**: added `@tiptap/vue-3`, `@tiptap/starter-kit`, `@tiptap/pm`, `@tiptap/extension-task-list`, `@tiptap/extension-task-item`, `@tiptap/extension-link`, `@tiptap/core`, `tiptap-markdown`, `@types/node` (dev).
+- **Editor.vue** (`src/components/Editor/Editor.vue`): Tiptap wrapper with StarterKit (headings 1–3, bold, italic, strike, code, code-block, blockquote, bullet/ordered lists, hard-break, hr, history, dropcursor, gapcursor) + TaskList + TaskItem + Link + Markdown (html: false). Exposes `getMarkdown()` and the editor instance; emits `update` with dirty tracking via `hasBeenSet` flag.
+- **EditorToolbar.vue** (`src/components/Editor/EditorToolbar.vue`): 15-button toolbar grouped into undo/redo, inline formatting (B/I/S/code/link), headings (H1/H2/H3), and block elements (blockquote, bullet/ordered/task lists, hr). Each button has inline SVG, tooltip with shortcut, and `is-active` styling.
+- **EditorView.vue** (`src/views/EditorView.vue`): Route component at `/edit/:path*`. Loads page via API, renders toolbar + editor, top bar with Cancel (router-link back to `/w/:path`) and disabled Save placeholder (next M2 step). Handles loading, error, and loaded states.
+- **Router** (`src/router.ts`): added `/edit/:path(.*)*` route with lazy-loaded `EditorView.vue`.
+- **PageView.vue**: added an Edit button (pencil SVG, RouterLink to `/edit/${page.path}`) positioned next to the PageToolbar buttons. Only shown when page is loaded.
+- **Round-trip test infrastructure** (`tests/round-trip/`): 10 canonical fixture files covering all v1 extensions + `roundtrip.test.ts` with 20 tests (stability: pass → pass identical; byte-identical: canonical fixture matches pass-1 output). Fixtures auto-canonicalized via `UPDATE_FIXTURES=true` env var. Known tiptap-markdown normalization: soft breaks → spaces, blockquote continuations → single line (nested blockquotes are an edge case), task list items get blank line separators, `$$` math blocks become single-line with escaped underscores.
+- **Helper** (`src/markdownStorage.ts`): typed accessor for `editor.storage.markdown.getMarkdown()` to work around tiptap-markdown's type augmentation not propagating through vue-tsc.
+
+**Pre-flight**: backend 23/23 tests pass (no changes). Frontend 43/43 tests pass (15 existing + 8 Editor.vue + 20 round-trip). ESLint clean (1 pre-existing `v-html` warning), prettier clean, vue-tsc clean, build succeeds.
 
 ### 2026-05-02 — M0.5 polish + DokuWiki import
 
