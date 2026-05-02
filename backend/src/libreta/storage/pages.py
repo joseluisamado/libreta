@@ -47,6 +47,7 @@ def _read_page_sync(content_dir: Path, raw_path: str) -> PageRead:
         path=str(page),
         meta=_parse_meta(post.metadata, fallback_title),
         body=post.content,
+        is_index=file.name == "index.md",
     )
 
 

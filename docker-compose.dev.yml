@@ -1,0 +1,29 @@
+# Dev overlay for docker-compose.yml.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml --profile dev up
+#
+# Or via the Makefile:
+#   make dev / make up-dev / make rebuild-dev
+#
+# This file overlays `api` to bind-mount the source tree and run uvicorn with
+# --reload, so backend edits hot-reload in the container exactly like the Vite
+# dev server does for the frontend. The base docker-compose.yml is unchanged
+# and is used as-is in production.
+services:
+  api:
+    volumes:
+      - ./data/content:/content
+      - ./backend/src:/app/src
+    command:
+      [
+        "uvicorn",
+        "libreta.main:app",
+        "--reload",
+        "--reload-dir",
+        "/app/src",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8080",
+      ]

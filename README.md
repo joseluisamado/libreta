@@ -2,7 +2,7 @@
 
 > A self-hosted wiki where the source of truth is a directory of plain markdown files in a git repository — with a Confluence-grade WYSIWYG editor and first-class diagrams.net integration on top.
 
-**Status**: 🟡 Pre-alpha. Architecture defined, implementation not started. See [`docs/PROGRESS.md`](./docs/PROGRESS.md).
+**Status**: 🟡 Pre-alpha. Read-only wiki works end-to-end (M0 + M1 done). Editing, search, and diagrams still ahead. See [`docs/PROGRESS.md`](./docs/PROGRESS.md).
 
 ## Why this exists
 
@@ -22,8 +22,6 @@ See [`docs/PROJECT.md`](./docs/PROJECT.md) for full motivation, principles, and 
 
 ## Quickstart
 
-> ⚠️ Not yet implemented. The commands below are the *intended* user experience; track [`docs/PROGRESS.md`](./docs/PROGRESS.md) for current state.
-
 ```bash
 # Clone the project
 git clone https://github.com/<you>/libreta.git
@@ -33,14 +31,38 @@ cd libreta
 mkdir -p ./data/content
 git -C ./data/content init
 
-# Start it
-docker compose up -d
+# Start it (dev stack: api + Vite frontend + drawio, all hot-reloading)
+make dev
 
-# Open http://localhost:8092 (api / prod-style stack)
-# Or http://localhost:8091 when using the dev profile (Vite dev server)
+# Open http://localhost:8091  — Vite dev server (with HMR)
+#      http://localhost:8092  — API directly (FastAPI / OpenAPI at /api/v1/docs)
+#      http://localhost:8093  — drawio sidecar
 ```
 
 Your wiki content lives in `./data/content` — a normal git repository of markdown files. You can clone it elsewhere, edit it in any editor, push it to GitHub or a private Forgejo, and Libreta will pick up changes.
+
+### Dev vs prod
+
+The Compose layout has two modes. Pick based on what you're doing:
+
+| | Dev (`make dev` / `make up-dev` / `make rebuild-dev`) | Prod (`make up` / `make rebuild`) |
+|---|---|---|
+| Compose files | `docker-compose.yml` + `docker-compose.dev.yml` | `docker-compose.yml` only |
+| Backend source | bind-mounted from `./backend/src`; uvicorn `--reload` picks up edits live | baked into the image at build time; no reloader |
+| Frontend | Vite dev server with HMR (port 8091) | not served by Compose — build `frontend/dist` and put it behind your reverse proxy of choice (Caddy/Nginx) |
+| When to rebuild | only when dependencies change (`pyproject.toml`, `pnpm-lock.yaml`, `Dockerfile`) | every code change before deploy |
+
+The Makefile wraps both modes; you rarely need to type the raw `docker compose` command. Run `make help` for the full menu.
+
+### Useful targets
+
+```bash
+make help                  # Show all available targets
+make check                 # Run all pre-flight checks (lint + types + tests)
+make import-dokuwiki-dry   # Preview a DokuWiki import without writing
+make import-dokuwiki       # Import a DokuWiki installation into your wiki
+                           #   override: SOURCE=/path/to/dokuwiki/storage/data make import-dokuwiki
+```
 
 ## Features (target for v1)
 

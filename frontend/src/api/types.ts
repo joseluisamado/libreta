@@ -9,6 +9,7 @@ export interface PageRead {
   path: string
   meta: PageMeta
   body: string
+  is_index: boolean
 }
 
 export interface PageNode {

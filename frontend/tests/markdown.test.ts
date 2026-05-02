@@ -42,4 +42,10 @@ describe('renderMarkdown', () => {
     const out = renderMarkdown('![alt](../shared/x.png)', 'recipes/lasagna')
     expect(out).toContain('/api/v1/assets/pages/shared/x.png')
   })
+
+  it('resolves images relative to the page dir for index pages', () => {
+    // Page stored as devel/concepts/saml/index.md → asset lives in saml/
+    const out = renderMarkdown('![alt](foo.png)', 'devel/concepts/saml', true)
+    expect(out).toContain('/api/v1/assets/pages/devel/concepts/saml/foo.png')
+  })
 })

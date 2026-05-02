@@ -14,10 +14,15 @@
         test test-backend test-frontend \
         build build-frontend \
         up up-dev rebuild rebuild-dev down logs ps \
-        clean clean-backend clean-frontend
+        clean clean-backend clean-frontend \
+        import-dokuwiki import-dokuwiki-dry
 
 BACKEND   := backend
 FRONTEND  := frontend
+
+# Compose invocation: dev stacks layer docker-compose.dev.yml on top of the
+# base file so the api service gets a source bind-mount and uvicorn --reload.
+COMPOSE_DEV := docker compose -f docker-compose.yml -f docker-compose.dev.yml --profile dev
 
 help: ## Show this help
 	@awk 'BEGIN {FS = ":.*##"; printf "Usage: make <target>\n\nTargets:\n"} \
@@ -35,8 +40,8 @@ install-frontend: ## pnpm install
 
 # ---------- dev ----------
 
-dev: ## Run the dev stack via docker compose (api + frontend + drawio)
-	docker compose --profile dev up
+dev: ## Run the dev stack via docker compose (api + frontend + drawio, with hot-reload)
+	$(COMPOSE_DEV) up
 
 dev-backend: ## Run only the backend with reload (host port 8092, no docker)
 	cd $(BACKEND) && LIBRETA_CONTENT_DIR=../data/content uv run uvicorn libreta.main:app --reload --host 0.0.0.0 --port 8092
@@ -107,13 +112,13 @@ up: ## Start the prod-style stack (no frontend dev container)
 	docker compose up -d
 
 up-dev: ## Start the dev stack, detached
-	docker compose --profile dev up -d
+	$(COMPOSE_DEV) up -d
 
 rebuild: ## Rebuild images and start the prod-style stack, detached
 	docker compose up -d --build
 
 rebuild-dev: ## Rebuild images and start the dev stack, detached
-	docker compose --profile dev up -d --build
+	$(COMPOSE_DEV) up -d --build
 
 down: ## Stop the stack
 	docker compose down
@@ -134,3 +139,11 @@ clean-backend:
 
 clean-frontend:
 	rm -rf $(FRONTEND)/node_modules $(FRONTEND)/dist $(FRONTEND)/.vite
+
+# ---------- import ----------
+
+import-dokuwiki: ## Import a DokuWiki installation into pages/ (override SOURCE=...)
+	cd $(BACKEND) && uv run python ../scripts/import_dokuwiki.py $(if $(SOURCE),--source $(SOURCE))
+
+import-dokuwiki-dry: ## Dry-run the DokuWiki importer (override SOURCE=...)
+	cd $(BACKEND) && uv run python ../scripts/import_dokuwiki.py --dry-run $(if $(SOURCE),--source $(SOURCE))

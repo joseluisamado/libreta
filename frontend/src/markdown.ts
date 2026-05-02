@@ -25,12 +25,14 @@ function isAbsolute(url: string): boolean {
   return /^([a-z][a-z0-9+.-]*:)?\/\//i.test(url) || url.startsWith('/') || url.startsWith('data:')
 }
 
-function resolveAssetUrl(src: string, pagePath: string): string {
+function resolveAssetUrl(src: string, pagePath: string, isIndex: boolean): string {
   if (isAbsolute(src) || src.startsWith('#')) return src
-  // pagePath is the API path (e.g. "recipes/lasagna" or "index"). Drop the
-  // last segment to get the directory, then resolve `src` against it.
+  // pagePath is the API path (e.g. "recipes/lasagna" or "devel/concepts/saml").
+  // Determine the directory the page is stored in:
+  //   - leaf page  (foo/bar.md):    drop last segment → "foo/"
+  //   - index page (foo/bar/index.md): keep all segments → "foo/bar/"
   const parts = pagePath.split('/').filter(Boolean)
-  const dir = parts.slice(0, -1)
+  const dir = isIndex ? [...parts] : parts.slice(0, -1)
   const segments = src.split('/')
   const out = [...dir]
   for (const s of segments) {
@@ -41,10 +43,12 @@ function resolveAssetUrl(src: string, pagePath: string): string {
     }
     out.push(s)
   }
-  // pages live under content/pages/. Authors typically reference assets
-  // either alongside the page (resolved above) or at the wiki root via "/".
-  // We always serve from content_dir, so prefix with `pages/`.
   return `${ASSET_BASE}/pages/${out.join('/')}`
+}
+
+interface RenderEnv {
+  pagePath?: string
+  isIndex?: boolean
 }
 
 function patchRenderer(): void {
@@ -58,8 +62,8 @@ function patchRenderer(): void {
       const srcIdx = token.attrIndex('src')
       const attr = token.attrs?.[srcIdx]
       if (srcIdx >= 0 && attr) {
-        const pagePath = (env as { pagePath?: string }).pagePath ?? ''
-        attr[1] = resolveAssetUrl(attr[1], pagePath)
+        const e = env as RenderEnv
+        attr[1] = resolveAssetUrl(attr[1], e.pagePath ?? '', e.isIndex ?? false)
       }
     }
     return defaultImage(tokens, idx, options, env, self)
@@ -68,6 +72,6 @@ function patchRenderer(): void {
 
 patchRenderer()
 
-export function renderMarkdown(source: string, pagePath = ''): string {
-  return md.render(source, { pagePath })
+export function renderMarkdown(source: string, pagePath = '', isIndex = false): string {
+  return md.render(source, { pagePath, isIndex })
 }

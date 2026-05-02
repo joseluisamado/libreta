@@ -48,7 +48,18 @@
 
   watch(path, load, { immediate: true })
 
-  const html = computed(() => (page.value ? renderMarkdown(page.value.body, page.value.path) : ''))
+  // If the body already starts with an H1 matching the frontmatter title,
+  // skip rendering a chrome H1 above it to avoid the duplicated heading.
+  const bodyHasMatchingH1 = computed(() => {
+    if (!page.value) return false
+    const firstLine = page.value.body.trimStart().split('\n', 1)[0] ?? ''
+    if (!firstLine.startsWith('# ')) return false
+    return firstLine.slice(2).trim() === page.value.meta.title
+  })
+
+  const html = computed(() =>
+    page.value ? renderMarkdown(page.value.body, page.value.path, page.value.is_index) : '',
+  )
 </script>
 
 <template>
@@ -56,8 +67,8 @@
     <p v-if="error" class="text-red-600">{{ error }}</p>
     <template v-else-if="page">
       <Breadcrumbs :path="page.path" />
-      <header class="mb-4">
-        <h1 class="text-3xl font-bold">{{ page.meta.title }}</h1>
+      <header v-if="!bodyHasMatchingH1 || page.meta.tags.length" class="mb-4">
+        <h1 v-if="!bodyHasMatchingH1" class="text-3xl font-bold">{{ page.meta.title }}</h1>
         <p v-if="page.meta.tags.length" class="mt-2 text-xs text-slate-500">
           <span v-for="t in page.meta.tags" :key="t" class="mr-2">#{{ t }}</span>
         </p>

@@ -9,11 +9,7 @@
     <li v-for="node in nodes" :key="node.path" class="my-1">
       <RouterLink
         :to="`/w/${node.path}`"
-        :class="
-          node.is_directory
-            ? 'text-slate-500 uppercase tracking-wide text-xs hover:text-blue-600'
-            : 'text-slate-700 hover:text-blue-600'
-        "
+        class="text-slate-700 hover:text-blue-600"
         active-class="text-blue-700 font-semibold"
       >
         {{ node.title }}
