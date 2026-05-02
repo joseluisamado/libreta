@@ -1,0 +1,86 @@
+name: CI
+
+# Gitea Actions reads workflows from .gitea/workflows. The same file is mirrored
+# under .github/workflows so the project also runs on GitHub. Only actions that
+# Gitea's act_runner ships with by default are used (checkout, setup-python,
+# setup-node, pnpm/action-setup) so no upstream hosted-runner-only action is
+# required.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  backend:
+    name: backend (lint + types + tests)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: ruff format --check
+        run: uv run ruff format --check .
+
+      - name: ruff check
+        run: uv run ruff check .
+
+      - name: mypy --strict
+        run: uv run mypy src
+
+      - name: pytest
+        run: uv run pytest
+
+  frontend:
+    name: frontend (lint + types + tests + build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+          run_install: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: prettier --check
+        run: pnpm exec prettier --check "src/**/*.{ts,vue,css}"
+
+      - name: eslint
+        run: pnpm lint
+
+      - name: vue-tsc --noEmit
+        run: pnpm typecheck
+
+      - name: vitest
+        run: pnpm test
+
+      - name: vite build
+        run: pnpm build

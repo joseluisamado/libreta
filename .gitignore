@@ -25,3 +25,6 @@ frontend/.vite/
 # Env
 .env
 .env.local
+
+# Claude Code local overrides
+.claude/settings.local.json

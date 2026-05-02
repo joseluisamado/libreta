@@ -6,6 +6,10 @@ class PageNotFoundError(LibretaError):
     status_code = 404
 
 
+class AssetNotFoundError(LibretaError):
+    status_code = 404
+
+
 class InvalidPathError(LibretaError):
     status_code = 400
 

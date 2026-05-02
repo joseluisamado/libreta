@@ -8,16 +8,16 @@ Living document. Update as work progresses. Latest at the top.
 
 ## Status
 
-**Current milestone**: M1 — Read-only wiki
-**Phase**: Skeleton up; backend serves tree + page reads, frontend renders markdown
-**Next action**: Add CI, pre-commit hooks, more markdown features (mermaid, callouts), then begin M2
+**Current milestone**: M1 — Read-only wiki (complete) → ready to begin M2
+**Phase**: Read path complete end-to-end; CI + pre-commit landed
+**Next action**: Begin M2 — Tiptap editor, markdown round-trip, save-as-commit
 
 ## At a glance
 
 | Milestone | Status |
 |---|---|
-| M0 — Foundations | 🟢 Done (CI + pre-commit deferred) |
-| M1 — Read-only wiki | 🟡 In progress |
+| M0 — Foundations | 🟢 Done |
+| M1 — Read-only wiki | 🟢 Done |
 | M2 — Editing & commits | ⚪ Not started |
 | M3 — Tables, attachments, search | ⚪ Not started |
 | M4 — Diagrams.net integration | ⚪ Not started |
@@ -28,6 +28,19 @@ Legend: ⚪ not started · 🟡 in progress · 🟢 done · 🔴 blocked
 ---
 
 ## Log
+
+### 2026-05-02 — Close out M0 + M1
+
+Wrapped the deferred M0 items and the remaining M1 polish.
+
+- **CI** (`.gitea/workflows/ci.yml`, mirrored to `.github/workflows/ci.yml`): two jobs, backend (ruff format/check, mypy --strict, pytest) and frontend (prettier, eslint, vue-tsc, vitest, vite build). Workflow uses only actions Gitea's `act_runner` ships with by default (`actions/checkout@v4`, `actions/setup-python@v5`, `actions/setup-node@v4`, `pnpm/action-setup@v4`) so it runs unmodified on either host.
+- **Pre-commit** (`.pre-commit-config.yaml`): ruff format/check, mypy (scoped to `backend/src/`), prettier and eslint via local hooks that shell into `frontend/`.
+- **Frontend breadcrumbs**: `Breadcrumbs.vue` walks the page path against the tree store to look up titles, falling back to humanised segments. Wired into `PageView`.
+- **Image attachments**: new `/api/v1/assets/{path}` endpoint serves any non-`.md` file inside the content dir with strict path validation (rejects traversal, hidden segments, `.md`). The markdown renderer rewrites relative `![](images/foo.png)` to `/api/v1/assets/pages/<dir>/images/foo.png`; absolute and `data:` URLs pass through.
+- **Mobile shell**: `App.vue` now renders a top bar with a hamburger toggle below `md`; the sidebar becomes a slide-in drawer with backdrop, auto-closes on navigation. `md+` viewports render the original two-column layout.
+- **ESLint flat config** added (`frontend/eslint.config.js`) so `pnpm lint` actually runs under ESLint 9.
+
+**Pre-flight**: backend 22/22 tests pass, ruff/mypy clean. Frontend 8/8 tests pass, typecheck clean, eslint clean (one unrelated `v-html` warning suppressed by design — markdown HTML is sanitised by markdown-it with `html: false`), prettier clean, build succeeds.
 
 ### 2026-05-01 — M0/M1 scaffold
 

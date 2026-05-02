@@ -13,7 +13,7 @@
         typecheck typecheck-backend typecheck-frontend \
         test test-backend test-frontend \
         build build-frontend \
-        up up-dev down logs ps \
+        up up-dev rebuild rebuild-dev down logs ps \
         clean clean-backend clean-frontend
 
 BACKEND   := backend
@@ -108,6 +108,12 @@ up: ## Start the prod-style stack (no frontend dev container)
 
 up-dev: ## Start the dev stack, detached
 	docker compose --profile dev up -d
+
+rebuild: ## Rebuild images and start the prod-style stack, detached
+	docker compose up -d --build
+
+rebuild-dev: ## Rebuild images and start the dev stack, detached
+	docker compose --profile dev up -d --build
 
 down: ## Stop the stack
 	docker compose down

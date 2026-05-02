@@ -27,4 +27,19 @@ describe('renderMarkdown', () => {
     expect(out).toContain('<pre>')
     expect(out).toContain('<code')
   })
+
+  it('rewrites relative image URLs to the assets endpoint', () => {
+    const out = renderMarkdown('![alt](images/foo.png)', 'recipes/lasagna')
+    expect(out).toContain('/api/v1/assets/pages/recipes/images/foo.png')
+  })
+
+  it('leaves absolute image URLs alone', () => {
+    const out = renderMarkdown('![alt](https://example.com/x.png)', 'recipes/lasagna')
+    expect(out).toContain('https://example.com/x.png')
+  })
+
+  it('resolves ../ in image URLs', () => {
+    const out = renderMarkdown('![alt](../shared/x.png)', 'recipes/lasagna')
+    expect(out).toContain('/api/v1/assets/pages/shared/x.png')
+  })
 })

@@ -14,8 +14,8 @@ A milestone-based plan, not a calendar. Each milestone is a coherent slice of va
 - [x] `backend/` skeleton: FastAPI app boots, `/healthz` returns 200
 - [x] `frontend/` skeleton: Vue 3 + Vite "hello world" loads in the browser (Tiptap deferred to M2)
 - [x] `docker-compose.yml` brings backend + frontend (dev profile) up together
-- [ ] CI pipeline (GitHub Actions or similar): lint + type-check + tests run on every push
-- [ ] `pre-commit` hooks: ruff format/check, mypy, eslint, prettier
+- [x] CI pipeline (Gitea Actions / GitHub Actions): lint + type-check + tests run on every push
+- [x] `pre-commit` hooks: ruff format/check, mypy, eslint, prettier
 - [x] Pinned dependency versions and reproducible builds (`uv.lock`, `pnpm-lock.yaml`)
 
 **Exit criteria**: A new contributor can `git clone`, `docker compose --profile dev up`, and see the empty editor in their browser.
@@ -31,10 +31,10 @@ A milestone-based plan, not a calendar. Each milestone is a coherent slice of va
 - [x] `GET /api/v1/pages/{path}` returns markdown + parsed frontmatter
 - [x] `GET /api/v1/pages/tree` returns the full page hierarchy
 - [x] Frontend: page tree sidebar, markdown rendering (read-only)
-- [ ] Frontend: breadcrumbs
+- [x] Frontend: breadcrumbs
 - [x] Frontend: tables, code blocks with syntax highlighting, task lists, links rendered correctly
-- [ ] Image attachments rendered (regular images, not yet drawio)
-- [ ] Mobile-responsive shell (basic flex layout exists; needs collapse/drawer for narrow viewports)
+- [x] Image attachments rendered (regular images, not yet drawio)
+- [x] Mobile-responsive shell (basic flex layout exists; needs collapse/drawer for narrow viewports)
 
 **Exit criteria**: Point Libreta at a hand-written git repo of markdown files and read them in the browser as you would on GitHub. No editing surface visible.
 

@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from libreta import __version__
-from libreta.api import pages, system
+from libreta.api import assets, pages, system
 from libreta.errors import LibretaError
 
 logger = logging.getLogger(__name__)
@@ -37,6 +37,7 @@ def create_app() -> FastAPI:
 
     app.include_router(system.router, prefix="/api/v1", tags=["system"])
     app.include_router(pages.router, prefix="/api/v1", tags=["pages"])
+    app.include_router(assets.router, prefix="/api/v1", tags=["assets"])
 
     return app
 
