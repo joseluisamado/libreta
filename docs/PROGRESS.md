@@ -8,9 +8,9 @@ Living document. Update as work progresses. Latest at the top.
 
 ## Status
 
-**Current milestone**: M2 — Editing & git commits (done)
-**Phase**: Diff view between two revisions landed; external-edit watcher resolved as not-needed at this stage
-**Next action**: Start M3 — Tables, attachments, search
+**Current milestone**: M3 — Tables, attachments, search
+**Phase**: Tables wired into the editor with GFM markdown round-trip. Up next: image upload (drag/drop + clipboard).
+**Next action**: Image upload + arbitrary file attachments.
 
 ## At a glance
 
@@ -20,7 +20,7 @@ Living document. Update as work progresses. Latest at the top.
 | M1 — Read-only wiki | 🟢 Done |
 | M0.5 — Read-experience polish | 🟢 Done |
 | M2 — Editing & commits | 🟢 Done |
-| M3 — Tables, attachments, search | ⚪ Not started |
+| M3 — Tables, attachments, search | 🟡 In progress |
 | M4 — Diagrams.net integration | ⚪ Not started |
 | M5 — v1.0 release | ⚪ Not started |
 
@@ -29,6 +29,22 @@ Legend: ⚪ not started · 🟡 in progress · 🟢 done · 🔴 blocked
 ---
 
 ## Log
+
+### 2026-05-02 — M3 Tables in the editor with GFM round-trip
+
+First two M3 items: Tiptap table editing wired in, plus byte-identical round-trip through GFM markdown.
+
+- **Extensions**: `@tiptap/extension-table` 3.22.5 (umbrella package, named exports for `Table`, `TableRow`, `TableHeader`, `TableCell`). Registered in [Editor.vue](../frontend/src/components/Editor/Editor.vue) with `resizable: false` — no `colwidth` attrs to leak through serialization. The `tiptap-markdown` 0.9.0 serializer already handles GFM table emit; no custom serializer needed.
+- **Toolbar**: insert table (3×2 with header row), add column / add row / delete column / delete row / delete table. Non-insert buttons disabled outside a table. Lives in a new section after the lists/HR group in [EditorToolbar.vue](../frontend/src/components/Editor/EditorToolbar.vue).
+- **Round-trip fixture**: [tests/round-trip/fixtures/tables.md](../frontend/tests/round-trip/fixtures/tables.md) — three cases (simple table, inline formatting in cells incl. bold/italic/code/link/strike, single column). Wired into the fixture array; both stability and byte-identical assertions pass.
+- **Editor styles**: borders, header background, table wrapper overflow-x, ProseMirror `selectedCell` highlight.
+
+**GFM constraints surfaced** (not handled in this slice — to address before closing M3):
+1. **Cell background colour** (called out in the M3 roadmap line) cannot survive GFM round-trip without raw HTML in cells or sidecar metadata. R1 says it has to be redesigned or dropped — open question.
+2. **Per-column alignment** (`:---`, `:---:`, `---:`) is GFM-expressible but the bundled serializer always emits plain `---`. Currently a no-op information loss that nobody loses sleep over, but worth recording.
+3. **Column resize** (also in the M3 line) — `resizable: false` for now, since widths can't round-trip. Could be revisited as a per-session presentational hint that's discarded on save (no information loss in the file).
+
+**Pre-flight**: frontend 59/59 tests pass (11 new round-trip assertions across the table fixture), vue-tsc clean, eslint clean (1 pre-existing `v-html` warning), prettier clean.
 
 ### 2026-05-02 — M2 Diff view + external-edit watcher closed out
 

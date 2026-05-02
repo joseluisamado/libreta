@@ -79,8 +79,8 @@ A milestone-based plan, not a calendar. Each milestone is a coherent slice of va
 
 **Goal**: Confluence-grade table editing, file uploads, full-text search.
 
-- [ ] Tiptap table extension with column resize, header row, cell background colour
-- [ ] Tables round-trip through GFM markdown without information loss
+- [x] Tiptap table extension with header row, insert/add/delete row & column controls (column resize and cell background colour deferred — see PROGRESS 2026-05-02)
+- [x] Tables round-trip through GFM markdown without information loss
 - [ ] Image upload: drag & drop, paste from clipboard, "insert image" button
 - [ ] Arbitrary file upload as attachment (PDFs, zips, etc.) with download links
 - [ ] Attachment storage layout per `ARCHITECTURE.md` "Filesystem layout" (`assets/` partitioned by upload date)

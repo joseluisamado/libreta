@@ -370,5 +370,142 @@
         <line x1="4" y1="12" x2="20" y2="12" />
       </svg>
     </button>
+
+    <!-- Separator -->
+    <span class="w-px h-5 bg-slate-200 mx-1" />
+
+    <!-- Table controls -->
+    <button
+      type="button"
+      class="p-1.5 rounded hover:bg-slate-100 text-slate-600"
+      title="Insert table"
+      @click="run(editor, (e) => e.commands.insertTable({ rows: 3, cols: 2, withHeaderRow: true }))"
+    >
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        class="w-4 h-4"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      >
+        <rect x="3" y="4" width="18" height="16" rx="1" />
+        <line x1="3" y1="10" x2="21" y2="10" />
+        <line x1="12" y1="4" x2="12" y2="20" />
+      </svg>
+    </button>
+    <button
+      type="button"
+      class="p-1.5 rounded hover:bg-slate-100 text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed"
+      title="Add column"
+      :disabled="!editor?.isActive('table')"
+      @click="run(editor, (e) => e.commands.addColumnAfter())"
+    >
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        class="w-4 h-4"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      >
+        <rect x="3" y="4" width="10" height="16" rx="1" />
+        <line x1="18" y1="9" x2="18" y2="15" />
+        <line x1="15" y1="12" x2="21" y2="12" />
+      </svg>
+    </button>
+    <button
+      type="button"
+      class="p-1.5 rounded hover:bg-slate-100 text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed"
+      title="Add row"
+      :disabled="!editor?.isActive('table')"
+      @click="run(editor, (e) => e.commands.addRowAfter())"
+    >
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        class="w-4 h-4"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      >
+        <rect x="3" y="4" width="18" height="10" rx="1" />
+        <line x1="9" y1="19" x2="15" y2="19" />
+        <line x1="12" y1="16" x2="12" y2="22" />
+      </svg>
+    </button>
+    <button
+      type="button"
+      class="p-1.5 rounded hover:bg-slate-100 text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed"
+      title="Delete column"
+      :disabled="!editor?.isActive('table')"
+      @click="run(editor, (e) => e.commands.deleteColumn())"
+    >
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        class="w-4 h-4"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      >
+        <rect x="3" y="4" width="10" height="16" rx="1" />
+        <line x1="16" y1="9" x2="20" y2="13" />
+        <line x1="20" y1="9" x2="16" y2="13" />
+      </svg>
+    </button>
+    <button
+      type="button"
+      class="p-1.5 rounded hover:bg-slate-100 text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed"
+      title="Delete row"
+      :disabled="!editor?.isActive('table')"
+      @click="run(editor, (e) => e.commands.deleteRow())"
+    >
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        class="w-4 h-4"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      >
+        <rect x="3" y="4" width="18" height="10" rx="1" />
+        <line x1="9" y1="18" x2="13" y2="22" />
+        <line x1="13" y1="18" x2="9" y2="22" />
+      </svg>
+    </button>
+    <button
+      type="button"
+      class="p-1.5 rounded hover:bg-slate-100 text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed"
+      title="Delete table"
+      :disabled="!editor?.isActive('table')"
+      @click="run(editor, (e) => e.commands.deleteTable())"
+    >
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        class="w-4 h-4"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      >
+        <rect x="3" y="4" width="18" height="16" rx="1" />
+        <line x1="3" y1="10" x2="21" y2="10" />
+        <line x1="12" y1="4" x2="12" y2="20" />
+        <line x1="6" y1="2" x2="18" y2="22" stroke="#dc2626" />
+      </svg>
+    </button>
   </div>
 </template>

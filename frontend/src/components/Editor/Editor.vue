@@ -5,6 +5,7 @@
   import TaskList from '@tiptap/extension-task-list'
   import TaskItem from '@tiptap/extension-task-item'
   import Link from '@tiptap/extension-link'
+  import { Table, TableRow, TableHeader, TableCell } from '@tiptap/extension-table'
   import { Markdown } from 'tiptap-markdown'
   import type { Editor as TiptapEditor } from '@tiptap/core'
   import { getMarkdownFromStorage } from '@/markdownStorage'
@@ -35,6 +36,12 @@
         openOnClick: false,
         autolink: true,
       }),
+      Table.configure({
+        resizable: false,
+      }),
+      TableRow,
+      TableHeader,
+      TableCell,
       Markdown.configure({
         html: false,
       }),
@@ -197,5 +204,43 @@
 
   .libreta-editor :deep(ul[data-type='taskList'] li label) {
     margin-top: 0.25rem;
+  }
+
+  .libreta-editor :deep(table) {
+    border-collapse: collapse;
+    margin: 0.75rem 0;
+    width: auto;
+    table-layout: fixed;
+    overflow: hidden;
+  }
+
+  .libreta-editor :deep(table td),
+  .libreta-editor :deep(table th) {
+    border: 1px solid #cbd5e1;
+    padding: 0.4rem 0.6rem;
+    vertical-align: top;
+    min-width: 4rem;
+  }
+
+  .libreta-editor :deep(table th) {
+    background-color: #f1f5f9;
+    font-weight: 600;
+    text-align: left;
+  }
+
+  .libreta-editor :deep(.tableWrapper) {
+    overflow-x: auto;
+  }
+
+  .libreta-editor :deep(.selectedCell::after) {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: rgba(37, 99, 235, 0.12);
+    pointer-events: none;
+  }
+
+  .libreta-editor :deep(table .selectedCell) {
+    position: relative;
   }
 </style>

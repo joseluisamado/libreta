@@ -4,6 +4,7 @@ import StarterKit from '@tiptap/starter-kit'
 import TaskList from '@tiptap/extension-task-list'
 import TaskItem from '@tiptap/extension-task-item'
 import Link from '@tiptap/extension-link'
+import { Table, TableRow, TableHeader, TableCell } from '@tiptap/extension-table'
 import { Markdown } from 'tiptap-markdown'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
@@ -22,6 +23,7 @@ const fixtures = [
   'mixed.md',
   'blank-lines.md',
   'math-passthrough.md',
+  'tables.md',
 ]
 
 function readFixture(name: string): string {
@@ -44,6 +46,12 @@ function createEditor() {
         openOnClick: false,
         autolink: true,
       }),
+      Table.configure({
+        resizable: false,
+      }),
+      TableRow,
+      TableHeader,
+      TableCell,
       Markdown.configure({
         html: false,
       }),
