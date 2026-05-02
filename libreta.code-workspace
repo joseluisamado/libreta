@@ -1,0 +1,15 @@
+{
+  "folders": [
+    {
+      "name": "libreta (code)",
+      "path": "."
+    },
+    {
+      "name": "libreta (content)",
+      "path": "data/content"
+    }
+  ],
+  "settings": {
+    "git.repositoryScanMaxDepth": 0
+  }
+}
