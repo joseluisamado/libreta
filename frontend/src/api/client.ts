@@ -1,4 +1,4 @@
-import type { PageMove, PageNode, PageRead, PageWrite } from './types'
+import type { HistoryEntry, PageMove, PageNode, PageRead, PageWrite } from './types'
 
 const BASE = '/api/v1'
 
@@ -37,6 +37,10 @@ async function requestNoContent(path: string, init?: RequestInit): Promise<void>
 
 export function deletePage(path: string): Promise<void> {
   return requestNoContent(`/pages/${path}`, { method: 'DELETE' })
+}
+
+export function getPageHistory(path: string): Promise<HistoryEntry[]> {
+  return request<HistoryEntry[]>(`/pages/${path}/history`)
 }
 
 export function movePage(path: string, data: PageMove): Promise<PageRead> {

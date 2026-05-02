@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pygit2
 
 from libreta.errors import ContentRepoUnavailableError
+from libreta.models import HistoryEntry
 
 _lock: asyncio.Lock | None = None
 
@@ -144,6 +146,60 @@ async def move_commit(
     is_directory_move: bool = False,
 ) -> None:
     async with _get_lock():
-        await asyncio.to_thread(
-            _move_commit_sync, repo, old_rel, new_rel, is_directory_move
-        )
+        await asyncio.to_thread(_move_commit_sync, repo, old_rel, new_rel, is_directory_move)
+
+
+# ── history ─────────────────────────────────────────────────────────────
+
+MAX_HISTORY = 50
+
+
+def _affected_paths_for_commit(
+    repo: pygit2.Repository, commit: pygit2.Commit, rel_path: str
+) -> bool:
+    """Return True if *rel_path* was touched in *commit*."""
+    if commit.parents:
+        parent = commit.parents[0]
+        diff = parent.tree.diff_to_tree(commit.tree, context_lines=0)
+        for patch in diff:
+            if patch is None:
+                continue
+            if patch.delta.old_file.path == rel_path:
+                return True
+            if patch.delta.new_file.path == rel_path:
+                return True
+    else:
+        # Root commit — check if the file exists in the tree.
+        try:
+            commit.tree[rel_path]
+            return True
+        except KeyError:
+            return False
+    return False
+
+
+def _get_file_history_sync(repo: pygit2.Repository, rel_path: str) -> list[HistoryEntry]:
+    try:
+        head = repo.head
+    except (pygit2.GitError, KeyError):
+        return []
+
+    entries: list[HistoryEntry] = []
+    for commit in repo.walk(head.target, pygit2.enums.SortMode.TIME):
+        if _affected_paths_for_commit(repo, commit, rel_path):
+            entries.append(
+                HistoryEntry(
+                    sha=str(commit.id)[:7],
+                    message=commit.message.split("\n", 1)[0].strip(),
+                    author=commit.author.name,
+                    timestamp=datetime.fromtimestamp(commit.author.time, tz=UTC),
+                )
+            )
+        if len(entries) >= MAX_HISTORY:
+            break
+
+    return entries
+
+
+async def get_file_history(repo: pygit2.Repository, rel_path: str) -> list[HistoryEntry]:
+    return await asyncio.to_thread(_get_file_history_sync, repo, rel_path)

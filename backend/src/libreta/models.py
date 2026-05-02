@@ -37,6 +37,13 @@ class PageNode(BaseModel):
     children: list[PageNode] = Field(default_factory=list)
 
 
+class HistoryEntry(BaseModel):
+    sha: str  # first 7 chars
+    message: str  # first line
+    author: str
+    timestamp: datetime
+
+
 class HealthResponse(BaseModel):
     status: str
 

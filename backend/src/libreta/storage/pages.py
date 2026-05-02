@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import logging
+from collections import Counter
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -11,6 +13,8 @@ from frontmatter import Post
 from libreta.errors import PageAlreadyExistsError, PageNotEmptyError, PageNotFoundError
 from libreta.models import PageMeta, PageNode, PageRead
 from libreta.storage.paths import normalize_page_path, page_to_file
+
+logger = logging.getLogger(__name__)
 
 
 def _parse_meta(raw: dict[str, Any], fallback_title: str) -> PageMeta:
@@ -115,6 +119,40 @@ def _write_page_sync(
     if "tags" in existing_meta:
         metadata["tags"] = existing_meta["tags"]
 
+    # Derive tags on first save when the page has no tags yet.
+    if not existed and not metadata.get("tags"):
+        try:
+            from libreta.tagging import (
+                HEADING_BOOST,
+                TITLE_BOOST,
+                build_corpus_df,
+                good_term,
+                heading_terms,
+                score_page,
+                strip_markup,
+                title_terms,
+                tokenize,
+            )
+
+            df, n_docs = build_corpus_df(content_dir)
+
+            clean_body = strip_markup(body)
+            bag: list[str] = []
+            bag.extend(t for t in tokenize(clean_body) if good_term(t))
+            for t in heading_terms(body):
+                if good_term(t):
+                    bag.extend([t] * HEADING_BOOST)
+            for t in title_terms(metadata):
+                if good_term(t):
+                    bag.extend([t] * TITLE_BOOST)
+            tf = Counter(bag)
+
+            chosen = score_page(tf, df, n_docs)
+            if chosen:
+                metadata["tags"] = chosen
+        except Exception:
+            logger.warning("tag derivation failed for %s", raw_path, exc_info=True)
+
     # Write
     file.parent.mkdir(parents=True, exist_ok=True)
     post = Post(body, **metadata)
@@ -139,9 +177,7 @@ def _write_page_sync(
 async def write_page(
     content_dir: Path, raw_path: str, body: str, prefer_index: bool = False
 ) -> tuple[PageRead, str]:
-    return await asyncio.to_thread(
-        _write_page_sync, content_dir, raw_path, body, prefer_index
-    )
+    return await asyncio.to_thread(_write_page_sync, content_dir, raw_path, body, prefer_index)
 
 
 def _delete_page_sync(content_dir: Path, raw_path: str) -> str:
@@ -182,9 +218,7 @@ async def delete_page(content_dir: Path, raw_path: str) -> str:
     return await asyncio.to_thread(_delete_page_sync, content_dir, raw_path)
 
 
-def _move_page_sync(
-    content_dir: Path, old_raw: str, new_raw: str
-) -> tuple[str, str, bool]:
+def _move_page_sync(content_dir: Path, old_raw: str, new_raw: str) -> tuple[str, str, bool]:
     old_page = normalize_page_path(old_raw)
     new_page = normalize_page_path(new_raw)
     old_file = page_to_file(content_dir, old_page)
@@ -218,9 +252,7 @@ def _move_page_sync(
     )
 
 
-async def move_page(
-    content_dir: Path, old_raw: str, new_raw: str
-) -> tuple[str, str, bool]:
+async def move_page(content_dir: Path, old_raw: str, new_raw: str) -> tuple[str, str, bool]:
     return await asyncio.to_thread(_move_page_sync, content_dir, old_raw, new_raw)
 
 

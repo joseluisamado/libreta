@@ -28,6 +28,13 @@ export interface PageNode {
   children: PageNode[]
 }
 
+export interface HistoryEntry {
+  sha: string
+  message: string
+  author: string
+  timestamp: string
+}
+
 export interface ApiError {
   error: string
   detail: string

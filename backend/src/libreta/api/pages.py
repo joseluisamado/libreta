@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends
 
 from libreta.config import Settings
 from libreta.deps import get_settings
-from libreta.models import PageMove, PageNode, PageRead, PageWrite
+from libreta.models import HistoryEntry, PageMove, PageNode, PageRead, PageWrite
 from libreta.storage.pages import (
     delete_page as delete_page_storage,
     move_page as move_page_storage,
@@ -16,6 +16,7 @@ from libreta.storage.paths import normalize_page_path, page_to_file
 from libreta.storage.repo import (
     commit_page,
     delete_commit,
+    get_file_history,
     move_commit,
     open_repo,
 )
@@ -44,6 +45,22 @@ async def move_page(
     return await read_page(settings.content_dir, body.new_path)
 
 
+# NOTE: /{path:path}/history must be registered before /{path:path} so that
+# the literal "/history" suffix takes priority over the greedy path parameter.
+@router.get("/{path:path}/history", response_model=list[HistoryEntry])
+async def get_page_history(
+    path: str,
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> list[HistoryEntry]:
+    try:
+        file_path = page_to_file(settings.content_dir, normalize_page_path(path))
+    except Exception:
+        return []
+    rel_path = str(file_path.relative_to(settings.content_dir))
+    repo = open_repo(settings.content_dir)
+    return await get_file_history(repo, rel_path)
+
+
 @router.get("/{path:path}", response_model=PageRead)
 async def get_page(
     path: str,
@@ -58,9 +75,7 @@ async def put_page(
     body: PageWrite,
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> PageRead:
-    page, verb = await write_page(
-        settings.content_dir, path, body.body, prefer_index=body.is_index
-    )
+    page, verb = await write_page(settings.content_dir, path, body.body, prefer_index=body.is_index)
     # Compute the file path relative to content_dir for the commit message
     file_path = page_to_file(settings.content_dir, normalize_page_path(path))
     rel_path = str(file_path.relative_to(settings.content_dir))

@@ -130,6 +130,49 @@ def test_put_page_preserves_frontmatter(client: TestClient) -> None:
     assert body["meta"]["created"] is not None
 
 
+# ── Tag derivation tests ────────────────────────────────────────────────
+
+
+def test_put_page_derives_tags_on_create(client: TestClient) -> None:
+    """A new page with no tags should get tags derived from its body."""
+    r = client.put(
+        "/api/v1/pages/guides/deployment",
+        json={
+            "body": (
+                "# Deployment Guide\n\n"
+                "This guide covers server deployment and configuration.\n\n"
+                "## Server Setup\n\n"
+                "Setting up the server requires careful configuration.\n\n"
+                "## Deployment Steps\n\n"
+                "Follow the deployment steps for production.\n"
+            )
+        },
+    )
+    assert r.status_code == 200
+    body = r.json()
+    tags = body["meta"]["tags"]
+    assert isinstance(tags, list)
+    # We expect at least 2 tags to be derived from the deployment-heavy body
+    assert len(tags) >= 2
+    # Common terms like "server", "deployment", "configuration" should be in the top
+    expected = {"server", "deployment", "configuration", "guide", "setup", "production", "steps"}
+    assert len(set(tags) & expected) >= 1
+
+
+def test_put_page_does_not_derive_tags_on_update(client: TestClient) -> None:
+    """An existing page with tags should keep its original tags on update."""
+    # Pizza Dough already has tags: [food, pizza]
+    r = client.put(
+        "/api/v1/pages/recipes/pizza-dough",
+        json={"body": "# A completely different topic\n\npython async server"},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    # Original tags must be preserved
+    assert "food" in body["meta"]["tags"]
+    assert "pizza" in body["meta"]["tags"]
+
+
 # ── DELETE tests ───────────────────────────────────────────────────────
 
 

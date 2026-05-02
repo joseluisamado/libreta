@@ -61,7 +61,11 @@
   watch(path, load, { immediate: true })
 
   function slugify(name: string): string {
-    return name.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
+    return name
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, '-')
+      .replace(/[^a-z0-9-]/g, '')
   }
 
   async function createPage(): Promise<void> {
@@ -134,7 +138,7 @@
   <RouterLink
     v-if="page"
     :to="`/edit/${page.path}`"
-    class="fixed top-3 right-14 z-30 bg-white/90 backdrop-blur border border-slate-200 rounded-md p-2 hover:bg-slate-50 shadow-sm"
+    class="fixed top-3 right-24 z-30 bg-white/90 backdrop-blur border border-slate-200 rounded-md p-2 hover:bg-slate-50 shadow-sm"
     title="Edit this page"
     aria-label="Edit this page"
   >
@@ -155,14 +159,34 @@
   <article class="mx-auto px-8 py-6" :class="width === 'wide' ? 'max-w-none' : 'max-w-3xl'">
     <p v-if="error" class="text-red-600">{{ error }}</p>
     <template v-else-if="page">
-      <Breadcrumbs :path="page.path" />
-      <header v-if="!bodyHasMatchingH1 || page.meta.tags.length" class="mb-4">
-        <h1 v-if="!bodyHasMatchingH1" class="text-3xl font-bold">{{ page.meta.title }}</h1>
-        <p v-if="page.meta.tags.length" class="mt-2 text-xs text-slate-500">
-          <span v-for="t in page.meta.tags" :key="t" class="mr-2">#{{ t }}</span>
-        </p>
+      <header class="flex items-center justify-between mb-4">
+        <Breadcrumbs :path="page.path" />
+        <RouterLink
+          :to="`/history/${page.path}`"
+          class="text-xs text-slate-400 hover:text-slate-600 flex items-center gap-1 shrink-0"
+          title="Page history"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            class="w-3.5 h-3.5"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <circle cx="12" cy="12" r="10" />
+            <polyline points="12 6 12 12 16 14" />
+          </svg>
+          History
+        </RouterLink>
       </header>
+      <h1 v-if="!bodyHasMatchingH1" class="text-3xl font-bold">{{ page.meta.title }}</h1>
       <div class="prose" v-html="html" />
+      <p v-if="page.meta.tags.length" class="mt-8 text-xs text-slate-500">
+        <span v-for="t in page.meta.tags" :key="t" class="mr-2">#{{ t }}</span>
+      </p>
       <section v-if="isDirectory" class="mt-8 border-t border-slate-200 pt-4">
         <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-500 mb-2">
           In this folder
@@ -184,7 +208,11 @@
           </button>
         </div>
         <ul v-if="directoryChildren.length" class="text-sm space-y-1">
-          <li v-for="child in directoryChildren" :key="child.path" class="flex items-center gap-1 group">
+          <li
+            v-for="child in directoryChildren"
+            :key="child.path"
+            class="flex items-center gap-1 group"
+          >
             <RouterLink
               :to="`/w/${child.path}`"
               class="flex items-center flex-1 min-w-0 text-slate-700 hover:text-blue-600 hover:underline"
@@ -201,7 +229,16 @@
               aria-label="Rename"
               @click="renameChild(child.path)"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                class="w-3.5 h-3.5"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
                 <path d="M12 20h9" />
                 <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
               </svg>
@@ -213,9 +250,20 @@
               aria-label="Delete"
               @click="deleteChild(child.path)"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                class="w-3.5 h-3.5"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
                 <polyline points="3 6 5 6 21 6" />
-                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                <path
+                  d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"
+                />
                 <line x1="10" y1="11" x2="10" y2="17" />
                 <line x1="14" y1="11" x2="14" y2="17" />
               </svg>

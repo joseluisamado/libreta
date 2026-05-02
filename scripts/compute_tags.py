@@ -7,7 +7,7 @@ left alone.
 
 Run via:
 
-    uv run python scripts/compute_tags.py [--dry-run] [--force]
+    cd backend && uv run python ../scripts/compute_tags.py [--dry-run] [--force]
 
 Flags:
     --dry-run   Print the computed tags without writing.
@@ -17,97 +17,44 @@ Flags:
 from __future__ import annotations
 
 import argparse
-import math
-import re
 import sys
 from collections import Counter
-from collections.abc import Iterable
 from pathlib import Path
 
 import frontmatter
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+# Ensure libreta is importable when running as a standalone script.
+sys.path.insert(0, str(PROJECT_ROOT / "backend" / "src"))
+
+from libreta.tagging import (  # noqa: E402
+    MAX_TAGS,
+    MIN_TAGS,
+    build_corpus_df,
+    good_term,
+    heading_terms,
+    score_page,
+    strip_markup,
+    title_terms,
+    tokenize,
+)
+
 DEFAULT_PAGES = PROJECT_ROOT / "data" / "content" / "pages"
 
-MAX_TAGS = 5
-MIN_TAGS = 2
-MIN_TERM_LEN = 3
-MAX_TERM_LEN = 24
-
-# Common English + DokuWiki/markdown noise. Keep small; let TF-IDF do most of
-# the work. Anything truly common will get penalised by document frequency.
-STOPWORDS = {
-    "the", "and", "for", "are", "but", "not", "you", "all", "can", "had",
-    "her", "was", "one", "our", "out", "day", "get", "has", "him", "his",
-    "how", "man", "new", "now", "old", "see", "two", "way", "who", "boy",
-    "did", "its", "let", "put", "say", "she", "too", "use", "any", "this",
-    "that", "with", "from", "have", "more", "your", "they", "them", "what",
-    "when", "will", "into", "than", "then", "some", "just", "like", "also",
-    "only", "very", "most", "such", "even", "much", "each", "many", "make",
-    "made", "over", "back", "down", "still", "after", "before", "where",
-    "while", "which", "would", "could", "should", "their", "there", "these",
-    "those", "other", "about", "between", "because", "through", "during",
-    "https", "http", "www", "com", "org", "net", "html", "png", "jpg", "jpeg",
-    "gif", "svg", "pdf", "zip", "txt", "doc", "code", "block", "image",
-    "imported", "page", "pages", "title", "tags", "created", "updated",
-    "wiki", "doku", "see", "etc", "via", "per", "yes", "let", "lets",
-    "using", "used", "uses", "use", "thing", "things", "stuff", "really",
-}
-
-TOKEN_RE = re.compile(r"[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ0-9_-]{2,}")
-
-
-def tokenize(text: str) -> list[str]:
-    return [t.lower() for t in TOKEN_RE.findall(text)]
-
-
-def strip_markup(text: str) -> str:
-    """Remove fenced code, inline code, and link/image markup so they don't dominate."""
-    text = re.sub(r"```[\s\S]*?```", " ", text)
-    text = re.sub(r"`[^`]+`", " ", text)
-    text = re.sub(r"!\[[^\]]*\]\([^)]+\)", " ", text)  # images
-    text = re.sub(r"\[[^\]]*\]\([^)]+\)", " ", text)  # links
-    text = re.sub(r"https?://\S+", " ", text)
-    return text
-
-
-def heading_terms(text: str) -> list[str]:
-    out: list[str] = []
-    for line in text.splitlines():
-        stripped = line.lstrip()
-        if stripped.startswith("#"):
-            out.extend(tokenize(stripped.lstrip("#").strip()))
-    return out
-
-
-def title_terms(meta: dict[str, object]) -> list[str]:
-    title = meta.get("title")
-    if not title:
-        return []
-    return tokenize(str(title))
-
-
-def good_term(t: str) -> bool:
-    if t in STOPWORDS:
-        return False
-    if len(t) < MIN_TERM_LEN or len(t) > MAX_TERM_LEN:
-        return False
-    if t.isdigit():
-        return False
-    return True
-
-
-def iter_md_files(root: Path) -> Iterable[Path]:
-    for path in sorted(root.rglob("*.md")):
-        yield path
+HEADING_BOOST = 3
+TITLE_BOOST = 4
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--pages", type=Path, default=DEFAULT_PAGES)
     parser.add_argument("--dry-run", action="store_true")
-    parser.add_argument("--force", action="store_true",
-                        help="Overwrite existing tags (default: skip pages that have any)")
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Overwrite existing tags (default: skip pages that have any)",
+    )
     args = parser.parse_args()
 
     pages_dir: Path = args.pages.resolve()
@@ -115,26 +62,30 @@ def main() -> int:
         print(f"pages dir not found: {pages_dir}", file=sys.stderr)
         return 2
 
-    files = list(iter_md_files(pages_dir))
+    files = list(sorted(pages_dir.rglob("*.md")))
     if not files:
         print("no pages found")
         return 0
 
-    # Pass 1: tokenize each page (with boosting for headings + title).
-    # Boost = duplicate the term in the bag so its TF goes up.
-    HEADING_BOOST = 3
-    TITLE_BOOST = 4
+    # Build document-frequency corpus
+    df, n_docs = build_corpus_df(PROJECT_ROOT / "data" / "content")
 
-    docs: list[tuple[Path, frontmatter.Post, Counter[str]]] = []
-    df: Counter[str] = Counter()  # document frequency
-
+    written = 0
+    skipped = 0
     for f in files:
         try:
             post = frontmatter.load(f)
-        except Exception as e:  # noqa: BLE001 — keep going on bad pages
+        except Exception as e:  # noqa: BLE001
             print(f"  warn: failed to parse {f.relative_to(pages_dir)}: {e}", file=sys.stderr)
             continue
 
+        existing = post.metadata.get("tags") or []
+        is_placeholder = isinstance(existing, list) and set(existing) <= {"imported"}
+        if existing and not is_placeholder and not args.force:
+            skipped += 1
+            continue
+
+        # Tokenize this page
         body = strip_markup(post.content)
         bag: list[str] = []
         bag.extend(t for t in tokenize(body) if good_term(t))
@@ -145,46 +96,8 @@ def main() -> int:
             if good_term(t):
                 bag.extend([t] * TITLE_BOOST)
         tf = Counter(bag)
-        docs.append((f, post, tf))
-        for term in tf:
-            df[term] += 1
 
-    n_docs = len(docs)
-    if n_docs == 0:
-        print("no readable pages")
-        return 0
-
-    # Pass 2: score and write.
-    written = 0
-    skipped = 0
-    for f, post, tf in docs:
-        existing = post.metadata.get("tags") or []
-        # Treat the lone "imported" placeholder (added by the DokuWiki importer)
-        # as if no real tags exist yet — overwrite without --force.
-        is_placeholder = isinstance(existing, list) and set(existing) <= {"imported"}
-        if existing and not is_placeholder and not args.force:
-            skipped += 1
-            continue
-
-        # TF-IDF: score term = tf * log(N / df)
-        scores: list[tuple[str, float]] = []
-        for term, count in tf.items():
-            idf = math.log((n_docs + 1) / (df[term] + 1)) + 1
-            scores.append((term, count * idf))
-        scores.sort(key=lambda x: (-x[1], x[0]))
-
-        chosen: list[str] = []
-        seen_stems: set[str] = set()
-        for term, _ in scores:
-            # de-dup near-stems (e.g. "python" vs "pythons")
-            stem = term.rstrip("s")
-            if stem in seen_stems:
-                continue
-            seen_stems.add(stem)
-            chosen.append(term)
-            if len(chosen) >= MAX_TAGS:
-                break
-
+        chosen = score_page(tf, df, n_docs)
         if len(chosen) < MIN_TAGS:
             print(f"  skip (too few terms): {f.relative_to(pages_dir)}")
             continue
