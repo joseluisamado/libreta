@@ -1,6 +1,6 @@
 [project]
 name = "libreta"
-version = "0.0.1"
+version = "0.1.0"
 description = "Self-hosted wiki backed by a git repo of markdown files."
 requires-python = ">=3.12"
 dependencies = [

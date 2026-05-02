@@ -8,6 +8,7 @@
   import { useReadingWidth } from '@/composables/usePrefs'
   import Breadcrumbs from '@/components/Breadcrumbs.vue'
   import PageToolbar from '@/components/PageToolbar.vue'
+  import PageToc from '@/components/PageToc.vue'
 
   const { width } = useReadingWidth()
 
@@ -68,6 +69,7 @@
 
 <template>
   <PageToolbar />
+  <PageToc v-if="page" :html="html" />
   <article class="mx-auto px-8 py-6" :class="width === 'wide' ? 'max-w-none' : 'max-w-3xl'">
     <p v-if="error" class="text-red-600">{{ error }}</p>
     <template v-else-if="page">

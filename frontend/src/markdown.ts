@@ -8,6 +8,7 @@ type RenderRule = NonNullable<Inst['renderer']['rules']['image']>
 type StateBlock = Parameters<Parameters<Inst['block']['ruler']['after']>[2]>[0]
 type StateInline = Parameters<Parameters<Inst['inline']['ruler']['after']>[2]>[0]
 import taskLists from 'markdown-it-task-lists'
+import anchor from 'markdown-it-anchor'
 import hljs from 'highlight.js'
 import katex from 'katex'
 import 'katex/dist/katex.min.css'
@@ -30,7 +31,20 @@ const md = new MarkdownIt({
     const escaped = str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     return `<pre class="hljs"><code class="hljs">${escaped}</code></pre>`
   },
-}).use(taskLists, { enabled: false, label: false })
+})
+  .use(taskLists, { enabled: false, label: false })
+  .use(anchor, { permalink: false, slugify: (s: string) => slugify(s) })
+
+function slugify(text: string): string {
+  return text
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+}
+
+export { slugify }
 
 // --- KaTeX math plugin (supports inline `$x$` and block `$$ ... $$`) ---
 

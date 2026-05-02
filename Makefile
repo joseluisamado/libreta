@@ -16,10 +16,16 @@
         up up-dev rebuild rebuild-dev down logs ps \
         clean clean-backend clean-frontend \
         import-dokuwiki import-dokuwiki-dry \
-        compute-tags compute-tags-dry
+        compute-tags compute-tags-dry \
+        version version-bump version-set sync-version \
+        build-prod build-prod-frontend release
 
 BACKEND   := backend
 FRONTEND  := frontend
+
+# Single source of truth for the project version. Release targets bump it
+# and propagate to backend/pyproject.toml and frontend/package.json.
+VERSION := $(shell cat VERSION 2>/dev/null)
 
 # Compose invocation: dev stacks layer docker-compose.dev.yml on top of the
 # base file so the api service gets a source bind-mount and uvicorn --reload.
@@ -158,3 +164,41 @@ compute-tags: ## Compute frontmatter tags for any untagged pages
 
 compute-tags-dry: ## Dry-run tag computation (no files written)
 	cd $(BACKEND) && uv run python ../scripts/compute_tags.py --dry-run $(if $(FORCE),--force)
+
+# ---------- versioning + release ----------
+
+version: ## Print the current project version
+	@cd $(BACKEND) && uv run python ../scripts/sync_version.py --print
+
+sync-version: ## Propagate the VERSION file into pyproject.toml + package.json
+	cd $(BACKEND) && uv run python ../scripts/sync_version.py
+
+version-bump: ## Bump the VERSION (LEVEL=patch|minor|major) and propagate
+	@if [ -z "$(LEVEL)" ]; then echo "usage: make version-bump LEVEL=patch|minor|major" && exit 2; fi
+	cd $(BACKEND) && uv run python ../scripts/sync_version.py --bump $(LEVEL)
+
+version-set: ## Set the VERSION (NEW=X.Y.Z) and propagate
+	@if [ -z "$(NEW)" ]; then echo "usage: make version-set NEW=1.2.3" && exit 2; fi
+	cd $(BACKEND) && uv run python ../scripts/sync_version.py --set $(NEW)
+
+build-prod: build-prod-frontend ## Build prod images tagged :VERSION and :latest (no bump)
+	@echo "→ building libreta-api:$(VERSION)"
+	docker build -t libreta-api:$(VERSION) -t libreta-api:latest $(BACKEND)
+	@echo "→ images:"
+	@docker images libreta-api --format "  {{.Repository}}:{{.Tag}}  ({{.Size}})"
+	@docker images libreta-frontend --format "  {{.Repository}}:{{.Tag}}  ({{.Size}})"
+
+build-prod-frontend: ## Build the frontend static bundle into a runnable image
+	@echo "→ building libreta-frontend:$(VERSION)"
+	docker build -f $(FRONTEND)/Dockerfile.prod -t libreta-frontend:$(VERSION) -t libreta-frontend:latest $(FRONTEND)
+
+release: ## Bump VERSION (LEVEL=patch|minor|major), build images, tag git
+	@if [ -z "$(LEVEL)" ]; then echo "usage: make release LEVEL=patch|minor|major" && exit 2; fi
+	$(MAKE) version-bump LEVEL=$(LEVEL)
+	$(MAKE) build-prod
+	@new=$$(cat VERSION); \
+	echo "→ tagging git as v$$new"; \
+	git tag -a "v$$new" -m "release v$$new" || echo "  (skipped: already tagged?)"
+	@echo ""
+	@echo "Release v$$(cat VERSION) built locally."
+	@echo "Push: docker push <registry>/libreta-api:$$(cat VERSION) && git push --tags"

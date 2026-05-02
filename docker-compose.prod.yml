@@ -1,0 +1,23 @@
+# Production overlay for docker-compose.yml.
+#
+# Usage (substitute the version you built):
+#
+#   VERSION=$(cat VERSION) docker compose \
+#       -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# The base file's `api` service is reused; this overlay pins the image to a
+# versioned tag (matching what `make build-prod` produced) and adds the
+# frontend nginx service that serves the static bundle on port 80.
+services:
+  api:
+    image: libreta-api:${VERSION:-latest}
+    pull_policy: never  # local-only build for now; remove once a registry is wired
+
+  frontend-prod:
+    image: libreta-frontend:${VERSION:-latest}
+    pull_policy: never
+    restart: unless-stopped
+    ports:
+      - "${LIBRETA_HTTP_PORT:-8080}:80"
+    depends_on:
+      - api

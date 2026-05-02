@@ -2,8 +2,9 @@ import { describe, it, expect } from 'vitest'
 import { renderMarkdown } from '@/markdown'
 
 describe('renderMarkdown', () => {
-  it('renders headings', () => {
-    expect(renderMarkdown('# Hello')).toContain('<h1>Hello</h1>')
+  it('renders headings with stable slug ids', () => {
+    const out = renderMarkdown('# Hello')
+    expect(out).toMatch(/<h1 id="hello"[^>]*>Hello<\/h1>/)
   })
 
   it('renders GFM tables', () => {
