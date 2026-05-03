@@ -10,11 +10,12 @@
     nodes: PageNode[]
     rootNamespace?: string | null
     linkPrefix?: string
+    storageKey?: string
   }>()
 
   // ----- Open/closed state ---------------------------------------------------
 
-  const STORAGE_KEY = 'libreta:tree-open'
+  const STORAGE_KEY = props.storageKey ?? 'libreta:tree-open'
 
   function loadState(): Record<string, boolean> {
     try {
@@ -133,6 +134,7 @@
         :nodes="node.children"
         :root-namespace="childRootNamespace(node)"
         :link-prefix="linkPrefix"
+        :storage-key="storageKey"
         class="ml-3 border-l-2 pl-2"
         :class="railClass(node)"
       />

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-  import { ref } from 'vue'
+  import { ref, watch } from 'vue'
   import { useWatchedStore } from '@/stores/watched'
   import PageTree from '@/components/PageTree.vue'
 
@@ -8,10 +8,45 @@
   const labelInput = ref('')
   const pathInput = ref('')
   const addError = ref<string | null>(null)
-  const expanded = ref<Record<string, boolean>>({})
   const showAddForm = ref(false)
 
+  // ----- Persisted expand/collapse state --------------------------------------
+
+  const STORAGE_KEY = 'libreta:watched-open'
+
+  function loadExpanded(): Record<string, boolean> {
+    try {
+      const raw = window.localStorage.getItem(STORAGE_KEY)
+      if (!raw) return {}
+      const parsed = JSON.parse(raw) as Record<string, boolean>
+      return typeof parsed === 'object' && parsed ? parsed : {}
+    } catch {
+      return {}
+    }
+  }
+
+  const expanded = ref<Record<string, boolean>>(loadExpanded())
+
+  watch(
+    expanded,
+    (s) => {
+      try {
+        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(s))
+      } catch {
+        /* ignore quota / private mode */
+      }
+    },
+    { deep: true },
+  )
+
   store.loadFolders()
+
+  // Reload tree data for any folder that was expanded in a previous session
+  for (const label of Object.keys(expanded.value)) {
+    if (expanded.value[label]) {
+      store.loadTree(label)
+    }
+  }
 
   function toggleExpand(label: string): void {
     if (expanded.value[label]) {
@@ -107,6 +142,7 @@
           v-if="expanded[f.label] && store.trees[f.label]"
           :nodes="store.trees[f.label]!"
           :link-prefix="'/watch/' + f.label"
+          :storage-key="'libreta:tree-watch-' + f.label"
           class="ml-3 border-l-2 border-slate-200 pl-2 mt-0.5"
         />
       </li>
