@@ -20,7 +20,9 @@ def test_search_returns_results(client: TestClient) -> None:
     r = client.get("/api/v1/search", params={"q": "pizza"})
     assert r.status_code == 200
     results = r.json()
-    assert any("pizza" in res["title"].lower() or "pizza" in res["snippet"].lower() for res in results)
+    assert any(
+        "pizza" in res["title"].lower() or "pizza" in res["snippet"].lower() for res in results
+    )
 
 
 def test_search_empty_query_rejected(client: TestClient) -> None:

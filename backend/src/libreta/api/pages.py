@@ -12,6 +12,7 @@ from libreta.models import (
     PageNode,
     PageRead,
     PageWrite,
+    RecentChange,
 )
 from libreta.storage.assets import store_asset
 from libreta.storage.pages import (
@@ -27,6 +28,7 @@ from libreta.storage.repo import (
     delete_commit,
     get_file_diff,
     get_file_history,
+    get_recent_changes,
     move_commit,
     open_repo,
 )
@@ -42,6 +44,17 @@ router = APIRouter(prefix="/pages")
 @router.get("/tree", response_model=list[PageNode])
 async def get_tree(settings: Annotated[Settings, Depends(get_settings)]) -> list[PageNode]:
     return await walk_tree(settings.content_dir)
+
+
+# NOTE: /recent must be registered before /{path:path} routes so that the
+# literal "/recent" suffix isn't captured by the greedy path parameter.
+@router.get("/recent", response_model=list[RecentChange])
+async def get_recent(
+    settings: Annotated[Settings, Depends(get_settings)],
+    limit: int = 20,
+) -> list[RecentChange]:
+    repo = open_repo(settings.content_dir)
+    return await get_recent_changes(repo, limit=limit)
 
 
 # NOTE: /{path:path}/move must be registered before /{path:path} routes so that

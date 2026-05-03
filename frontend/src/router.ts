@@ -1,7 +1,11 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 
 const routes: RouteRecordRaw[] = [
-  { path: '/', redirect: '/w/index' },
+  {
+    path: '/',
+    name: 'dashboard',
+    component: () => import('./views/DashboardView.vue'),
+  },
   {
     path: '/w/:path(.*)*',
     name: 'page',

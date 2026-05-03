@@ -6,6 +6,7 @@ import type {
   PageNode,
   PageRead,
   PageWrite,
+  RecentChange,
   SearchResult,
 } from './types'
 
@@ -22,6 +23,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export function getTree(): Promise<PageNode[]> {
   return request<PageNode[]>('/pages/tree')
+}
+
+export function getRecentChanges(limit = 20): Promise<RecentChange[]> {
+  const qs = new URLSearchParams({ limit: String(limit) }).toString()
+  return request<RecentChange[]>(`/pages/recent?${qs}`)
 }
 
 export function getPage(path: string): Promise<PageRead> {

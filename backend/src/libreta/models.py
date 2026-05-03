@@ -44,6 +44,14 @@ class HistoryEntry(BaseModel):
     timestamp: datetime
 
 
+class RecentChange(BaseModel):
+    sha: str  # first 7 chars
+    message: str  # first line
+    author: str
+    timestamp: datetime
+    path: str  # page path relative to pages/ dir
+
+
 class DiffEntry(BaseModel):
     old_sha: str
     new_sha: str

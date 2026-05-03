@@ -103,7 +103,7 @@
           <line x1="3" y1="18" x2="21" y2="18" />
         </svg>
       </button>
-      <RouterLink to="/w/index" class="hover:underline flex items-center gap-2">
+      <RouterLink to="/" class="hover:underline flex items-center gap-2">
         <img :src="logoUrl" alt="" class="w-6 h-6" />
         <h1 class="text-base font-semibold">Libreta</h1>
       </RouterLink>
@@ -123,7 +123,7 @@
       class="bg-slate-50 border-slate-200 overflow-y-auto overflow-x-hidden p-4 z-40 fixed inset-y-0 left-0 border-r transition-transform duration-200 md:relative md:shrink-0 md:border-r md:block md:translate-x-0 md:inset-auto"
       :class="[drawerOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0', dragging ? 'select-none' : '']"
     >
-      <RouterLink to="/w/index" class="hover:underline flex items-center gap-2 mb-4">
+      <RouterLink to="/" class="hover:underline flex items-center gap-2 mb-4">
         <img :src="logoUrl" alt="" class="w-7 h-7 hidden md:block" />
         <h1 class="text-lg font-semibold hidden md:block">Libreta</h1>
       </RouterLink>

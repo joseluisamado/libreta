@@ -28,8 +28,7 @@
 
   const crumbs = computed<Crumb[]>(() => {
     const segments = props.path.split('/').filter(Boolean)
-    const out: Crumb[] = [{ label: 'Home', to: '/w/index' }]
-    if (props.path === 'index') return out
+    const out: Crumb[] = [{ label: 'Home', to: '/' }]
     let acc = ''
     segments.forEach((seg, i) => {
       acc = acc ? `${acc}/${seg}` : seg

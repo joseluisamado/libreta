@@ -43,6 +43,14 @@ export interface DiffEntry {
   patch: string
 }
 
+export interface RecentChange {
+  sha: string
+  message: string
+  author: string
+  timestamp: string
+  path: string
+}
+
 export interface ApiError {
   error: string
   detail: string

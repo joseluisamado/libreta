@@ -5,11 +5,12 @@ import contextlib
 import difflib
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import cast
 
 import pygit2
 
 from libreta.errors import ContentRepoUnavailableError, PageNotFoundError
-from libreta.models import DiffEntry, HistoryEntry
+from libreta.models import DiffEntry, HistoryEntry, RecentChange
 
 _lock: asyncio.Lock | None = None
 
@@ -153,6 +154,74 @@ async def move_commit(
 # ── history ─────────────────────────────────────────────────────────────
 
 MAX_HISTORY = 50
+MAX_RECENT = 20
+
+
+def _collect_tree_paths(repo: pygit2.Repository, tree: pygit2.Tree, prefix: str = "") -> set[str]:
+    """Return all blob paths recursively in *tree*."""
+    paths: set[str] = set()
+    for entry in tree:
+        name = entry.name or ""
+        entry_path = prefix + name
+        if entry.type_str == "tree":
+            subtree = cast(pygit2.Tree, repo[entry.id])
+            paths.update(_collect_tree_paths(repo, subtree, entry_path + "/"))
+        else:
+            paths.add(entry_path)
+    return paths
+
+
+def _get_recent_changes_sync(
+    repo: pygit2.Repository, limit: int = MAX_RECENT
+) -> list[RecentChange]:
+    try:
+        head = repo.head
+    except (pygit2.GitError, KeyError):
+        return []
+
+    changes: list[RecentChange] = []
+    for commit in repo.walk(head.target, pygit2.enums.SortMode.TIME):
+        # Collect affected paths for this commit
+        if commit.parents:
+            parent = commit.parents[0]
+            diff = parent.tree.diff_to_tree(commit.tree, context_lines=0)
+            paths: set[str] = set()
+            for patch in diff:
+                if patch is None:
+                    continue
+                paths.add(patch.delta.new_file.path)
+                if patch.delta.old_file.path != patch.delta.new_file.path:
+                    paths.add(patch.delta.old_file.path)
+        else:
+            paths = _collect_tree_paths(repo, commit.tree)
+
+        # Filter to .md files under pages/, produce one entry per path
+        for p in sorted(paths):
+            if p.startswith("pages/") and p.endswith(".md") and not p.endswith("/index.md"):
+                page_path = p.removeprefix("pages/").removesuffix(".md")
+            elif p.startswith("pages/") and p.endswith("/index.md"):
+                page_path = p.removeprefix("pages/").removesuffix("/index.md")
+            else:
+                continue
+            changes.append(
+                RecentChange(
+                    sha=str(commit.id)[:7],
+                    message=commit.message.split("\n", 1)[0].strip(),
+                    author=commit.author.name,
+                    timestamp=datetime.fromtimestamp(commit.author.time, tz=UTC),
+                    path=page_path,
+                )
+            )
+        if len(changes) >= limit:
+            break
+
+    return changes[:limit]
+
+
+async def get_recent_changes(
+    repo: pygit2.Repository, limit: int = MAX_RECENT
+) -> list[RecentChange]:
+    return await asyncio.to_thread(_get_recent_changes_sync, repo, limit)
 
 
 def _affected_paths_for_commit(
