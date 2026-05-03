@@ -138,7 +138,7 @@
   <RouterLink
     v-if="page"
     :to="`/edit/${page.path}`"
-    class="fixed top-3 right-24 z-30 bg-white/90 backdrop-blur border border-slate-200 rounded-md p-2 hover:bg-slate-50 shadow-sm"
+    class="fixed top-3 right-14 z-30 bg-white/90 backdrop-blur border border-slate-200 rounded-md p-2 hover:bg-slate-50 shadow-sm"
     title="Edit this page"
     aria-label="Edit this page"
   >
@@ -159,7 +159,7 @@
   <article class="mx-auto px-8 py-6" :class="width === 'wide' ? 'max-w-none' : 'max-w-3xl'">
     <p v-if="error" class="text-red-600">{{ error }}</p>
     <template v-else-if="page">
-      <header class="flex items-center justify-between mb-4">
+      <header class="flex items-center justify-between mb-4" :class="width === 'wide' ? 'pr-32' : ''">
         <Breadcrumbs :path="page.path" />
         <RouterLink
           :to="`/history/${page.path}`"

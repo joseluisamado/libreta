@@ -264,14 +264,23 @@ function patchRenderer(): void {
     self.renderToken(tokens, idx, options)
   const defaultLinkOpen: RenderRule = md.renderer.rules.link_open ?? fallbackLinkOpen
 
+  function isExternalUrl(href: string): boolean {
+    return /^https?:\/\//i.test(href)
+  }
+
   const linkOpenRule: RenderRule = (tokens, idx, options, env, self) => {
     const token = tokens[idx]
     if (token) {
       const hrefIdx = token.attrIndex('href')
       const attr = token.attrs?.[hrefIdx]
-      if (hrefIdx >= 0 && attr && looksLikeAssetHref(attr[1])) {
-        const e = env as RenderEnv
-        attr[1] = resolveAssetUrl(attr[1], e.pagePath ?? '', e.isIndex ?? false)
+      if (hrefIdx >= 0 && attr) {
+        if (looksLikeAssetHref(attr[1])) {
+          const e = env as RenderEnv
+          attr[1] = resolveAssetUrl(attr[1], e.pagePath ?? '', e.isIndex ?? false)
+        } else if (isExternalUrl(attr[1])) {
+          token.attrSet('target', '_blank')
+          token.attrSet('rel', 'noopener noreferrer')
+        }
       }
     }
     return defaultLinkOpen(tokens, idx, options, env, self)
