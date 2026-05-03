@@ -11,7 +11,7 @@ function loadWidth(): Width {
   } catch {
     /* ignore */
   }
-  return 'standard'
+  return 'wide'
 }
 
 const readingWidth = ref<Width>(loadWidth())

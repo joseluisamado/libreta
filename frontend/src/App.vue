@@ -12,7 +12,7 @@
   // ----- Sidebar drag-to-resize --------------------------------------------
 
   const SIDEBAR_WIDTH_KEY = 'libreta:sidebar-width'
-  const DEFAULT_WIDTH = 256
+  const DEFAULT_WIDTH = 340
   const MIN_WIDTH = 160
   const MAX_WIDTH = 480
 

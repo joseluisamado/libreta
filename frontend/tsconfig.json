@@ -14,8 +14,7 @@
     "skipLibCheck": true,
     "jsx": "preserve",
     "types": ["vite/client", "vitest/globals"],
-    "baseUrl": ".",
-    "paths": { "@/*": ["src/*"] }
+    "paths": { "@/*": ["./src/*"] }
   },
   "include": ["src/**/*.ts", "src/**/*.d.ts", "src/**/*.vue", "tests/**/*.ts"]
 }
