@@ -3,11 +3,13 @@
   import { useRoute } from 'vue-router'
   import { useTreeStore } from '@/stores/tree'
   import PageTree from '@/components/PageTree.vue'
+  import WatchedSidebarContent from '@/components/WatchedSidebarContent.vue'
   import logoUrl from '@/assets/logo.svg'
 
   const tree = useTreeStore()
   const route = useRoute()
   const drawerOpen = ref(false)
+  const sidebarTab = ref<'content' | 'watched'>('content')
 
   // ----- Sidebar drag-to-resize --------------------------------------------
 
@@ -121,7 +123,10 @@
     <aside
       :style="{ width: sidebarWidth + 'px' }"
       class="bg-slate-50 border-slate-200 overflow-y-auto overflow-x-hidden p-4 z-40 fixed inset-y-0 left-0 border-r transition-transform duration-200 md:relative md:shrink-0 md:border-r md:block md:translate-x-0 md:inset-auto"
-      :class="[drawerOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0', dragging ? 'select-none' : '']"
+      :class="[
+        drawerOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0',
+        dragging ? 'select-none' : '',
+      ]"
     >
       <RouterLink to="/" class="hover:underline flex items-center gap-2 mb-4">
         <img :src="logoUrl" alt="" class="w-7 h-7 hidden md:block" />
@@ -147,8 +152,42 @@
         </svg>
         Search
       </RouterLink>
-      <p v-if="tree.error" class="text-red-600 text-sm">{{ tree.error }}</p>
-      <PageTree :nodes="tree.nodes" />
+
+      <!-- Tab bar -->
+      <div class="flex gap-1 mb-3">
+        <button
+          type="button"
+          class="flex-1 text-xs px-2 py-1 rounded transition-colors"
+          :class="
+            sidebarTab === 'content'
+              ? 'bg-slate-200 text-slate-800 font-medium'
+              : 'text-slate-500 hover:bg-slate-100'
+          "
+          @click="sidebarTab = 'content'"
+        >
+          Content
+        </button>
+        <button
+          type="button"
+          class="flex-1 text-xs px-2 py-1 rounded transition-colors"
+          :class="
+            sidebarTab === 'watched'
+              ? 'bg-slate-200 text-slate-800 font-medium'
+              : 'text-slate-500 hover:bg-slate-100'
+          "
+          @click="sidebarTab = 'watched'"
+        >
+          Watched
+        </button>
+      </div>
+
+      <template v-if="sidebarTab === 'content'">
+        <p v-if="tree.error" class="text-red-600 text-sm">{{ tree.error }}</p>
+        <PageTree :nodes="tree.nodes" />
+      </template>
+      <template v-else>
+        <WatchedSidebarContent />
+      </template>
       <!-- Drag handle: only interactive on desktop (hidden on mobile) -->
       <div
         class="hidden md:block absolute top-0 right-0 w-2 h-full cursor-col-resize hover:bg-blue-400/30 transition-colors -mr-1 z-10"

@@ -8,6 +8,10 @@ services:
       LIBRETA_DRAWIO_URL: http://drawio:8080
     volumes:
       - ./data/content:/content
+      # Mount host /Users so the watched-folders feature can access arbitrary
+      # directories on the host filesystem. If your watched folders live
+      # elsewhere, add additional bind mounts as needed.
+      - /home/user/Nuevo:/home/user/Nuevo
     ports:
       - "8092:8080"
     depends_on:

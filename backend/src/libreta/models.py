@@ -88,4 +88,15 @@ class InfoResponse(BaseModel):
     content_dir_exists: bool
 
 
+class WatchedFolderResponse(BaseModel):
+    label: str
+    path: str
+    exists: bool
+
+
+class WatchedFolderCreate(BaseModel):
+    label: str = Field(min_length=1, max_length=64, pattern=r"^[a-zA-Z0-9][a-zA-Z0-9_-]*$")
+    path: str = Field(min_length=1)
+
+
 PageNode.model_rebuild()

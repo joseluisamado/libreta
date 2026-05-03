@@ -1,99 +1,97 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
-import { useTreeStore } from '@/stores/tree'
-import { getRecentChanges, savePage } from '@/api/client'
-import type { PageNode, RecentChange } from '@/api/types'
-import logoUrl from '@/assets/logo.svg'
+  import { ref, computed, onMounted } from 'vue'
+  import { useRouter } from 'vue-router'
+  import { useTreeStore } from '@/stores/tree'
+  import { getRecentChanges, savePage } from '@/api/client'
+  import type { PageNode, RecentChange } from '@/api/types'
+  import logoUrl from '@/assets/logo.svg'
 
-const router = useRouter()
-const tree = useTreeStore()
+  const router = useRouter()
+  const tree = useTreeStore()
 
-// ── Search ────────────────────────────────────────────────────────────
+  // ── Search ────────────────────────────────────────────────────────────
 
-const searchQuery = ref('')
+  const searchQuery = ref('')
 
-function doSearch(): void {
-  const q = searchQuery.value.trim()
-  if (q) {
-    router.push({ path: '/search', query: { q } })
-  } else {
-    router.push('/search')
+  function doSearch(): void {
+    const q = searchQuery.value.trim()
+    if (q) {
+      router.push({ path: '/search', query: { q } })
+    } else {
+      router.push('/search')
+    }
   }
-}
 
-// ── Stats ─────────────────────────────────────────────────────────────
+  // ── Stats ─────────────────────────────────────────────────────────────
 
-function countPages(nodes: PageNode[]): number {
-  let n = 0
-  for (const node of nodes) {
-    if (!node.is_directory) n++
-    if (node.children.length) n += countPages(node.children)
+  function countPages(nodes: PageNode[]): number {
+    let n = 0
+    for (const node of nodes) {
+      if (!node.is_directory) n++
+      if (node.children.length) n += countPages(node.children)
+    }
+    return n
   }
-  return n
-}
 
-const pageCount = computed(() => countPages(tree.nodes))
+  const pageCount = computed(() => countPages(tree.nodes))
 
-const namespaceCount = computed(
-  () => tree.nodes.filter((n) => n.is_directory).length,
-)
+  const namespaceCount = computed(() => tree.nodes.filter((n) => n.is_directory).length)
 
-// ── Recent changes ────────────────────────────────────────────────────
+  // ── Recent changes ────────────────────────────────────────────────────
 
-const recentChanges = ref<RecentChange[]>([])
-const recentLoading = ref(true)
-const recentError = ref<string | null>(null)
+  const recentChanges = ref<RecentChange[]>([])
+  const recentLoading = ref(true)
+  const recentError = ref<string | null>(null)
 
-onMounted(async () => {
-  if (!tree.loaded) await tree.load()
-  try {
-    recentChanges.value = await getRecentChanges(20)
-  } catch (e) {
-    recentError.value = e instanceof Error ? e.message : String(e)
-  } finally {
-    recentLoading.value = false
+  onMounted(async () => {
+    if (!tree.loaded) await tree.load()
+    try {
+      recentChanges.value = await getRecentChanges(20)
+    } catch (e) {
+      recentError.value = e instanceof Error ? e.message : String(e)
+    } finally {
+      recentLoading.value = false
+    }
+  })
+
+  // ── Quick-create ──────────────────────────────────────────────────────
+
+  const newPageName = ref('')
+  const creating = ref(false)
+  const createError = ref<string | null>(null)
+  const createSuccess = ref<string | null>(null)
+
+  async function quickCreate(): Promise<void> {
+    const name = newPageName.value.trim()
+    if (!name) return
+    creating.value = true
+    createError.value = null
+    createSuccess.value = null
+    try {
+      await savePage(name, { body: `# ${name}\n` })
+      createSuccess.value = name
+      newPageName.value = ''
+      tree.load()
+      recentChanges.value = await getRecentChanges(20)
+    } catch (e) {
+      createError.value = e instanceof Error ? e.message : String(e)
+    } finally {
+      creating.value = false
+    }
   }
-})
 
-// ── Quick-create ──────────────────────────────────────────────────────
+  // ── Helpers ───────────────────────────────────────────────────────────
 
-const newPageName = ref('')
-const creating = ref(false)
-const createError = ref<string | null>(null)
-const createSuccess = ref<string | null>(null)
-
-async function quickCreate(): Promise<void> {
-  const name = newPageName.value.trim()
-  if (!name) return
-  creating.value = true
-  createError.value = null
-  createSuccess.value = null
-  try {
-    await savePage(name, { body: `# ${name}\n` })
-    createSuccess.value = name
-    newPageName.value = ''
-    tree.load()
-    recentChanges.value = await getRecentChanges(20)
-  } catch (e) {
-    createError.value = e instanceof Error ? e.message : String(e)
-  } finally {
-    creating.value = false
+  function timeAgo(ts: string): string {
+    const diff = Date.now() - new Date(ts).getTime()
+    const mins = Math.floor(diff / 60000)
+    if (mins < 1) return 'just now'
+    if (mins < 60) return `${mins}m ago`
+    const hrs = Math.floor(mins / 60)
+    if (hrs < 24) return `${hrs}h ago`
+    const days = Math.floor(hrs / 24)
+    return `${days}d ago`
   }
-}
-
-// ── Helpers ───────────────────────────────────────────────────────────
-
-function timeAgo(ts: string): string {
-  const diff = Date.now() - new Date(ts).getTime()
-  const mins = Math.floor(diff / 60000)
-  if (mins < 1) return 'just now'
-  if (mins < 60) return `${mins}m ago`
-  const hrs = Math.floor(mins / 60)
-  if (hrs < 24) return `${hrs}h ago`
-  const days = Math.floor(hrs / 24)
-  return `${days}d ago`
-}
 </script>
 
 <template>
@@ -102,9 +100,7 @@ function timeAgo(ts: string): string {
     <div class="text-center mb-12">
       <img :src="logoUrl" alt="" class="w-16 h-16 mx-auto mb-4" />
       <h1 class="text-3xl font-bold text-slate-800 mb-3">Libreta</h1>
-      <p class="text-slate-500 mb-8">
-        Your wiki, backed by a git repository of markdown files.
-      </p>
+      <p class="text-slate-500 mb-8">Your wiki, backed by a git repository of markdown files.</p>
 
       <form @submit.prevent="doSearch" class="max-w-lg mx-auto">
         <div class="flex gap-2">
@@ -176,7 +172,10 @@ function timeAgo(ts: string): string {
       <p v-if="recentLoading" class="text-sm text-slate-400">Loading...</p>
       <p v-else-if="recentError" class="text-sm text-red-600">{{ recentError }}</p>
 
-      <ul v-else-if="recentChanges.length" class="divide-y divide-slate-100 border border-slate-200 rounded-lg bg-white">
+      <ul
+        v-else-if="recentChanges.length"
+        class="divide-y divide-slate-100 border border-slate-200 rounded-lg bg-white"
+      >
         <li
           v-for="change in recentChanges"
           :key="`${change.sha}-${change.path}`"
@@ -189,7 +188,9 @@ function timeAgo(ts: string): string {
           >
             {{ change.path || '(index)' }}
           </RouterLink>
-          <span class="text-slate-400 hidden sm:inline truncate max-w-[12rem]">{{ change.message }}</span>
+          <span class="text-slate-400 hidden sm:inline truncate max-w-[12rem]">{{
+            change.message
+          }}</span>
         </li>
       </ul>
       <p v-else class="text-sm text-slate-400">No changes yet.</p>

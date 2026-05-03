@@ -24,3 +24,19 @@ class PageAlreadyExistsError(LibretaError):
 
 class PageNotEmptyError(LibretaError):
     status_code = 409
+
+
+class WatchedLabelNotFoundError(LibretaError):
+    status_code = 404
+
+
+class WatchedFolderAlreadyExistsError(LibretaError):
+    status_code = 409
+
+
+class WatchedFileOutsideRootError(LibretaError):
+    status_code = 400
+
+
+class WatchedFolderNotAccessibleError(LibretaError):
+    status_code = 400

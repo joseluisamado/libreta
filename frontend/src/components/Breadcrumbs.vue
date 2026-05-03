@@ -3,7 +3,7 @@
   import { useTreeStore } from '@/stores/tree'
   import type { PageNode } from '@/api/types'
 
-  const props = defineProps<{ path: string }>()
+  const props = defineProps<{ path: string; watchedLabel?: string }>()
   const tree = useTreeStore()
 
   interface Crumb {
@@ -29,12 +29,27 @@
   const crumbs = computed<Crumb[]>(() => {
     const segments = props.path.split('/').filter(Boolean)
     const out: Crumb[] = [{ label: 'Home', to: '/' }]
+
+    if (props.watchedLabel) {
+      out.push({
+        label: props.watchedLabel,
+        to: `/watch/${props.watchedLabel}/`,
+      })
+    }
+
     let acc = ''
     segments.forEach((seg, i) => {
       acc = acc ? `${acc}/${seg}` : seg
       const isLast = i === segments.length - 1
       const title = findTitle(tree.nodes, acc) ?? humanise(seg)
-      out.push({ label: title, to: isLast ? null : `/w/${acc}` })
+      if (props.watchedLabel) {
+        out.push({
+          label: title,
+          to: isLast ? null : `/watch/${props.watchedLabel}/${acc}`,
+        })
+      } else {
+        out.push({ label: title, to: isLast ? null : `/w/${acc}` })
+      }
     })
     return out
   })

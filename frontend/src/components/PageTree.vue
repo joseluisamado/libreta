@@ -9,6 +9,7 @@
   const props = defineProps<{
     nodes: PageNode[]
     rootNamespace?: string | null
+    linkPrefix?: string
   }>()
 
   // ----- Open/closed state ---------------------------------------------------
@@ -115,7 +116,7 @@
         </button>
         <span v-else class="shrink-0 w-4 h-4" aria-hidden="true" />
         <RouterLink
-          :to="`/w/${node.path}`"
+          :to="`${linkPrefix ?? '/w'}/${node.path}`"
           class="flex-1 truncate"
           :class="
             node.children.length
@@ -131,6 +132,7 @@
         v-if="node.children.length && isOpen(node.path)"
         :nodes="node.children"
         :root-namespace="childRootNamespace(node)"
+        :link-prefix="linkPrefix"
         class="ml-3 border-l-2 pl-2"
         :class="railClass(node)"
       />

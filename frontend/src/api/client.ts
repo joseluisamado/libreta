@@ -8,6 +8,8 @@ import type {
   PageWrite,
   RecentChange,
   SearchResult,
+  WatchedFolder,
+  WatchedFolderCreate,
 } from './types'
 
 const BASE = '/api/v1'
@@ -83,6 +85,40 @@ export function searchPages(q: string, limit = 20): Promise<SearchResult[]> {
 export function movePage(path: string, data: PageMove): Promise<PageRead> {
   return request<PageRead>(`/pages/${path}/move`, {
     method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+}
+
+// ---- Watch folder API --------------------------------------------------------
+
+export function getWatchedFolders(): Promise<WatchedFolder[]> {
+  return request<WatchedFolder[]>('/watch/folders')
+}
+
+export function addWatchedFolder(data: WatchedFolderCreate): Promise<WatchedFolder> {
+  return request<WatchedFolder>('/watch/folders', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+}
+
+export function removeWatchedFolder(label: string): Promise<void> {
+  return requestNoContent(`/watch/folders/${label}`, { method: 'DELETE' })
+}
+
+export function getWatchedTree(label: string): Promise<PageNode[]> {
+  return request<PageNode[]>(`/watch/${label}/tree`)
+}
+
+export function getWatchedPage(label: string, path: string): Promise<PageRead> {
+  return request<PageRead>(`/watch/${label}/${path}`)
+}
+
+export function saveWatchedPage(label: string, path: string, data: PageWrite): Promise<PageRead> {
+  return request<PageRead>(`/watch/${label}/${path}`, {
+    method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   })

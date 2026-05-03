@@ -205,7 +205,10 @@
   <article class="mx-auto px-8 py-6" :class="width === 'wide' ? 'max-w-none' : 'max-w-3xl'">
     <p v-if="error" class="text-red-600">{{ error }}</p>
     <template v-else-if="page">
-      <header class="flex items-center justify-between mb-4" :class="width === 'wide' ? 'pr-48' : ''">
+      <header
+        class="flex items-center justify-between mb-4"
+        :class="width === 'wide' ? 'pr-48' : ''"
+      >
         <Breadcrumbs :path="page.path" />
         <RouterLink
           :to="`/history/${page.path}`"

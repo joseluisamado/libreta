@@ -71,3 +71,14 @@ export interface AssetUploadResponse {
   kind: 'image' | 'file'
   deduped: boolean
 }
+
+export interface WatchedFolder {
+  label: string
+  path: string
+  exists: boolean
+}
+
+export interface WatchedFolderCreate {
+  label: string
+  path: string
+}

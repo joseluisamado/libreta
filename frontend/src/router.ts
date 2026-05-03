@@ -31,6 +31,16 @@ const routes: RouteRecordRaw[] = [
     name: 'search',
     component: () => import('./views/SearchView.vue'),
   },
+  {
+    path: '/watch/:label/:path(.*)*',
+    name: 'watched-page',
+    component: () => import('./views/WatchedPageView.vue'),
+  },
+  {
+    path: '/edit-watch/:label/:path(.*)*',
+    name: 'watched-editor',
+    component: () => import('./views/WatchedEditorView.vue'),
+  },
 ]
 
 export const router = createRouter({

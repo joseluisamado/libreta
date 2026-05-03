@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from libreta import __version__
-from libreta.api import assets, pages, search, system
+from libreta.api import assets, pages, search, system, watch
 from libreta.deps import get_settings
 from libreta.errors import LibretaError
 from libreta.storage.search import incremental_reindex
@@ -56,6 +56,7 @@ def create_app() -> FastAPI:
     app.include_router(pages.router, prefix="/api/v1", tags=["pages"])
     app.include_router(assets.router, prefix="/api/v1", tags=["assets"])
     app.include_router(search.router, prefix="/api/v1", tags=["search"])
+    app.include_router(watch.router, prefix="/api/v1", tags=["watch"])
 
     return app
 
