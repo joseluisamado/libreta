@@ -4,6 +4,7 @@
 # The user's wiki content lives here. It is its own git repo.
 # Per CLAUDE.md §6.3, do NOT commit it as part of the project repo.
 /data/
+backend/data/
 
 # Python / backend
 backend/.venv/
