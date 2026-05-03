@@ -1,18 +1,23 @@
 <script setup lang="ts">
-  import { watch, ref, computed, onBeforeUnmount } from 'vue'
+  import { watch, ref, computed, onBeforeUnmount, onMounted } from 'vue'
   import { useEditor, EditorContent } from '@tiptap/vue-3'
   import StarterKit from '@tiptap/starter-kit'
   import TaskList from '@tiptap/extension-task-list'
   import TaskItem from '@tiptap/extension-task-item'
   import Link from '@tiptap/extension-link'
   import { Table, TableRow, TableHeader, TableCell } from '@tiptap/extension-table'
+  import Image from '@tiptap/extension-image'
+  import { mergeAttributes } from '@tiptap/core'
   import { Markdown } from 'tiptap-markdown'
+  import { uploadAsset } from '@/api/client'
+  import { resolveAssetUrl } from '@/markdown'
   import type { Editor as TiptapEditor } from '@tiptap/core'
   import { getMarkdownFromStorage } from '@/markdownStorage'
 
   const props = defineProps<{
     content: string
     path: string
+    isIndex?: boolean
   }>()
 
   const emit = defineEmits<{
@@ -20,6 +25,18 @@
   }>()
 
   const hasBeenSet = ref(false)
+
+  // The Image extension stores the raw filename in `src` (`![](photo.jpg)` →
+  // src="photo.jpg") so markdown round-trips byte-identically. For the editor
+  // preview only, we rewrite to the asset API URL so the browser actually
+  // loads the bytes.
+  const PageScopedImage = Image.extend({
+    renderHTML({ HTMLAttributes }) {
+      const src = String(HTMLAttributes.src ?? '')
+      const display = resolveAssetUrl(src, props.path, props.isIndex ?? false)
+      return ['img', mergeAttributes(this.options.HTMLAttributes, HTMLAttributes, { src: display })]
+    },
+  })
 
   const editor = useEditor({
     extensions: [
@@ -42,11 +59,30 @@
       TableRow,
       TableHeader,
       TableCell,
+      PageScopedImage.configure({
+        // Inline images live inside paragraphs (`![alt](photo.jpg)` mid-sentence).
+        // Tiptap's default is block-level; switch to inline so prosemirror-markdown
+        // round-trips a paragraph containing an image without splitting it.
+        inline: true,
+      }),
       Markdown.configure({
         html: false,
       }),
     ],
     content: props.content,
+    editorProps: {
+      handlePaste: (_view, event): boolean => {
+        const items = Array.from(event.clipboardData?.items ?? [])
+        const files = items
+          .filter((it) => it.kind === 'file' && it.type.startsWith('image/'))
+          .map((it) => it.getAsFile())
+          .filter((f): f is File => f !== null)
+        if (files.length === 0) return false
+        event.preventDefault()
+        for (const f of files) void uploadAndInsert(f)
+        return true
+      },
+    },
     onUpdate: () => {
       if (!hasBeenSet.value) return
       if (!editor.value || editor.value.isDestroyed) return
@@ -88,6 +124,75 @@
     editor.value?.destroy()
   })
 
+  const editorRoot = ref<HTMLDivElement | null>(null)
+
+  // While the editor is mounted (i.e. the user is on the edit page), accept
+  // file drops anywhere in the window. This avoids the trap where the user
+  // drops on whitespace just outside the editor's content box (still inside
+  // the edit-view scroll container) and the browser navigates instead.
+  function editorMounted(): boolean {
+    return editorRoot.value !== null
+  }
+
+  function onWindowDragOver(event: DragEvent): void {
+    if (!editorMounted()) return
+    if (!(event.dataTransfer?.types ?? []).includes('Files')) return
+    event.preventDefault()
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy'
+  }
+
+  function onWindowDrop(event: DragEvent): void {
+    if (!editorMounted()) return
+    // Always prevent default while on the edit page — even if there's no file
+    // payload, navigating away would lose the user's edits.
+    event.preventDefault()
+    event.stopPropagation()
+    const files = Array.from(event.dataTransfer?.files ?? [])
+    for (const f of files) void uploadAndInsert(f)
+  }
+
+  // Attach to window in capture phase: guaranteed to run before any element-
+  // level listener inside the editor (including ProseMirror's). The
+  // eventInsideEditor() guard scopes the behavior to drops on our editor area.
+  onMounted(() => {
+    window.addEventListener('dragover', onWindowDragOver, true)
+    window.addEventListener('drop', onWindowDrop, true)
+  })
+
+  onBeforeUnmount(() => {
+    window.removeEventListener('dragover', onWindowDragOver, true)
+    window.removeEventListener('drop', onWindowDrop, true)
+  })
+
+  const uploadError = ref<string | null>(null)
+
+  async function uploadAndInsert(file: File): Promise<void> {
+    if (!editor.value || editor.value.isDestroyed) return
+    uploadError.value = null
+    try {
+      const result = await uploadAsset(props.path, file)
+      const ed = editor.value
+      if (result.kind === 'image') {
+        const alt = file.name.replace(/\.[^.]+$/, '')
+        ed.chain().focus().setImage({ src: result.filename, alt }).run()
+      } else {
+        // Insert as a markdown-style link: the visible text is the filename,
+        // the href is the same filename (relative to the page), so it
+        // serializes to `[filename](filename)` and round-trips cleanly.
+        ed.chain()
+          .focus()
+          .insertContent({
+            type: 'text',
+            text: result.filename,
+            marks: [{ type: 'link', attrs: { href: result.filename } }],
+          })
+          .run()
+      }
+    } catch (e) {
+      uploadError.value = e instanceof Error ? e.message : String(e)
+    }
+  }
+
   function getMarkdown(): string {
     if (!editor.value || editor.value.isDestroyed) return props.content
     return getMarkdownFromStorage(editor.value) || props.content
@@ -95,11 +200,17 @@
 
   const editorInstance = computed(() => editor.value ?? null)
 
-  defineExpose({ getMarkdown, editor: editorInstance })
+  defineExpose({ getMarkdown, editor: editorInstance, uploadAndInsert })
 </script>
 
 <template>
-  <div class="libreta-editor prose max-w-none">
+  <div ref="editorRoot" class="libreta-editor prose max-w-none">
+    <p
+      v-if="uploadError"
+      class="my-2 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
+    >
+      Upload failed: {{ uploadError }}
+    </p>
     <EditorContent :editor="editor" />
   </div>
 </template>
@@ -242,5 +353,15 @@
 
   .libreta-editor :deep(table .selectedCell) {
     position: relative;
+  }
+
+  .libreta-editor :deep(img) {
+    max-width: 100%;
+    height: auto;
+    border-radius: 0.25rem;
+  }
+
+  .libreta-editor :deep(img.ProseMirror-selectednode) {
+    outline: 2px solid #2563eb;
   }
 </style>

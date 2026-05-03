@@ -47,3 +47,11 @@ export interface ApiError {
   error: string
   detail: string
 }
+
+export interface AssetUploadResponse {
+  filename: string
+  size: number
+  sha256: string
+  kind: 'image' | 'file'
+  deduped: boolean
+}

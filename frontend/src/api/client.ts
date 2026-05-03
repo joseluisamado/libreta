@@ -1,4 +1,12 @@
-import type { DiffEntry, HistoryEntry, PageMove, PageNode, PageRead, PageWrite } from './types'
+import type {
+  AssetUploadResponse,
+  DiffEntry,
+  HistoryEntry,
+  PageMove,
+  PageNode,
+  PageRead,
+  PageWrite,
+} from './types'
 
 const BASE = '/api/v1'
 
@@ -46,6 +54,18 @@ export function getPageHistory(path: string): Promise<HistoryEntry[]> {
 export function getPageDiff(path: string, a: string, b: string): Promise<DiffEntry> {
   const qs = new URLSearchParams({ a, b }).toString()
   return request<DiffEntry>(`/pages/${path}/diff?${qs}`)
+}
+
+export async function uploadAsset(pagePath: string, file: File): Promise<AssetUploadResponse> {
+  const fd = new FormData()
+  fd.append('file', file, file.name)
+  // Don't set Content-Type — the browser sets it (with the boundary).
+  const r = await fetch(`${BASE}/pages/${pagePath}/assets`, { method: 'POST', body: fd })
+  if (!r.ok) {
+    const body = (await r.json().catch(() => ({}))) as { detail?: string }
+    throw new Error(body.detail ?? `HTTP ${r.status}`)
+  }
+  return (await r.json()) as AssetUploadResponse
 }
 
 export function movePage(path: string, data: PageMove): Promise<PageRead> {

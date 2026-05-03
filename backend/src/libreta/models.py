@@ -52,6 +52,15 @@ class DiffEntry(BaseModel):
     patch: str  # unified diff text; empty when contents are identical
 
 
+class AssetUploadResponse(BaseModel):
+    # Filename relative to the page's directory; the editor embeds it as `![](filename)`.
+    filename: str
+    size: int
+    sha256: str
+    kind: str  # "image" | "file"
+    deduped: bool = False
+
+
 class HealthResponse(BaseModel):
     status: str
 

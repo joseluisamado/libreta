@@ -9,8 +9,8 @@ Living document. Update as work progresses. Latest at the top.
 ## Status
 
 **Current milestone**: M3 — Tables, attachments, search
-**Phase**: Tables wired into the editor with GFM markdown round-trip. Up next: image upload (drag/drop + clipboard).
-**Next action**: Image upload + arbitrary file attachments.
+**Phase**: All attachment work complete (images + arbitrary files: PDF, zip, etc.). Up next: SQLite FTS5 search index, search API + UI, and the `libreta reindex` CLI.
+**Next action**: Build the SQLite FTS5 index and the `/api/v1/search` endpoint.
 
 ## At a glance
 
@@ -29,6 +29,51 @@ Legend: ⚪ not started · 🟡 in progress · 🟢 done · 🔴 blocked
 ---
 
 ## Log
+
+### 2026-05-03 — Decision: orphan assets are not garbage-collected on save
+
+When an image or link is removed from a page during editing, the underlying asset file stays in the page directory. Considered automatic cleanup on save; rejected for now.
+
+**Reasoning**:
+- R3 already gives recoverability — every save is a commit, so removed assets remain in git history.
+- Reflex deletions during an editing session shouldn't make files vanish from the working tree the user might want back two clicks later.
+- Doing it correctly is non-trivial: a leaf page and its index page share a directory, so an asset is orphaned only if NO sibling `.md` references it. That's a real piece of work that doesn't earn its complexity in the auto-on-save path.
+
+**Plan**: a future `libreta gc` CLI surfaces orphan candidates and optionally removes them with one commit per page. Tracked under "Beyond v1" in [ROADMAP.md](./ROADMAP.md). [ARCHITECTURE.md](./ARCHITECTURE.md) "Asset handling" updated to state the policy explicitly so future-me doesn't accidentally implement auto-cleanup as a "small fix."
+
+### 2026-05-03 — M3 Arbitrary file attachments
+
+Generalised the upload path: any file (PDF, zip, xlsx, etc.) can now be attached, on top of the image work that landed earlier today.
+
+- **No backend changes needed** — `POST /api/v1/pages/{path}/assets` already accepted any non-`.md` file. The image work just happened to be the first consumer.
+- **Frontend dispatch**: `Editor.uploadAndInsert(file)` now branches on the response's `kind` field. `image` → inserts a Tiptap Image node (`![alt](filename)` on save). `file` → inserts the filename as plain text with a `link` mark (`[filename](filename)` on save). Both round-trip through the existing reader (M0.5's `looksLikeAssetHref` already routes `.pdf`/`.zip`/`.xlsx`/etc. relative links to the assets API).
+- **Toolbar**: new "Attach file" paperclip button next to the "Insert image" button. Two hidden file inputs — one with `accept="image/*"` for the image picker (better OS-picker UX), one with no filter for general files. Both emit a single `upload-files` event up to `EditorView`.
+- **Drag/drop** on the editor surface accepts any file now (used to be image-only). Clipboard paste remains image-only — pasting binary blobs from the clipboard is rare and usually unintended.
+- **Round-trip fixture**: [tests/round-trip/fixtures/file-attachments.md](../frontend/tests/round-trip/fixtures/file-attachments.md) — three link-style attachments (`xlsx`, `pdf`, `zip`). Byte-identical without seeding.
+
+**Pre-flight**: 63/63 frontend tests pass, vue-tsc clean, eslint clean. Backend untouched (60/60 still pass).
+
+### 2026-05-03 — M3 Image upload + page-local attachment layout
+
+Image upload landed end-to-end. Pre-emptively chose a layout convention that covers all future attachments (PDF, zip, etc.) and updated [ARCHITECTURE.md](./ARCHITECTURE.md) to match.
+
+- **Layout decision (page-local)**: attachments live in the same directory as the page that uses them. A leaf page `pages/recipes/pizza-dough.md` with `![](photo.jpg)` reads `pages/recipes/photo.jpg`; an index page `pages/projects/libreta/index.md` with `![](architecture.png)` reads `pages/projects/libreta/architecture.png`. Markdown refs are relative. There is no separate `assets/` tree. The previous spec (`/assets/images/YYYY/MM/`) is dropped — this matches the imported corpus and what M0.5 already does on the read side.
+- **Rationale**: attachments stay with their content. Renaming/moving a page moves its attachments with it (existing `move_page` already moves the directory tree). Cloning a subdirectory still has working images. The trade-off — duplication when two pages share an asset — is acceptable at solo scale.
+- **Backend**: `POST /api/v1/pages/{path}/assets` (multipart `file`) writes into the page's directory and commits with verb `attach`. SHA-256 dedupe scoped to that directory: identical bytes → existing filename returned, no new commit. Filename collisions with different bytes get `-2`, `-3`, etc. Filename sanitisation strips path components, replaces unsafe runs with `-`, refuses `.md`. Helpers: [storage/assets.py](../backend/src/libreta/storage/assets.py) (`sanitize_filename`, `page_directory`, `store_asset`); route in [api/pages.py](../backend/src/libreta/api/pages.py).
+- **Backend tests**: 11 new (leaf page, index page, dedupe, collision-suffix, unknown-page 404, .md rejection, empty rejection, filename sanitization, commit creation, commit-skipped on dedupe, plus existing GET tests). 60/60 backend tests pass.
+- **Dependency**: `python-multipart` added (`UploadFile` requires it).
+- **Frontend**: `@tiptap/extension-image` 3.22.5, configured `inline: true` so an image inside a paragraph round-trips as a paragraph. Custom `PageScopedImage` extension keeps `src` in markdown as the bare filename (e.g. `photo.jpg`) but rewrites to `/api/v1/assets/pages/<dir>/<file>` for the editor preview only — `resolveAssetUrl` in [markdown.ts](../frontend/src/markdown.ts) was made an exported helper to share that logic with the editor. Markdown round-trips byte-identically.
+- **Upload UX**: three entry points all funnel through `Editor.uploadAndInsert(file)`:
+  1. Toolbar "Insert image" button → hidden `<input type=file accept="image/*" multiple>` → `EditorToolbar.vue` emits `image-files` → `EditorView.vue` calls into the editor ref.
+  2. Drag/drop onto the editor surface → `editorProps.handleDrop` filters `image/*` files.
+  3. Paste from clipboard → `editorProps.handlePaste` filters `image/*` items.
+  Upload errors surface as a small banner above the editor.
+- **Round-trip fixture**: [tests/round-trip/fixtures/images.md](../frontend/tests/round-trip/fixtures/images.md) covers page-local image, inline-in-paragraph, and missing-alt cases. Fixture matches tiptap-markdown's canonical output without seeding.
+- **`is_index` plumbed** from `PageRead` through `EditorView.vue` to `Editor.vue` so the asset URL preview resolves correctly for index pages.
+
+**Pre-flight**: backend 60/60 tests pass, ruff clean, mypy clean. Frontend 61/61 tests pass, vue-tsc clean, eslint clean (1 pre-existing v-html warning), prettier clean.
+
+**Open**: arbitrary-file upload (PDF/zip/etc.) is essentially "the same endpoint without the image MIME filter on the frontend." The backend already accepts any non-`.md` file. Next.
 
 ### 2026-05-02 — M3 Tables in the editor with GFM round-trip
 

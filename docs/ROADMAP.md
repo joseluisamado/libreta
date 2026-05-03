@@ -81,9 +81,9 @@ A milestone-based plan, not a calendar. Each milestone is a coherent slice of va
 
 - [x] Tiptap table extension with header row, insert/add/delete row & column controls (column resize and cell background colour deferred — see PROGRESS 2026-05-02)
 - [x] Tables round-trip through GFM markdown without information loss
-- [ ] Image upload: drag & drop, paste from clipboard, "insert image" button
-- [ ] Arbitrary file upload as attachment (PDFs, zips, etc.) with download links
-- [ ] Attachment storage layout per `ARCHITECTURE.md` "Filesystem layout" (`assets/` partitioned by upload date)
+- [x] Image upload: drag & drop, paste from clipboard, "insert image" button
+- [x] Arbitrary file upload as attachment (PDFs, zips, etc.) with download links
+- [x] Attachment storage layout per `ARCHITECTURE.md` "Filesystem layout" (page-local — assets live next to the owning page; ARCHITECTURE updated to reflect this)
 - [ ] SQLite FTS5 index built and updated on save
 - [ ] `GET /api/search?q=...` returns ranked results
 - [ ] Search UI in the frontend, with snippets and keyboard navigation
@@ -164,6 +164,10 @@ The hardest item, deliberately last. Not real-time CRDT collab — just optimist
 ### M10 — Plugin / extension API
 
 A typed extension API for client-side editor extensions and server-side render hooks. **Not a plugin marketplace.** Just a stable surface for power users to add features without forking.
+
+### `libreta gc` — orphan asset cleanup (small, anytime)
+
+Not a milestone-sized chunk; tracked here so it isn't forgotten. CLI command (and eventually a UI affordance) that lists asset files in `pages/` whose filenames are not referenced by any sibling `.md` file in the same directory. Optionally deletes them with a commit per page. Follows the policy in `ARCHITECTURE.md` "Asset handling": removing on save is too aggressive; explicit garbage collection is the right model.
 
 ---
 

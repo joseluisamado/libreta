@@ -130,31 +130,31 @@ This is the only stateful volume that matters. Backups = back this up.
 ```
 content/                          # git repo root
 ├── .git/
-├── pages/
-│   ├── index.md                  # the home page
-│   ├── projects/
-│   │   ├── index.md              # /projects (chapter intro)
-│   │   ├── libreta.md              # /projects/libreta
-│   │   └── libreta/
-│   │       └── notes.md          # /projects/libreta/notes
-│   └── recipes/
-│       └── pizza-dough.md
-└── assets/
-    ├── images/
-    │   ├── 2026/05/sunset.jpg
-    │   └── 2026/05/sunset.thumb.jpg
-    ├── files/
-    │   └── 2026/05/budget.xlsx
-    └── diagrams/
-        └── 2026/05/auth-flow.drawio.svg
+└── pages/
+    ├── index.md                  # the home page
+    ├── projects/
+    │   ├── index.md              # /projects (chapter intro)
+    │   ├── libreta.md            # /projects/libreta
+    │   └── libreta/
+    │       ├── notes.md          # /projects/libreta/notes
+    │       ├── architecture.png  # attachment local to notes.md / libreta.md
+    │       └── budget.xlsx
+    └── recipes/
+        ├── pizza-dough.md
+        └── pizza-dough.jpg       # photo for pizza-dough.md
 ```
 
 A few rules:
 
 - A page at URL path `/foo/bar` lives at `pages/foo/bar.md`.
 - A page at URL path `/foo` lives at `pages/foo.md` _or_ `pages/foo/index.md` (the index file wins if both exist).
-- Asset paths in markdown are root-anchored to `/assets/...`.
-- Assets are partitioned by upload date (`YYYY/MM/`) to keep directory listings sane.
+- **Attachments live next to the page that uses them.** A page at `pages/recipes/pizza-dough.md` with `![](pizza-dough.jpg)` reads from `pages/recipes/pizza-dough.jpg`. Index pages own their whole directory: a page at `pages/projects/libreta/index.md` resolves `![](architecture.png)` to `pages/projects/libreta/architecture.png`.
+- Asset paths in markdown are **relative** to the page (`![](photo.jpg)`, `[budget](budget.xlsx)`). Root-anchored URLs (`/assets/...`) are not used.
+- The `pages/` tree carries the entire wiki — both pages and their attachments. There is no separate `assets/` tree.
+
+**Why page-local instead of a global dated `assets/` pool**: attachments stay with the content they belong to. Cloning a single subdirectory still has working images. Renaming or moving a page moves its attachments with it. Markdown references stay short. The trade-off is that an attachment used by two pages is duplicated; we accept that at solo-user scale.
+
+**Diagrams** (per the diagrams.net integration below) follow the same rule: a `.drawio.svg` lives next to the page that embeds it.
 
 ### Page format
 
@@ -170,7 +170,7 @@ tags: [libreta, architecture, docs]
 
 The body of the page in standard CommonMark / GFM markdown.
 
-![Auth flow](/assets/diagrams/2026/05/auth-flow.drawio.svg)
+![Auth flow](auth-flow.drawio.svg)
 
 ```python
 def hello() -> str:
@@ -220,7 +220,8 @@ Verbs: `create`, `update`, `delete`, `rename`, `attach`, `draw`. Examples:
 ```
 update pages/projects/libreta.md
 create pages/recipes/pizza-dough.md
-draw  assets/diagrams/2026/05/auth-flow.drawio.svg
+attach pages/recipes/pizza-dough.jpg
+draw   pages/projects/libreta/auth-flow.drawio.svg
 ```
 
 This makes `git log --oneline` immediately scannable.
@@ -255,19 +256,19 @@ All routes prefixed with `/api/v1`. JSON throughout. OpenAPI at `/api/v1/docs`.
 
 ### Assets
 
-| Method | Path                  | Description                                       |
-| ------ | --------------------- | ------------------------------------------------- |
-| POST   | `/assets`             | Upload (multipart). Returns `{ url, kind, size }` |
-| GET    | `/assets/{path:path}` | Serve asset file                                  |
-| DELETE | `/assets/{path:path}` | Remove asset                                      |
+| Method | Path                              | Description                                                                                                                                                                                          |
+| ------ | --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| POST   | `/pages/{path:path}/assets`       | Upload an attachment (multipart `file`). Writes to the owning page's directory and commits. Returns `{ filename, size, sha256, kind }` — `filename` is the relative ref to embed in markdown. |
+| GET    | `/assets/{path:path}`             | Serve asset file (path is into the content tree, e.g. `pages/recipes/pizza-dough.jpg`).                                                                                                              |
+| DELETE | `/assets/{path:path}`             | Remove asset (deferred; not in M3 scope).                                                                                                                                                            |
 
 ### Diagrams
 
-| Method | Path                    | Description                                        |
-| ------ | ----------------------- | -------------------------------------------------- |
-| POST   | `/diagrams`             | Save a new diagram (multipart: `.drawio.svg`)      |
-| PUT    | `/diagrams/{path:path}` | Update diagram                                     |
-| GET    | `/diagrams/{path:path}` | Fetch diagram (as `image/svg+xml`)                 |
+| Method | Path                              | Description                                                                                                                                            |
+| ------ | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| POST   | `/pages/{path:path}/diagrams`     | Save a new diagram (multipart `.drawio.svg`) into the owning page's directory. Returns `{ filename, size }`.                                          |
+| PUT    | `/pages/{path:path}/diagrams/{filename}` | Update an existing diagram in the page's directory.                                                                                          |
+| GET    | `/assets/{path:path}`             | Fetch diagram (same route as ordinary assets — `.drawio.svg` is just an SVG file).                                                                    |
 
 ### Search
 
@@ -364,7 +365,7 @@ Diagrams are saved as `.drawio.svg` — SVG with the original drawio XML embedde
 Diagrams are addressed in markdown as ordinary images:
 
 ```markdown
-![Auth flow](/assets/diagrams/2026/05/auth-flow.drawio.svg)
+![Auth flow](auth-flow.drawio.svg)
 ```
 
 The editor recognizes the `.drawio.svg` suffix and switches the rendered image into an "edit" affordance.
@@ -376,9 +377,9 @@ The editor recognizes the `.drawio.svg` suffix and switches the rendered image i
 3. The drawio iframe sends `init` via postMessage; we reply with `load` carrying the existing XML (or empty string for new diagrams).
 4. User edits, clicks Save.
 5. Drawio replies with `save` — payload is the SVG with embedded XML.
-6. We POST the SVG to `/api/v1/diagrams[/path]`.
-7. The api commits the asset and returns the URL.
-8. The editor inserts/updates the image node referencing the new URL.
+6. We POST the SVG to `/api/v1/pages/{owning-page}/diagrams` (or PUT to the same path with the existing filename if updating).
+7. The api commits the asset into the page's directory and returns the relative filename.
+8. The editor inserts/updates the image node referencing the new filename (relative ref).
 
 The drawio container is configured for offline operation — no external resources fetched.
 
@@ -388,10 +389,13 @@ Mermaid is great for code-defined diagrams in CI workflows. It is not great for 
 
 ## Asset handling
 
+- Uploads are scoped to a page. The upload endpoint takes the owning page path; the asset is written to that page's directory (see "Filesystem layout" — for an `index.md` page, the directory is the page's own folder; for a leaf page, it is the parent folder of the `.md` file).
 - Uploads pass through size and MIME validation.
-- Images: Pillow generates a thumbnail (max 1200 px wide, JPEG q85) saved alongside the original.
+- Images: Pillow generates a thumbnail (max 1200 px wide, JPEG q85) saved alongside the original. (Deferred until image-handling proves it earns its weight — original-only upload is acceptable for v1.)
 - All assets are committed to git. Trade-off: repo size grows. Acceptable at personal scale; LFS is a v2+ option.
-- Deduplication: content-hash (SHA-256) is checked at upload time; identical bytes → existing path returned.
+- Deduplication: content-hash (SHA-256) is checked at upload time, **scoped to the owning page's directory**. Identical bytes already present in that directory → existing filename returned without a new commit. Bytes shared across two pages are duplicated (one copy per page); we accept that.
+- Filename collisions with non-identical bytes get a numeric suffix: `photo.jpg` → `photo-2.jpg`, etc.
+- **Orphans are kept, not garbage-collected on save.** If a user removes an image or link from a page, the underlying file stays in the page's directory. Rationale: every save is already a commit (R3), so removed assets are still reachable via git history — but a file the user *might* want back next minute should not vanish from the working tree on a reflexive edit. A future `libreta gc` CLI may surface and optionally remove orphan files; until then the policy is "the filesystem is append-only on the asset axis, modulo git rewrites." Deciding orphan status correctly requires scanning *all* sibling `.md` files in the directory (a leaf page and its index page share a directory and may both reference the same file), which is straightforward but deferred.
 
 ## Search
 

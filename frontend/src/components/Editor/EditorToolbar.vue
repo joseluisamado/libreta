@@ -1,9 +1,17 @@
 <script setup lang="ts">
+  import { ref } from 'vue'
   import type { Editor } from '@tiptap/core'
 
   defineProps<{
     editor: Editor | null
   }>()
+
+  const emit = defineEmits<{
+    'upload-files': [files: File[]]
+  }>()
+
+  const imageInput = ref<HTMLInputElement | null>(null)
+  const fileInput = ref<HTMLInputElement | null>(null)
 
   function run(editor: Editor | null, fn: (ed: Editor) => void): void {
     if (!editor || editor.isDestroyed) return
@@ -18,6 +26,28 @@
     } else if (url === '') {
       editor.commands.unsetLink()
     }
+  }
+
+  function pickImage(): void {
+    imageInput.value?.click()
+  }
+
+  function pickFile(): void {
+    fileInput.value?.click()
+  }
+
+  function onImagePicked(e: Event): void {
+    const target = e.target as HTMLInputElement
+    const files = Array.from(target.files ?? []).filter((f) => f.type.startsWith('image/'))
+    if (files.length > 0) emit('upload-files', files)
+    target.value = ''
+  }
+
+  function onFilePicked(e: Event): void {
+    const target = e.target as HTMLInputElement
+    const files = Array.from(target.files ?? [])
+    if (files.length > 0) emit('upload-files', files)
+    target.value = ''
   }
 </script>
 
@@ -178,6 +208,57 @@
         <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
       </svg>
     </button>
+    <button
+      type="button"
+      class="p-1.5 rounded hover:bg-slate-100 text-slate-600"
+      title="Insert image"
+      @click="pickImage"
+    >
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        class="w-4 h-4"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      >
+        <rect x="3" y="5" width="18" height="14" rx="2" />
+        <circle cx="8.5" cy="10.5" r="1.5" />
+        <path d="M21 17l-5-5-9 9" />
+      </svg>
+    </button>
+    <button
+      type="button"
+      class="p-1.5 rounded hover:bg-slate-100 text-slate-600"
+      title="Attach file"
+      @click="pickFile"
+    >
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        class="w-4 h-4"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      >
+        <path
+          d="M21 12.5l-8.5 8.5a5 5 0 0 1-7-7l8.5-8.5a3.5 3.5 0 0 1 5 5L10.5 19a2 2 0 0 1-3-3l8-8"
+        />
+      </svg>
+    </button>
+    <input
+      ref="imageInput"
+      type="file"
+      accept="image/*"
+      multiple
+      class="hidden"
+      @change="onImagePicked"
+    />
+    <input ref="fileInput" type="file" multiple class="hidden" @change="onFilePicked" />
 
     <!-- Separator -->
     <span class="w-px h-5 bg-slate-200 mx-1" />

@@ -40,6 +40,14 @@
     isDirty.value = true
   }
 
+  async function onUploadFiles(files: File[]): Promise<void> {
+    const ed = editorRef.value
+    if (!ed) return
+    for (const f of files) {
+      await ed.uploadAndInsert(f)
+    }
+  }
+
   async function save(): Promise<void> {
     saving.value = true
     saveError.value = null
@@ -119,11 +127,12 @@
         <RouterLink :to="readPagePath" class="underline ml-2">Back to page</RouterLink>
       </p>
       <template v-else-if="page">
-        <EditorToolbar :editor="editorRef?.editor ?? null" />
+        <EditorToolbar :editor="editorRef?.editor ?? null" @upload-files="onUploadFiles" />
         <Editor
           ref="editorRef"
           :content="page.body"
           :path="page.path"
+          :is-index="page.is_index"
           @update="onUpdate"
           class="px-8 py-6"
         />

@@ -152,7 +152,7 @@ function isAbsolute(url: string): boolean {
   return /^([a-z][a-z0-9+.-]*:)?\/\//i.test(url) || url.startsWith('/') || url.startsWith('data:')
 }
 
-function resolveAssetUrl(src: string, pagePath: string, isIndex: boolean): string {
+export function resolveAssetUrl(src: string, pagePath: string, isIndex: boolean): string {
   if (isAbsolute(src) || src.startsWith('#')) return src
   // pagePath is the API path (e.g. "recipes/lasagna" or "devel/concepts/saml").
   // Determine the directory the page is stored in:
