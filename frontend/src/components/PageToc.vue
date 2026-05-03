@@ -111,7 +111,7 @@
     <!-- Trigger button. Placed left of the page-action buttons (delete, rename, edit). -->
     <button
       type="button"
-      class="fixed top-3 right-24 z-30 bg-white/90 backdrop-blur border border-slate-200 rounded-md p-2 shadow-sm hover:bg-slate-50"
+      class="fixed top-3 right-40 z-30 bg-white/90 backdrop-blur border border-slate-200 rounded-md p-2 shadow-sm hover:bg-slate-50"
       :title="open ? 'Hide table of contents' : 'Show table of contents'"
       :aria-label="open ? 'Hide table of contents' : 'Show table of contents'"
       :aria-expanded="open"

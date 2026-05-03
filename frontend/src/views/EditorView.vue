@@ -3,6 +3,7 @@
   import { useRoute, useRouter } from 'vue-router'
   import { getPage, savePage } from '@/api/client'
   import type { PageRead } from '@/api/types'
+  import { useViewMode } from '@/composables/useViewMode'
   import Editor from '@/components/Editor/Editor.vue'
   import EditorToolbar from '@/components/Editor/EditorToolbar.vue'
 
@@ -14,6 +15,24 @@
   const isDirty = ref(false)
   const saving = ref(false)
   const saveError = ref<string | null>(null)
+
+  const { mode, toggle: toggleViewMode } = useViewMode()
+
+  // Source-mode textarea content — kept in sync with page load
+  const sourceText = ref('')
+  // Force-remount the Tiptap editor when switching back from source mode
+  const editorKey = ref(0)
+
+  // Sync content when switching modes
+  watch(mode, (newMode) => {
+    if (newMode === 'source') {
+      // Pull latest markdown from Tiptap before showing source
+      sourceText.value = editorRef.value?.getMarkdown() ?? sourceText.value
+    } else {
+      // Force Editor remount with updated source content
+      editorKey.value++
+    }
+  })
 
   const path = computed(() => {
     const raw = route.params.path
@@ -29,6 +48,7 @@
     isDirty.value = false
     try {
       page.value = await getPage(path.value)
+      sourceText.value = page.value.body
     } catch (e) {
       error.value = e instanceof Error ? e.message : String(e)
     }
@@ -37,6 +57,10 @@
   watch(path, load, { immediate: true })
 
   function onUpdate(_markdown: string): void {
+    isDirty.value = true
+  }
+
+  function onSourceInput(): void {
     isDirty.value = true
   }
 
@@ -52,7 +76,7 @@
     saving.value = true
     saveError.value = null
     try {
-      const md = editorRef.value?.getMarkdown()
+      const md = mode.value === 'source' ? sourceText.value : editorRef.value?.getMarkdown()
       if (md === undefined) {
         throw new Error('Editor is not ready')
       }
@@ -77,7 +101,17 @@
   <div class="flex flex-col h-full">
     <!-- Top bar -->
     <div class="flex items-center justify-between border-b border-slate-200 bg-white px-4 py-2">
-      <span class="text-sm text-slate-400">Editing: {{ path }}</span>
+      <div class="flex items-center gap-3">
+        <span class="text-sm text-slate-400">Editing: {{ path }}</span>
+        <button
+          type="button"
+          class="text-xs px-2 py-1 rounded border border-slate-200 text-slate-500 hover:bg-slate-50 cursor-pointer"
+          :title="mode === 'rendered' ? 'Edit markdown source' : 'Use WYSIWYG editor'"
+          @click="toggleViewMode"
+        >
+          {{ mode === 'rendered' ? 'Source' : 'WYSIWYG' }}
+        </button>
+      </div>
       <div class="flex items-center gap-2">
         <p v-if="saveError" class="text-xs text-red-600">{{ saveError }}</p>
         <button
@@ -127,14 +161,24 @@
         <RouterLink :to="readPagePath" class="underline ml-2">Back to page</RouterLink>
       </p>
       <template v-else-if="page">
-        <EditorToolbar :editor="editorRef?.editor ?? null" @upload-files="onUploadFiles" />
-        <Editor
-          ref="editorRef"
-          :content="page.body"
-          :path="page.path"
-          :is-index="page.is_index"
-          @update="onUpdate"
-          class="px-8 py-6"
+        <template v-if="mode === 'rendered'">
+          <EditorToolbar :editor="editorRef?.editor ?? null" @upload-files="onUploadFiles" />
+          <Editor
+            ref="editorRef"
+            :key="editorKey"
+            :content="sourceText"
+            :path="page.path"
+            :is-index="page.is_index"
+            @update="onUpdate"
+            class="px-8 py-6"
+          />
+        </template>
+        <textarea
+          v-else
+          v-model="sourceText"
+          class="w-full h-full min-h-[60vh] p-6 font-mono text-sm leading-relaxed resize-none focus:outline-none border-0 bg-[#f6f8fa] text-slate-800"
+          spellcheck="false"
+          @input="onSourceInput"
         />
       </template>
       <p v-else class="p-6 text-slate-400">Loading...</p>

@@ -6,11 +6,15 @@
   import { renderMarkdown } from '@/markdown'
   import { useTreeStore } from '@/stores/tree'
   import { useReadingWidth } from '@/composables/usePrefs'
+  import { useViewMode } from '@/composables/useViewMode'
   import Breadcrumbs from '@/components/Breadcrumbs.vue'
   import PageToolbar from '@/components/PageToolbar.vue'
   import PageToc from '@/components/PageToc.vue'
+  import hljs from 'highlight.js'
+  import 'highlight.js/styles/github.css'
 
   const { width } = useReadingWidth()
+  const { mode, toggle: toggleViewMode } = useViewMode()
 
   const route = useRoute()
   const router = useRouter()
@@ -131,14 +135,56 @@
   const html = computed(() =>
     page.value ? renderMarkdown(page.value.body, page.value.path, page.value.is_index) : '',
   )
+
+  const highlightedSource = computed(() => {
+    if (!page.value) return ''
+    return hljs.highlight(page.value.body, { language: 'markdown' }).value
+  })
 </script>
 
 <template>
   <PageToolbar />
+  <button
+    v-if="page"
+    type="button"
+    class="fixed top-3 right-[56px] z-20 bg-white/90 backdrop-blur border border-slate-200 rounded-md p-2 hover:bg-slate-50 shadow-sm"
+    :title="mode === 'rendered' ? 'View markdown source' : 'View rendered page'"
+    :aria-label="mode === 'rendered' ? 'View markdown source' : 'View rendered page'"
+    @click="toggleViewMode"
+  >
+    <svg
+      v-if="mode === 'rendered'"
+      xmlns="http://www.w3.org/2000/svg"
+      class="w-4 h-4 text-slate-600"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    >
+      <polyline points="16 18 22 12 16 6" />
+      <polyline points="8 6 2 12 8 18" />
+    </svg>
+    <svg
+      v-else
+      xmlns="http://www.w3.org/2000/svg"
+      class="w-4 h-4 text-slate-600"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    >
+      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  </button>
   <RouterLink
     v-if="page"
     :to="`/edit/${page.path}`"
-    class="fixed top-3 right-14 z-30 bg-white/90 backdrop-blur border border-slate-200 rounded-md p-2 hover:bg-slate-50 shadow-sm"
+    class="fixed top-3 right-[100px] z-30 bg-white/90 backdrop-blur border border-slate-200 rounded-md p-2 hover:bg-slate-50 shadow-sm"
     title="Edit this page"
     aria-label="Edit this page"
   >
@@ -159,7 +205,7 @@
   <article class="mx-auto px-8 py-6" :class="width === 'wide' ? 'max-w-none' : 'max-w-3xl'">
     <p v-if="error" class="text-red-600">{{ error }}</p>
     <template v-else-if="page">
-      <header class="flex items-center justify-between mb-4" :class="width === 'wide' ? 'pr-32' : ''">
+      <header class="flex items-center justify-between mb-4" :class="width === 'wide' ? 'pr-48' : ''">
         <Breadcrumbs :path="page.path" />
         <RouterLink
           :to="`/history/${page.path}`"
@@ -183,7 +229,11 @@
         </RouterLink>
       </header>
       <h1 v-if="!bodyHasMatchingH1" class="text-3xl font-bold">{{ page.meta.title }}</h1>
-      <div class="prose" v-html="html" />
+      <div v-if="mode === 'rendered'" class="prose" v-html="html" />
+      <pre
+        v-else
+        class="bg-[#f6f8fa] rounded-md p-6 overflow-auto text-sm leading-relaxed border border-slate-200"
+      ><code class="hljs language-markdown" v-html="highlightedSource" /></pre>
       <p v-if="page.meta.tags.length" class="mt-8 text-xs text-slate-500">
         <span v-for="t in page.meta.tags" :key="t" class="mr-2">#{{ t }}</span>
       </p>
