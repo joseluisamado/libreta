@@ -68,6 +68,26 @@
       <RouterLink to="/w/index" class="hover:underline">
         <h1 class="text-lg font-semibold mb-4 hidden md:block">Libreta</h1>
       </RouterLink>
+      <RouterLink
+        to="/search"
+        class="flex items-center gap-2 mb-3 px-2 py-1.5 rounded text-sm text-slate-600 hover:bg-slate-200 transition-colors"
+        :class="{ 'bg-slate-200 font-medium': $route.path === '/search' }"
+      >
+        <svg
+          class="w-4 h-4 shrink-0"
+          xmlns="http://www.w3.org/2000/svg"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <circle cx="11" cy="11" r="8" />
+          <line x1="21" y1="21" x2="16.65" y2="16.65" />
+        </svg>
+        Search
+      </RouterLink>
       <p v-if="tree.error" class="text-red-600 text-sm">{{ tree.error }}</p>
       <PageTree :nodes="tree.nodes" />
     </aside>

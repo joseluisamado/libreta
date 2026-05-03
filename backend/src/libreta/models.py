@@ -61,6 +61,14 @@ class AssetUploadResponse(BaseModel):
     deduped: bool = False
 
 
+class SearchResult(BaseModel):
+    path: str
+    title: str
+    snippet: str
+    updated: str
+    tags: str
+
+
 class HealthResponse(BaseModel):
     status: str
 

@@ -6,6 +6,7 @@ import type {
   PageNode,
   PageRead,
   PageWrite,
+  SearchResult,
 } from './types'
 
 const BASE = '/api/v1'
@@ -66,6 +67,11 @@ export async function uploadAsset(pagePath: string, file: File): Promise<AssetUp
     throw new Error(body.detail ?? `HTTP ${r.status}`)
   }
   return (await r.json()) as AssetUploadResponse
+}
+
+export function searchPages(q: string, limit = 20): Promise<SearchResult[]> {
+  const qs = new URLSearchParams({ q, limit: String(limit) }).toString()
+  return request<SearchResult[]>(`/search?${qs}`)
 }
 
 export function movePage(path: string, data: PageMove): Promise<PageRead> {

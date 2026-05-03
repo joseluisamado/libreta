@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile
 
 from libreta.config import Settings
 from libreta.deps import get_settings
@@ -30,6 +30,7 @@ from libreta.storage.repo import (
     move_commit,
     open_repo,
 )
+from libreta.storage.search import index_page, remove_page_from_index
 
 # Limit upload size at the API boundary to keep tests deterministic and prevent
 # accidentally committing huge blobs. Configurable later if needed.
@@ -130,22 +131,26 @@ async def get_page(
 async def put_page(
     path: str,
     body: PageWrite,
+    background_tasks: BackgroundTasks,
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> PageRead:
     page, verb = await write_page(settings.content_dir, path, body.body, prefer_index=body.is_index)
-    # Compute the file path relative to content_dir for the commit message
     file_path = page_to_file(settings.content_dir, normalize_page_path(path))
     rel_path = str(file_path.relative_to(settings.content_dir))
     repo = open_repo(settings.content_dir)
     await commit_page(repo, rel_path, verb)
+    background_tasks.add_task(index_page, settings.content_dir, file_path)
     return page
 
 
 @router.delete("/{path:path}", status_code=204)
 async def delete_page(
     path: str,
+    background_tasks: BackgroundTasks,
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> None:
     rel_path = await delete_page_storage(settings.content_dir, path)
     repo = open_repo(settings.content_dir)
     await delete_commit(repo, rel_path)
+    page_path = rel_path.removeprefix("pages/").removesuffix(".md")
+    background_tasks.add_task(remove_page_from_index, settings.content_dir, page_path)

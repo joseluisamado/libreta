@@ -84,10 +84,10 @@ A milestone-based plan, not a calendar. Each milestone is a coherent slice of va
 - [x] Image upload: drag & drop, paste from clipboard, "insert image" button
 - [x] Arbitrary file upload as attachment (PDFs, zips, etc.) with download links
 - [x] Attachment storage layout per `ARCHITECTURE.md` "Filesystem layout" (page-local — assets live next to the owning page; ARCHITECTURE updated to reflect this)
-- [ ] SQLite FTS5 index built and updated on save
-- [ ] `GET /api/search?q=...` returns ranked results
-- [ ] Search UI in the frontend, with snippets and keyboard navigation
-- [ ] `libreta reindex` CLI subcommand to force a full rebuild
+- [x] SQLite FTS5 index built and updated on save
+- [x] `GET /api/search?q=...` returns ranked results
+- [x] Search UI in the frontend, with snippets and keyboard navigation
+- [x] `libreta reindex` CLI subcommand to force a full rebuild
 
 **Exit criteria**: All non-diagram editing features feel "done." Search finds anything in under 300 ms.
 

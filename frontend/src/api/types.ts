@@ -48,6 +48,14 @@ export interface ApiError {
   detail: string
 }
 
+export interface SearchResult {
+  path: string
+  title: string
+  snippet: string
+  updated: string
+  tags: string
+}
+
 export interface AssetUploadResponse {
   filename: string
   size: number

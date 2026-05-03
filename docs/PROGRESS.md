@@ -8,9 +8,9 @@ Living document. Update as work progresses. Latest at the top.
 
 ## Status
 
-**Current milestone**: M3 — Tables, attachments, search
-**Phase**: All attachment work complete (images + arbitrary files: PDF, zip, etc.). Up next: SQLite FTS5 search index, search API + UI, and the `libreta reindex` CLI.
-**Next action**: Build the SQLite FTS5 index and the `/api/v1/search` endpoint.
+**Current milestone**: M3 — complete ✅
+**Next milestone**: M4 — Diagrams.net integration
+**Next action**: Start M4 — `jgraph/drawio` container in the Compose stack, `DrawioImage` Tiptap extension, postMessage protocol.
 
 ## At a glance
 
@@ -20,7 +20,7 @@ Living document. Update as work progresses. Latest at the top.
 | M1 — Read-only wiki | 🟢 Done |
 | M0.5 — Read-experience polish | 🟢 Done |
 | M2 — Editing & commits | 🟢 Done |
-| M3 — Tables, attachments, search | 🟡 In progress |
+| M3 — Tables, attachments, search | 🟢 Done |
 | M4 — Diagrams.net integration | ⚪ Not started |
 | M5 — v1.0 release | ⚪ Not started |
 
@@ -29,6 +29,20 @@ Legend: ⚪ not started · 🟡 in progress · 🟢 done · 🔴 blocked
 ---
 
 ## Log
+
+### 2026-05-03 — M3 Search (FTS5 index, API, UI, CLI)
+
+All four remaining M3 items landed together.
+
+- **Index**: SQLite FTS5 at `content/.libreta/search.db` (gitignored; rebuildable). Schema exactly as specified in ARCHITECTURE: `documents(path UNINDEXED, title, body, tags, updated UNINDEXED)` + shadow `pages_meta(path, mtime)` for incremental reindex. Porter stemmer + unicode61 tokenizer.
+- **On-save hook**: `put_page` adds an `index_page` `BackgroundTask` after each commit. `delete_page` adds `remove_page_from_index`. No blocking on the response.
+- **Startup reindex**: FastAPI `lifespan` context manager runs an incremental reindex on startup (skips pages whose mtime hasn't changed). Errors are logged and swallowed — the API still starts.
+- **`GET /api/v1/search?q=&limit=`**: returns ranked results with FTS5 `snippet()` highlights wrapped in `<mark>` tags. `tag:foo` queries are rewritten to `tags:foo` before being passed to FTS5. Bad FTS5 syntax returns `[]` rather than 500.
+- **`libreta reindex` CLI**: entry point in `pyproject.toml` (`libreta.cli:main`). Drops and rebuilds the full index. Supports `--content-dir` override.
+- **Search UI** (`/search`): full-page search view with debounced input (250 ms), spinner, snippets with highlighted `<mark>` terms, tag chips, keyboard navigation (↑/↓ to move, Enter to open, Escape to clear). URL synced to `?q=` so searches are bookmarkable/shareable. "Search" link added to the sidebar in App.vue.
+- **8 backend tests**: results, empty-query 422, bad-syntax empty, tag filter, missing-q 422, full reindex count, incremental reindex skips unchanged, delete removes from index.
+
+**Pre-flight**: backend 68/68 tests pass, ruff clean, mypy clean. Frontend 63/63 tests pass, vue-tsc clean, eslint clean (2 pre-existing v-html warnings).
 
 ### 2026-05-03 — Decision: orphan assets are not garbage-collected on save
 

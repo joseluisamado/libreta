@@ -1,14 +1,30 @@
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from libreta import __version__
-from libreta.api import assets, pages, system
+from libreta.api import assets, pages, search, system
+from libreta.deps import get_settings
 from libreta.errors import LibretaError
+from libreta.storage.search import incremental_reindex
 
 logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    settings = get_settings()
+    try:
+        n = await incremental_reindex(settings.content_dir)
+        if n:
+            logger.info("search index: updated %d page(s) on startup", n)
+    except Exception:
+        logger.warning("search index: startup reindex failed", exc_info=True)
+    yield
 
 
 def create_app() -> FastAPI:
@@ -17,6 +33,7 @@ def create_app() -> FastAPI:
         version=__version__,
         docs_url="/api/v1/docs",
         openapi_url="/api/v1/openapi.json",
+        lifespan=lifespan,
     )
 
     # Dev-only CORS so the Vite dev server (host port 8091) can call the api (host port 8092).
@@ -38,6 +55,7 @@ def create_app() -> FastAPI:
     app.include_router(system.router, prefix="/api/v1", tags=["system"])
     app.include_router(pages.router, prefix="/api/v1", tags=["pages"])
     app.include_router(assets.router, prefix="/api/v1", tags=["assets"])
+    app.include_router(search.router, prefix="/api/v1", tags=["search"])
 
     return app
 

@@ -22,6 +22,11 @@ const routes: RouteRecordRaw[] = [
     name: 'diff',
     component: () => import('./views/DiffView.vue'),
   },
+  {
+    path: '/search',
+    name: 'search',
+    component: () => import('./views/SearchView.vue'),
+  },
 ]
 
 export const router = createRouter({
