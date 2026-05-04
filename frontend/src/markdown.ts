@@ -152,14 +152,25 @@ function isAbsolute(url: string): boolean {
   return /^([a-z][a-z0-9+.-]*:)?\/\//i.test(url) || url.startsWith('/') || url.startsWith('data:')
 }
 
-export function resolveAssetUrl(src: string, pagePath: string, isIndex: boolean): string {
+export function resolveAssetUrl(
+  src: string,
+  pagePath: string,
+  isIndex: boolean,
+  sourceId?: string,
+): string {
   if (isAbsolute(src) || src.startsWith('#')) return src
   // pagePath is the API path (e.g. "recipes/lasagna" or "devel/concepts/saml").
   // Determine the directory the page is stored in:
   //   - leaf page  (foo/bar.md):    drop last segment → "foo/"
   //   - index page (foo/bar/index.md): keep all segments → "foo/bar/"
   const parts = pagePath.split('/').filter(Boolean)
-  const dir = isIndex ? [...parts] : parts.slice(0, -1)
+  // When is_index, the page lives at <dir>/index.md so images sit in <dir>/.
+  // The path may end in "index" (e.g. "devel/concepts/saml/index") or not
+  // (e.g. "devel/concepts/saml") — strip the trailing "index" either way.
+  const dirParts = isIndex
+    ? parts[parts.length - 1] === 'index' ? parts.slice(0, -1) : parts
+    : parts.slice(0, -1)
+  const dir = dirParts
   const segments = src.split('/')
   const out = [...dir]
   for (const s of segments) {
@@ -170,12 +181,16 @@ export function resolveAssetUrl(src: string, pagePath: string, isIndex: boolean)
     }
     out.push(s)
   }
+  if (sourceId) {
+    return `/api/v1/sources/${sourceId}/assets/pages/${out.join('/')}`
+  }
   return `${ASSET_BASE}/pages/${out.join('/')}`
 }
 
 interface RenderEnv {
   pagePath?: string
   isIndex?: boolean
+  sourceId?: string
 }
 
 // Extensions we treat as "asset" downloads when they appear in a relative
@@ -253,7 +268,7 @@ function patchRenderer(): void {
       const attr = token.attrs?.[srcIdx]
       if (srcIdx >= 0 && attr) {
         const e = env as RenderEnv
-        attr[1] = resolveAssetUrl(attr[1], e.pagePath ?? '', e.isIndex ?? false)
+        attr[1] = resolveAssetUrl(attr[1], e.pagePath ?? '', e.isIndex ?? false, e.sourceId)
       }
     }
     return defaultImage(tokens, idx, options, env, self)
@@ -276,7 +291,7 @@ function patchRenderer(): void {
       if (hrefIdx >= 0 && attr) {
         if (looksLikeAssetHref(attr[1])) {
           const e = env as RenderEnv
-          attr[1] = resolveAssetUrl(attr[1], e.pagePath ?? '', e.isIndex ?? false)
+          attr[1] = resolveAssetUrl(attr[1], e.pagePath ?? '', e.isIndex ?? false, e.sourceId)
         } else if (isExternalUrl(attr[1])) {
           token.attrSet('target', '_blank')
           token.attrSet('rel', 'noopener noreferrer')
@@ -290,6 +305,11 @@ function patchRenderer(): void {
 
 patchRenderer()
 
-export function renderMarkdown(source: string, pagePath = '', isIndex = false): string {
-  return md.render(source, { pagePath, isIndex })
+export function renderMarkdown(
+  source: string,
+  pagePath = '',
+  isIndex = false,
+  sourceId?: string,
+): string {
+  return md.render(source, { pagePath, isIndex, sourceId })
 }

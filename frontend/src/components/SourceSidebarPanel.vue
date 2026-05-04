@@ -71,12 +71,13 @@
         :title="statusTitle(source)"
       />
 
-      <RouterLink
-        :to="`/source/${source.id}/`"
-        class="flex-1 truncate text-sm font-medium text-slate-700 hover:text-blue-600"
+      <button
+        type="button"
+        class="flex-1 truncate text-left text-sm font-medium text-slate-700 hover:text-blue-600"
+        @click="expanded = !expanded"
       >
         {{ source.label }}
-      </RouterLink>
+      </button>
 
       <!-- Sync button -->
       <button

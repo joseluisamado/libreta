@@ -204,15 +204,17 @@
           class="flex items-center gap-1 w-full text-xs text-slate-500 hover:text-slate-700 mb-1"
           @click="watchedExpanded = !watchedExpanded"
         >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            class="w-3 h-3 transition-transform shrink-0"
-            :class="{ 'rotate-90': watchedExpanded }"
-            viewBox="0 0 12 12"
-            fill="currentColor"
-          >
-            <path d="M4 2 L8 6 L4 10 Z" />
-          </svg>
+          <span class="shrink-0 w-4 h-4 flex items-center justify-center">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              class="w-3 h-3 transition-transform"
+              :class="{ 'rotate-90': watchedExpanded }"
+              viewBox="0 0 12 12"
+              fill="currentColor"
+            >
+              <path d="M4 2 L8 6 L4 10 Z" />
+            </svg>
+          </span>
           Watched folders
         </button>
         <WatchedSidebarContent v-if="watchedExpanded" />

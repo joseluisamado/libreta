@@ -47,7 +47,7 @@
 
   const html = computed(() => {
     if (!page.value) return ''
-    return renderMarkdown(page.value.body, page.value.path, page.value.is_index)
+    return renderMarkdown(page.value.body, page.value.path, page.value.is_index, sourceId.value)
   })
 
   const highlightedSource = computed(() => {
@@ -116,7 +116,7 @@
     </svg>
   </RouterLink>
   <PageToc v-if="page" :html="html" />
-  <article class="mx-auto px-8 py-6" :class="width === 'wide' ? 'max-w-none' : 'max-w-3xl'">
+  <article class="mx-auto py-6" :class="width === 'wide' ? 'max-w-none px-12' : 'max-w-3xl px-8'">
     <p v-if="error" class="text-red-600">{{ error }}</p>
     <template v-else-if="page">
       <header

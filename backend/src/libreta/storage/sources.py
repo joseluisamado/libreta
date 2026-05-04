@@ -433,7 +433,7 @@ def _read_title_only(file: Path, fallback: str) -> str:
         return fallback
 
 
-def _walk_tree_sync(pages_root: Path) -> list[PageNode]:
+def _walk_tree_sync(pages_root: Path, hide_underscored: bool = True) -> list[PageNode]:
     if not pages_root.exists():
         return []
 
@@ -446,7 +446,9 @@ def _walk_tree_sync(pages_root: Path) -> list[PageNode]:
         seen_dirs: set[str] = set()
 
         for entry in entries:
-            if entry.name.startswith(".") or entry.name.startswith("_"):
+            if entry.name.startswith("."):
+                continue
+            if hide_underscored and entry.name.startswith("_"):
                 continue
             try:
                 if entry.is_dir():
@@ -484,9 +486,22 @@ def _walk_tree_sync(pages_root: Path) -> list[PageNode]:
     return build(pages_root, "")
 
 
+def _pages_root(repos_dir: Path, source_id: str) -> Path:
+    """Return the directory that contains the source's markdown files.
+
+    Repos that follow the Libreta convention have a ``pages/`` subdirectory.
+    Repos that store markdown at the root (e.g. plain Gitea wikis) are served
+    directly from the repo root.
+    """
+    local = _local_path(repos_dir, source_id)
+    pages = local / "pages"
+    return pages if pages.is_dir() else local
+
+
 async def walk_source_tree(repos_dir: Path, source_id: str) -> list[PageNode]:
-    pages_root = _local_path(repos_dir, source_id) / "pages"
-    return await asyncio.to_thread(_walk_tree_sync, pages_root)
+    local = _local_path(repos_dir, source_id)
+    pages = local / "pages"
+    return await asyncio.to_thread(_walk_tree_sync, pages if pages.is_dir() else local, pages.is_dir())
 
 
 # ---------------------------------------------------------------------------
@@ -565,8 +580,7 @@ def _read_page_sync(pages_root: Path, raw_path: str) -> PageRead:
 
 
 async def read_source_page(repos_dir: Path, source_id: str, raw_path: str) -> PageRead:
-    pages_root = _local_path(repos_dir, source_id) / "pages"
-    return await asyncio.to_thread(_read_page_sync, pages_root, raw_path)
+    return await asyncio.to_thread(_read_page_sync, _pages_root(repos_dir, source_id), raw_path)
 
 
 # ---------------------------------------------------------------------------
@@ -580,7 +594,7 @@ def _write_page_sync(
     body: str,
 ) -> tuple[PageRead, str]:
     _validate_path_segments(raw_path)
-    pages_root = local / "pages"
+    pages_root = local / "pages" if (local / "pages").is_dir() else local
     file = pages_root / raw_path
     fallback = file.name.replace("-", " ").replace("_", " ").title()
 
