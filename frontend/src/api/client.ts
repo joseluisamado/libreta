@@ -19,6 +19,11 @@ import type {
 
 const BASE = '/api/v1'
 
+/** Encode each segment of a URL path so spaces and special chars are safe. */
+function enc(path: string): string {
+  return path.split('/').map(encodeURIComponent).join('/')
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const r = await fetch(`${BASE}${path}`, init)
   if (!r.ok) {
@@ -49,11 +54,11 @@ export function getRecentChanges(limit = 20): Promise<RecentChange[]> {
 }
 
 export function getPage(path: string): Promise<PageRead> {
-  return request<PageRead>(`/pages/${path}`)
+  return request<PageRead>(`/pages/${enc(path)}`)
 }
 
 export function savePage(path: string, data: PageWrite): Promise<PageRead> {
-  return request<PageRead>(`/pages/${path}`, {
+  return request<PageRead>(`/pages/${enc(path)}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
@@ -69,23 +74,23 @@ async function requestNoContent(path: string, init?: RequestInit): Promise<void>
 }
 
 export function deletePage(path: string): Promise<void> {
-  return requestNoContent(`/pages/${path}`, { method: 'DELETE' })
+  return requestNoContent(`/pages/${enc(path)}`, { method: 'DELETE' })
 }
 
 export function getPageHistory(path: string): Promise<HistoryEntry[]> {
-  return request<HistoryEntry[]>(`/pages/${path}/history`)
+  return request<HistoryEntry[]>(`/pages/${enc(path)}/history`)
 }
 
 export function getPageDiff(path: string, a: string, b: string): Promise<DiffEntry> {
   const qs = new URLSearchParams({ a, b }).toString()
-  return request<DiffEntry>(`/pages/${path}/diff?${qs}`)
+  return request<DiffEntry>(`/pages/${enc(path)}/diff?${qs}`)
 }
 
 export async function uploadAsset(pagePath: string, file: File): Promise<AssetUploadResponse> {
   const fd = new FormData()
   fd.append('file', file, file.name)
   // Don't set Content-Type — the browser sets it (with the boundary).
-  const r = await fetch(`${BASE}/pages/${pagePath}/assets`, { method: 'POST', body: fd })
+  const r = await fetch(`${BASE}/pages/${enc(pagePath)}/assets`, { method: 'POST', body: fd })
   if (!r.ok) {
     const body = (await r.json().catch(() => ({}))) as { detail?: string }
     throw new Error(body.detail ?? `HTTP ${r.status}`)
@@ -100,7 +105,7 @@ export async function uploadSourceAsset(
 ): Promise<AssetUploadResponse> {
   const fd = new FormData()
   fd.append('file', file, file.name)
-  const r = await fetch(`${BASE}/sources/${sourceId}/pages/${pagePath}/assets`, {
+  const r = await fetch(`${BASE}/sources/${sourceId}/pages/${enc(pagePath)}/assets`, {
     method: 'POST',
     body: fd,
   })
@@ -117,7 +122,7 @@ export function searchPages(q: string, limit = 20): Promise<SearchResult[]> {
 }
 
 export function movePage(path: string, data: PageMove): Promise<PageRead> {
-  return request<PageRead>(`/pages/${path}/move`, {
+  return request<PageRead>(`/pages/${enc(path)}/move`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
@@ -139,19 +144,19 @@ export function addWatchedFolder(data: WatchedFolderCreate): Promise<WatchedFold
 }
 
 export function removeWatchedFolder(label: string): Promise<void> {
-  return requestNoContent(`/watch/folders/${label}`, { method: 'DELETE' })
+  return requestNoContent(`/watch/folders/${enc(label)}`, { method: 'DELETE' })
 }
 
 export function getWatchedTree(label: string): Promise<PageNode[]> {
-  return request<PageNode[]>(`/watch/${label}/tree`)
+  return request<PageNode[]>(`/watch/${enc(label)}/tree`)
 }
 
 export function getWatchedPage(label: string, path: string): Promise<PageRead> {
-  return request<PageRead>(`/watch/${label}/${path}`)
+  return request<PageRead>(`/watch/${enc(label)}/${enc(path)}`)
 }
 
 export function saveWatchedPage(label: string, path: string, data: PageWrite): Promise<PageRead> {
-  return request<PageRead>(`/watch/${label}/${path}`, {
+  return request<PageRead>(`/watch/${enc(label)}/${enc(path)}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
@@ -211,11 +216,11 @@ export function getSourceTree(id: string): Promise<PageNode[]> {
 }
 
 export function getSourcePage(id: string, path: string): Promise<PageRead> {
-  return request<PageRead>(`/sources/${id}/pages/${path}`)
+  return request<PageRead>(`/sources/${id}/pages/${enc(path)}`)
 }
 
 export function saveSourcePage(id: string, path: string, data: PageWrite): Promise<PageRead> {
-  return request<PageRead>(`/sources/${id}/pages/${path}`, {
+  return request<PageRead>(`/sources/${id}/pages/${enc(path)}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
@@ -223,11 +228,11 @@ export function saveSourcePage(id: string, path: string, data: PageWrite): Promi
 }
 
 export function deleteSourcePage(id: string, path: string): Promise<void> {
-  return requestNoContent(`/sources/${id}/pages/${path}`, { method: 'DELETE' })
+  return requestNoContent(`/sources/${id}/pages/${enc(path)}`, { method: 'DELETE' })
 }
 
 export function moveSourcePage(id: string, path: string, data: PageMove): Promise<PageRead> {
-  return request<PageRead>(`/sources/${id}/pages/${path}/move`, {
+  return request<PageRead>(`/sources/${id}/pages/${enc(path)}/move`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
@@ -235,5 +240,5 @@ export function moveSourcePage(id: string, path: string, data: PageMove): Promis
 }
 
 export async function createSourceFolder(id: string, folderPath: string): Promise<void> {
-  await requestNoContent(`/sources/${id}/folders/${folderPath}`, { method: 'POST' })
+  await requestNoContent(`/sources/${id}/folders/${enc(folderPath)}`, { method: 'POST' })
 }

@@ -217,8 +217,6 @@ def _validate_key(pem: str) -> None:
         try:
             base64.b64decode(stripped, validate=True)
         except Exception as exc:
-            raise SshKeyInvalidError(
-                "private key does not look like PEM or base64"
-            ) from exc
+            raise SshKeyInvalidError("private key does not look like PEM or base64") from exc
     if len(stripped) < 64:
         raise SshKeyInvalidError("private key too short")

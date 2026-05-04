@@ -83,7 +83,10 @@ def page_directory(content_dir: Path, raw_path: str) -> Path:
     file = page_to_file(content_dir, page)
     if not file.exists():
         # Allow attachments for a synthesised directory page
-        dir_path = content_dir / "pages" / Path(*page.parts)
+        if str(page).startswith("pages/"):
+            dir_path = content_dir / Path(*page.parts)
+        else:
+            dir_path = content_dir / "pages" / Path(*page.parts)
         if dir_path.is_dir():
             return _sidecar_dir(content_dir, page)
         raise PageNotFoundError(raw_path)

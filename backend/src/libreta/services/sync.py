@@ -131,9 +131,7 @@ async def periodic_sync_loop(
             sid: str = entry["id"]
             interval_secs = entry.get("sync_interval_minutes", 15) * 60
             if now >= next_sync.get(sid, 0):
-                task = asyncio.create_task(
-                    _sync_one(repos_dir, ssh_keys_dir, content_dir, entry)
-                )
+                task = asyncio.create_task(_sync_one(repos_dir, ssh_keys_dir, content_dir, entry))
                 _running.add(task)
                 task.add_done_callback(_running.discard)
                 next_sync[sid] = now + interval_secs

@@ -107,16 +107,17 @@ def _upsert_page_sync(
     conn.commit()
 
 
-def _walk_source_pages(
-    repos_dir: Path, source_id: str
-) -> tuple[Path, list[Path]]:
+def _walk_source_pages(repos_dir: Path, source_id: str) -> tuple[Path, list[Path]]:
     """Return (pages_root, [md_file, ...]) for a git source."""
     local = repos_dir / source_id
-    pages_root = local / "pages"
-    if not pages_root.is_dir():
-        pages_root = local
-    md_files = sorted(p for p in pages_root.rglob("*.md") if p.is_file())
-    return pages_root, md_files
+    md_files = sorted(
+        p
+        for p in local.rglob("*.md")
+        if p.is_file()
+        and not p.name.startswith(".")
+        and not any(part.startswith(".") for part in p.relative_to(local).parts)
+    )
+    return local, md_files
 
 
 def _delete_page_sync(conn: sqlite3.Connection, page_path: str) -> None:
@@ -161,10 +162,7 @@ def _list_source_ids(repos_dir: Path) -> list[str]:
     """List source IDs from the repos directory."""
     if not repos_dir.is_dir():
         return []
-    return sorted(
-        d.name for d in repos_dir.iterdir()
-        if d.is_dir() and (d / ".git").is_dir()
-    )
+    return sorted(d.name for d in repos_dir.iterdir() if d.is_dir() and (d / ".git").is_dir())
 
 
 def _incremental_reindex_sync(content_dir: Path, repos_dir: Path) -> int:
@@ -183,9 +181,7 @@ def _incremental_reindex_sync(content_dir: Path, repos_dir: Path) -> int:
                     continue
                 key = f"{source_id}:{page_path}"
                 mtime = md_file.stat().st_mtime
-                row = conn.execute(
-                    "SELECT mtime FROM pages_meta WHERE path = ?", (key,)
-                ).fetchone()
+                row = conn.execute("SELECT mtime FROM pages_meta WHERE path = ?", (key,)).fetchone()
                 if row and abs(row["mtime"] - mtime) < 0.001:
                     continue
                 _upsert_page_sync(conn, md_file, pages_root, source_id)

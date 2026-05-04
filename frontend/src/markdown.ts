@@ -173,7 +173,7 @@ export function resolveAssetUrl(
     out.push(s)
   }
   if (sourceId) {
-    return `/api/v1/sources/${sourceId}/assets/pages/${out.join('/')}`
+    return `/api/v1/sources/${sourceId}/assets/${out.join('/')}`
   }
   return `${ASSET_BASE}/pages/${out.join('/')}`
 }

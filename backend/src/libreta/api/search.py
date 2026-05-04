@@ -24,12 +24,14 @@ async def search_pages(
         key: str = r["path"]
         # Keys are source_id:page_path — split them
         sid, _, page_path = key.partition(":")
-        out.append(SearchResult(
-            path=page_path,
-            title=r["title"],
-            snippet=r["snippet"],
-            updated=r["updated"],
-            tags=r["tags"],
-            source_id=sid if sid else None,
-        ))
+        out.append(
+            SearchResult(
+                path=page_path,
+                title=r["title"],
+                snippet=r["snippet"],
+                updated=r["updated"],
+                tags=r["tags"],
+                source_id=sid if sid else None,
+            )
+        )
     return out

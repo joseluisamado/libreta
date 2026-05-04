@@ -1,10 +1,45 @@
 <script setup lang="ts">
-  import { ref } from 'vue'
+  import { ref, computed } from 'vue'
   import type { Editor } from '@tiptap/core'
 
-  defineProps<{
+  const LANGUAGES = [
+    { value: '', label: 'plain' },
+    { value: 'bash', label: 'bash' },
+    { value: 'c', label: 'c' },
+    { value: 'cpp', label: 'c++' },
+    { value: 'css', label: 'css' },
+    { value: 'diff', label: 'diff' },
+    { value: 'go', label: 'go' },
+    { value: 'html', label: 'html' },
+    { value: 'java', label: 'java' },
+    { value: 'javascript', label: 'javascript' },
+    { value: 'json', label: 'json' },
+    { value: 'kotlin', label: 'kotlin' },
+    { value: 'markdown', label: 'markdown' },
+    { value: 'python', label: 'python' },
+    { value: 'ruby', label: 'ruby' },
+    { value: 'rust', label: 'rust' },
+    { value: 'sql', label: 'sql' },
+    { value: 'swift', label: 'swift' },
+    { value: 'toml', label: 'toml' },
+    { value: 'typescript', label: 'typescript' },
+    { value: 'xml', label: 'xml' },
+    { value: 'yaml', label: 'yaml' },
+  ]
+
+  const props = defineProps<{
     editor: Editor | null
   }>()
+
+  const activeCodeBlockLanguage = computed<string>(() => {
+    if (!props.editor?.isActive('codeBlock')) return ''
+    return (props.editor.getAttributes('codeBlock').language as string | undefined) ?? ''
+  })
+
+  function setCodeBlockLanguage(lang: string): void {
+    if (!props.editor || props.editor.isDestroyed) return
+    props.editor.chain().focus().updateAttributes('codeBlock', { language: lang || null }).run()
+  }
 
   const emit = defineEmits<{
     'upload-files': [files: File[]]
@@ -187,6 +222,18 @@
         <polyline points="8 6 2 12 8 18" />
       </svg>
     </button>
+    <select
+      v-if="editor?.isActive('codeBlock')"
+      :value="activeCodeBlockLanguage"
+      class="ml-1 rounded border border-slate-200 bg-white px-1.5 py-1 text-xs text-slate-700 hover:border-slate-400 focus:outline-none"
+      title="Code block language"
+      @change="setCodeBlockLanguage(($event.target as HTMLSelectElement).value)"
+    >
+      <option v-for="lang in LANGUAGES" :key="lang.value" :value="lang.value">
+        {{ lang.label }}
+      </option>
+    </select>
+
     <button
       type="button"
       class="p-1.5 rounded hover:bg-slate-100 text-slate-600"

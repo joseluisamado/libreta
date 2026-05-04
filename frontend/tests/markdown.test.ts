@@ -44,25 +44,25 @@ describe('renderMarkdown', () => {
     expect(out).toContain('/api/v1/assets/pages/shared/x.png')
   })
 
-  it('resolves images relative to the page dir for index pages', () => {
-    // Page stored as devel/concepts/saml/index.md → asset lives in saml/
-    const out = renderMarkdown('![alt](foo.png)', 'devel/concepts/saml', true)
-    expect(out).toContain('/api/v1/assets/pages/devel/concepts/saml/foo.png')
+  it('resolves images relative to the page parent dir', () => {
+    // Page path devel/concepts/saml → saml is the slug, assets live in devel/concepts/
+    const out = renderMarkdown('![alt](foo.png)', 'devel/concepts/saml')
+    expect(out).toContain('/api/v1/assets/pages/devel/concepts/foo.png')
   })
 
   it('rewrites relative PDF/zip links through the assets endpoint', () => {
-    const out = renderMarkdown('[doc](report.pdf)', 'housing/espana/cancer', true)
-    expect(out).toContain('href="/api/v1/assets/pages/housing/espana/cancer/report.pdf"')
+    const out = renderMarkdown('[doc](report.pdf)', 'housing/espana/cancer')
+    expect(out).toContain('href="/api/v1/assets/pages/housing/espana/report.pdf"')
   })
 
   it('leaves wiki page links alone', () => {
-    const out = renderMarkdown('[other](/w/foo/bar)', 'housing/espana/cancer', true)
+    const out = renderMarkdown('[other](/w/foo/bar)', 'housing/espana/cancer')
     expect(out).toContain('href="/w/foo/bar"')
     expect(out).not.toContain('/api/v1/assets/')
   })
 
   it('leaves anchor and external links alone', () => {
-    const out = renderMarkdown('[a](#x) [b](https://x.com/y.pdf)', 'foo', false)
+    const out = renderMarkdown('[a](#x) [b](https://x.com/y.pdf)', 'foo')
     expect(out).toContain('href="#x"')
     expect(out).toContain('href="https://x.com/y.pdf"')
   })

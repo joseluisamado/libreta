@@ -4,7 +4,7 @@ import asyncio
 import logging
 from collections import Counter
 from datetime import UTC, datetime
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 from typing import Any
 
 import frontmatter
@@ -69,9 +69,7 @@ async def read_page(content_dir: Path, raw_path: str) -> PageRead:
     return await asyncio.to_thread(_read_page_sync, content_dir, raw_path)
 
 
-def _write_page_sync(
-    content_dir: Path, raw_path: str, body: str
-) -> tuple[PageRead, str]:
+def _write_page_sync(content_dir: Path, raw_path: str, body: str) -> tuple[PageRead, str]:
     page = normalize_page_path(raw_path)
     file = page_to_file(content_dir, page)
     fallback_title = page.parts[-1].replace("-", " ").replace("_", " ").title()
@@ -150,9 +148,7 @@ def _write_page_sync(
     return result, verb
 
 
-async def write_page(
-    content_dir: Path, raw_path: str, body: str
-) -> tuple[PageRead, str]:
+async def write_page(content_dir: Path, raw_path: str, body: str) -> tuple[PageRead, str]:
     return await asyncio.to_thread(_write_page_sync, content_dir, raw_path, body)
 
 

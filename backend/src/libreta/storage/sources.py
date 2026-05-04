@@ -490,22 +490,8 @@ def _walk_tree_sync(pages_root: Path) -> list[PageNode]:
     return build(pages_root, "")
 
 
-def _pages_root(repos_dir: Path, source_id: str) -> Path:
-    """Return the directory that contains the source's markdown files.
-
-    Repos that follow the Libreta convention have a ``pages/`` subdirectory.
-    Repos that store markdown at the root (e.g. plain Gitea wikis) are served
-    directly from the repo root.
-    """
-    local = _local_path(repos_dir, source_id)
-    pages = local / "pages"
-    return pages if pages.is_dir() else local
-
-
 async def walk_source_tree(repos_dir: Path, source_id: str) -> list[PageNode]:
-    local = _local_path(repos_dir, source_id)
-    pages = local / "pages"
-    return await asyncio.to_thread(_walk_tree_sync, pages if pages.is_dir() else local)
+    return await asyncio.to_thread(_walk_tree_sync, _local_path(repos_dir, source_id))
 
 
 # ---------------------------------------------------------------------------
@@ -572,7 +558,7 @@ def _read_page_sync(pages_root: Path, raw_path: str) -> PageRead:
 
 
 async def read_source_page(repos_dir: Path, source_id: str, raw_path: str) -> PageRead:
-    return await asyncio.to_thread(_read_page_sync, _pages_root(repos_dir, source_id), raw_path)
+    return await asyncio.to_thread(_read_page_sync, _local_path(repos_dir, source_id), raw_path)
 
 
 # ---------------------------------------------------------------------------
@@ -586,8 +572,7 @@ def _write_page_sync(
     body: str,
 ) -> tuple[PageRead, str]:
     _validate_path_segments(raw_path)
-    pages_root = local / "pages" if (local / "pages").is_dir() else local
-    file = pages_root / raw_path
+    file = local / raw_path
     fallback = file.name.replace("-", " ").replace("_", " ").title()
 
     existing = file.with_suffix(".md") if not file.suffix else file

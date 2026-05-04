@@ -270,8 +270,7 @@ async def create_source_folder(
 ) -> None:
     """Create an empty directory (with .gitkeep) in a git source."""
     local = (settings.repos_dir / source_id).resolve()
-    pages_root = local / "pages" if (local / "pages").is_dir() else local
-    dir_path = pages_root / path
+    dir_path = local / path
     if dir_path.exists():
         raise HTTPException(status_code=409, detail=f"folder already exists: {path}")
     dir_path.mkdir(parents=True)
@@ -292,10 +291,9 @@ async def delete_source_page(
 ) -> None:
     """Delete a page (or bare directory) and its sidecar from a git source."""
     local = (settings.repos_dir / source_id).resolve()
-    pages_root = local / "pages" if (local / "pages").is_dir() else local
 
-    md_file = pages_root / f"{path}.md"
-    dir_path = pages_root / path
+    md_file = local / f"{path}.md"
+    dir_path = local / path
 
     if md_file.is_file():
         sidecar = md_file.parent / f".{md_file.name}"
@@ -338,12 +336,11 @@ async def move_source_page(
 ) -> PageRead:
     """Rename/move a page (or bare directory) and its sidecar in a git source."""
     local = (settings.repos_dir / source_id).resolve()
-    pages_root = local / "pages" if (local / "pages").is_dir() else local
 
-    old_md = pages_root / f"{path}.md"
-    old_dir = pages_root / path
-    new_md = pages_root / f"{body.new_path}.md"
-    new_dir = pages_root / body.new_path
+    old_md = local / f"{path}.md"
+    old_dir = local / path
+    new_md = local / f"{body.new_path}.md"
+    new_dir = local / body.new_path
 
     if old_md.is_file():
         # Rename a page (and its sidecar)
@@ -376,9 +373,7 @@ async def move_source_page(
         if has_gitkeep:
             new_gk_rel = str((new_dir / ".gitkeep").relative_to(local))
             repo = open_repo(local)
-            await asyncio.to_thread(
-                _move_commit_sync, repo, old_gk_rel, new_gk_rel
-            )
+            await asyncio.to_thread(_move_commit_sync, repo, old_gk_rel, new_gk_rel)
         background.add_task(enqueue_push, source_id)
         return await src_store.read_source_page(settings.repos_dir, source_id, body.new_path)
 

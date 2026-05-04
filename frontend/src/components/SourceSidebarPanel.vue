@@ -101,7 +101,7 @@
         class="text-[10px] whitespace-nowrap"
         :class="syncMessage === 'Synced' ? 'text-emerald-500' : 'text-blue-400'"
       >
-        {{ syncing ? 'push & pull…' : syncMessage.toLowerCase() }}
+        {{ syncing ? 'push & pull…' : syncMessage!.toLowerCase() }}
       </span>
       <span
         v-else-if="source.last_sync_error"

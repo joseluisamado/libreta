@@ -2,6 +2,8 @@
   import { watch, ref, computed, onBeforeUnmount, onMounted } from 'vue'
   import { useEditor, EditorContent } from '@tiptap/vue-3'
   import StarterKit from '@tiptap/starter-kit'
+  import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight'
+  import { createLowlight, common } from 'lowlight'
   import TaskList from '@tiptap/extension-task-list'
   import TaskItem from '@tiptap/extension-task-item'
   import Link from '@tiptap/extension-link'
@@ -9,6 +11,7 @@
   import Image from '@tiptap/extension-image'
   import { mergeAttributes } from '@tiptap/core'
   import { Markdown } from 'tiptap-markdown'
+  import 'highlight.js/styles/github.css'
   import { uploadAsset, uploadSourceAsset } from '@/api/client'
   import { resolveAssetUrl } from '@/markdown'
   import type { Editor as TiptapEditor } from '@tiptap/core'
@@ -44,6 +47,11 @@
         heading: { levels: [1, 2, 3] },
         // Exclude built-in link so we configure @tiptap/extension-link explicitly
         link: false,
+        // Exclude built-in codeBlock; we use CodeBlockLowlight for syntax highlighting
+        codeBlock: false,
+      }),
+      CodeBlockLowlight.configure({
+        lowlight: createLowlight(common),
       }),
       TaskList,
       TaskItem.configure({
@@ -174,9 +182,12 @@
         ? await uploadSourceAsset(props.sourceId, props.path, file)
         : await uploadAsset(props.path, file)
       const ed = editor.value
+      // Markdown link destinations cannot contain literal spaces (CommonMark
+      // spec).  Encode each path segment so the serialized markdown is valid.
+      const href = result.filename.split('/').map(encodeURIComponent).join('/')
       if (result.kind === 'image') {
         const alt = file.name.replace(/\.[^.]+$/, '')
-        ed.chain().focus().setImage({ src: result.filename, alt }).run()
+        ed.chain().focus().setImage({ src: href, alt }).run()
       } else {
         // Insert as a markdown-style link: the visible text is the filename,
         // the href is the same filename (relative to the page), so it
@@ -186,7 +197,7 @@
           .insertContent({
             type: 'text',
             text: result.filename,
-            marks: [{ type: 'link', attrs: { href: result.filename } }],
+            marks: [{ type: 'link', attrs: { href } }],
           })
           .run()
       }

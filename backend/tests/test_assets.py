@@ -55,9 +55,7 @@ def test_upload_asset_to_page_writes_into_sidecar(client: TestClient, content_di
     assert r2.content == PNG
 
 
-def test_upload_asset_to_canonical_page_uses_sidecar(
-    client: TestClient, content_dir: Path
-) -> None:
+def test_upload_asset_to_canonical_page_uses_sidecar(client: TestClient, content_dir: Path) -> None:
     # "recipes" page is at pages/recipes.md → sidecar is pages/.recipes.md/
     r = client.post(
         "/api/v1/pages/recipes/assets",
@@ -82,7 +80,9 @@ def test_upload_dedupes_identical_bytes(client: TestClient, content_dir: Path) -
     assert r2.json()["deduped"] is True
     # The deduper returns the existing file's name with sidecar prefix
     assert r2.json()["filename"] == ".pizza-dough.md/photo.png"
-    assert not (content_dir / "pages" / "recipes" / ".pizza-dough.md" / "photo-renamed.png").exists()
+    assert not (
+        content_dir / "pages" / "recipes" / ".pizza-dough.md" / "photo-renamed.png"
+    ).exists()
 
 
 def test_upload_collision_with_different_bytes_gets_suffix(
