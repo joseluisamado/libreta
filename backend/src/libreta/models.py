@@ -120,6 +120,7 @@ class SearchResult(BaseModel):
     snippet: str
     updated: str
     tags: str
+    source_id: str | None = None
 
 
 class HealthResponse(BaseModel):

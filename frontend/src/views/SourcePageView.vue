@@ -1,12 +1,20 @@
 <script setup lang="ts">
   import { computed, ref, watch } from 'vue'
-  import { useRoute } from 'vue-router'
-  import { getSourcePage } from '@/api/client'
-  import type { PageRead } from '@/api/types'
+  import { useRoute, useRouter } from 'vue-router'
+  import {
+    getSourcePage,
+    saveSourcePage,
+    deleteSourcePage,
+    moveSourcePage,
+    createSourceFolder,
+  } from '@/api/client'
+  import type { PageNode, PageRead } from '@/api/types'
   import { renderMarkdown } from '@/markdown'
   import { useReadingWidth } from '@/composables/usePrefs'
   import { useViewMode } from '@/composables/useViewMode'
+  import { useSourcesStore } from '@/stores/sources'
   import Breadcrumbs from '@/components/Breadcrumbs.vue'
+  import DirListing from '@/components/DirListing.vue'
   import PageToolbar from '@/components/PageToolbar.vue'
   import PageToc from '@/components/PageToc.vue'
   import hljs from 'highlight.js'
@@ -16,6 +24,8 @@
   const { mode, toggle: toggleViewMode } = useViewMode()
 
   const route = useRoute()
+  const router = useRouter()
+  const sources = useSourcesStore()
   const page = ref<PageRead | null>(null)
   const error = ref<string | null>(null)
 
@@ -31,12 +41,111 @@
     error.value = null
     try {
       page.value = await getSourcePage(sourceId.value, path.value)
+      // Ensure the tree is loaded so we can detect directory status
+      await sources.loadTree(sourceId.value)
     } catch (e) {
       error.value = e instanceof Error ? e.message : String(e)
     }
   }
 
   watch([sourceId, path], load, { immediate: true })
+
+  function findNode(nodes: PageNode[], target: string): PageNode | null {
+    for (const n of nodes) {
+      if (n.path === target) return n
+      if (n.children.length) {
+        const hit = findNode(n.children, target)
+        if (hit) return hit
+      }
+    }
+    return null
+  }
+
+  const dirNode = computed<PageNode | null>(() => {
+    if (!page.value) return null
+    const tree = sources.trees[sourceId.value]
+    if (!tree) return null
+    return findNode(tree, page.value.path)
+  })
+
+  const isDirectory = computed(() => dirNode.value?.is_directory ?? false)
+
+  const dirChildren = computed<PageNode[]>(() => {
+    if (!dirNode.value?.is_directory) return []
+    return dirNode.value.children
+  })
+
+  function slugify(name: string): string {
+    return name
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, '-')
+      .replace(/[^a-z0-9-]/g, '')
+  }
+
+  const basePath = computed(() => (path.value === '' ? '' : path.value))
+
+  function getChildUrl(childPath: string): string {
+    return `/source/${sourceId.value}/${childPath}`
+  }
+
+  async function onCreatePage(name: string): Promise<void> {
+    const slug = slugify(name)
+    const prefix = basePath.value
+    const newPath = prefix ? `${prefix}/${slug}` : slug
+    try {
+      await saveSourcePage(sourceId.value, newPath, {
+        body: `# ${name}\n\n`,
+      })
+      await sources.loadTree(sourceId.value)
+      router.push(`/edit-source/${sourceId.value}/${newPath}`)
+    } catch (e) {
+      window.alert(`Failed to create page: ${e instanceof Error ? e.message : String(e)}`)
+    }
+  }
+
+  async function onCreateFolder(name: string): Promise<void> {
+    const slug = slugify(name)
+    const prefix = basePath.value
+    const newPath = prefix ? `${prefix}/${slug}` : slug
+    try {
+      await createSourceFolder(sourceId.value, newPath)
+      await sources.loadTree(sourceId.value)
+    } catch (e) {
+      window.alert(`Failed to create folder: ${e instanceof Error ? e.message : String(e)}`)
+    }
+  }
+
+  async function onRename(childPath: string): Promise<void> {
+    const newName = window.prompt('New path:', childPath)
+    if (!newName || !newName.trim() || newName.trim() === childPath) return
+    try {
+      await moveSourcePage(sourceId.value, childPath, {
+        new_path: newName.trim(),
+      })
+      await sources.loadTree(sourceId.value)
+      // If the renamed item was the current page, redirect
+      if (childPath === page.value?.path) {
+        router.replace(getChildUrl(newName.trim()))
+      }
+    } catch (e) {
+      window.alert(`Failed to rename: ${e instanceof Error ? e.message : String(e)}`)
+    }
+  }
+
+  async function onDelete(childPath: string): Promise<void> {
+    try {
+      await deleteSourcePage(sourceId.value, childPath)
+      await sources.loadTree(sourceId.value)
+      // If the deleted item was the current page, go to parent
+      if (childPath === page.value?.path) {
+        const parts = childPath.split('/').filter(Boolean).slice(0, -1)
+        router.replace(getChildUrl(parts.join('/')))
+      }
+    } catch (e) {
+      window.alert(`Failed to delete: ${e instanceof Error ? e.message : String(e)}`)
+    }
+  }
 
   const bodyHasMatchingH1 = computed(() => {
     if (!page.value) return false
@@ -123,14 +232,24 @@
         class="flex items-center justify-between mb-4"
         :class="width === 'wide' ? 'pr-48' : ''"
       >
-        <Breadcrumbs :path="page.path" />
+        <Breadcrumbs :path="page.path" :source-id="sourceId" />
       </header>
       <h1 v-if="!bodyHasMatchingH1" class="text-3xl font-bold">{{ page.meta.title }}</h1>
-      <div v-if="mode === 'rendered'" class="prose" v-html="html" />
+      <div v-if="mode === 'rendered' && page.body" class="prose" v-html="html" />
       <pre
-        v-else
+        v-else-if="mode === 'source'"
         class="bg-[#f6f8fa] rounded-md p-6 overflow-auto text-sm leading-relaxed border border-slate-200"
       ><code class="hljs language-markdown" v-html="highlightedSource" /></pre>
+      <DirListing
+        v-if="isDirectory"
+        :children="dirChildren"
+        :base-path="basePath"
+        :get-child-url="getChildUrl"
+        @create-page="onCreatePage"
+        @create-folder="onCreateFolder"
+        @rename="onRename"
+        @delete="onDelete"
+      />
       <p v-if="page.meta.tags.length" class="mt-8 text-xs text-slate-500">
         <span v-for="t in page.meta.tags" :key="t" class="mr-2">#{{ t }}</span>
       </p>

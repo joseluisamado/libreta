@@ -23,6 +23,12 @@ def normalize_page_path(raw: str) -> PurePosixPath:
 
 
 def page_to_file(content_dir: Path, page: PurePosixPath) -> Path:
-    """Resolve a normalized page path to its on-disk ``<page>.md`` file."""
+    """Resolve a normalized page path to its on-disk ``<page>.md`` file.
+
+    If *content_dir* contains a ``pages/`` subdirectory the path is rooted
+    there; otherwise *content_dir* itself is the pages root (flat repos).
+    """
     pages_root = content_dir / "pages"
+    if not pages_root.is_dir():
+        pages_root = content_dir
     return pages_root.joinpath(*page.parts).with_suffix(".md")

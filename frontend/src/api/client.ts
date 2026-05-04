@@ -93,6 +93,24 @@ export async function uploadAsset(pagePath: string, file: File): Promise<AssetUp
   return (await r.json()) as AssetUploadResponse
 }
 
+export async function uploadSourceAsset(
+  sourceId: string,
+  pagePath: string,
+  file: File,
+): Promise<AssetUploadResponse> {
+  const fd = new FormData()
+  fd.append('file', file, file.name)
+  const r = await fetch(`${BASE}/sources/${sourceId}/pages/${pagePath}/assets`, {
+    method: 'POST',
+    body: fd,
+  })
+  if (!r.ok) {
+    const body = (await r.json().catch(() => ({}))) as { detail?: string }
+    throw new Error(body.detail ?? `HTTP ${r.status}`)
+  }
+  return (await r.json()) as AssetUploadResponse
+}
+
 export function searchPages(q: string, limit = 20): Promise<SearchResult[]> {
   const qs = new URLSearchParams({ q, limit: String(limit) }).toString()
   return request<SearchResult[]>(`/search?${qs}`)
@@ -202,4 +220,20 @@ export function saveSourcePage(id: string, path: string, data: PageWrite): Promi
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   })
+}
+
+export function deleteSourcePage(id: string, path: string): Promise<void> {
+  return requestNoContent(`/sources/${id}/pages/${path}`, { method: 'DELETE' })
+}
+
+export function moveSourcePage(id: string, path: string, data: PageMove): Promise<PageRead> {
+  return request<PageRead>(`/sources/${id}/pages/${path}/move`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+}
+
+export async function createSourceFolder(id: string, folderPath: string): Promise<void> {
+  await requestNoContent(`/sources/${id}/folders/${folderPath}`, { method: 'POST' })
 }

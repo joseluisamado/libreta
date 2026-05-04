@@ -159,6 +159,7 @@
             :key="editorKey"
             :content="sourceText"
             :path="page.path"
+            :source-id="sourceId"
             class="px-8 py-6"
             @update="onUpdate"
           />

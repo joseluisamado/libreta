@@ -24,7 +24,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 
     # Search index warm-up (still uses content_dir for watched/meta storage)
     try:
-        n = await incremental_reindex(settings.content_dir)
+        n = await incremental_reindex(settings.content_dir, settings.repos_dir)
         if n:
             logger.info("search index: updated %d page(s) on startup", n)
     except Exception:

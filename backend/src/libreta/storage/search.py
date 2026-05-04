@@ -76,27 +76,47 @@ def _page_text(md_file: Path) -> tuple[str, str, str, str]:
     return title, body, tags, updated
 
 
-def _upsert_page_sync(conn: sqlite3.Connection, md_file: Path, content_dir: Path) -> None:
-    rel = str(md_file.relative_to(content_dir))
-    # Strip pages/ prefix and .md suffix to get the API path.
+def _upsert_page_sync(
+    conn: sqlite3.Connection,
+    md_file: Path,
+    pages_root: Path,
+    source_id: str,
+) -> None:
+    rel = str(md_file.relative_to(pages_root))
+    # The path is relative to the pages root; strip .md suffix.
     try:
-        page_path = str(normalize_page_path(rel.removeprefix("pages/").removesuffix(".md")))
+        page_path = str(normalize_page_path(rel.removesuffix(".md")))
     except Exception:
         return
+
+    # Store source-qualified key: source_id:page_path
+    key = f"{source_id}:{page_path}"
 
     title, body, tags, updated = _page_text(md_file)
     mtime = md_file.stat().st_mtime
 
-    conn.execute("DELETE FROM documents WHERE path = ?", (page_path,))
+    conn.execute("DELETE FROM documents WHERE path = ?", (key,))
     conn.execute(
         "INSERT INTO documents(path, title, body, tags, updated) VALUES (?,?,?,?,?)",
-        (page_path, title, body, tags, updated),
+        (key, title, body, tags, updated),
     )
     conn.execute(
         "INSERT OR REPLACE INTO pages_meta(path, mtime) VALUES (?,?)",
-        (page_path, mtime),
+        (key, mtime),
     )
     conn.commit()
+
+
+def _walk_source_pages(
+    repos_dir: Path, source_id: str
+) -> tuple[Path, list[Path]]:
+    """Return (pages_root, [md_file, ...]) for a git source."""
+    local = repos_dir / source_id
+    pages_root = local / "pages"
+    if not pages_root.is_dir():
+        pages_root = local
+    md_files = sorted(p for p in pages_root.rglob("*.md") if p.is_file())
+    return pages_root, md_files
 
 
 def _delete_page_sync(conn: sqlite3.Connection, page_path: str) -> None:
@@ -105,8 +125,11 @@ def _delete_page_sync(conn: sqlite3.Connection, page_path: str) -> None:
     conn.commit()
 
 
-def _full_reindex_sync(content_dir: Path) -> int:
-    """Drop and rebuild the entire index. Returns number of pages indexed."""
+def _full_reindex_sync(content_dir: Path, repos_dir: Path) -> int:
+    """Drop and rebuild the entire index across all git sources.
+
+    Falls back to *content_dir* when no source repos exist (legacy / tests).
+    """
     conn = _connect(content_dir)
     try:
         _ensure_schema(conn)
@@ -114,37 +137,59 @@ def _full_reindex_sync(content_dir: Path) -> int:
         conn.execute("DELETE FROM pages_meta")
         conn.commit()
 
-        pages_root = content_dir / "pages"
         count = 0
-        for md_file in sorted(pages_root.rglob("*.md")):
-            _upsert_page_sync(conn, md_file, content_dir)
-            count += 1
+        source_ids = _list_source_ids(repos_dir)
+        if source_ids:
+            for source_id in source_ids:
+                pages_root, md_files = _walk_source_pages(repos_dir, source_id)
+                for md_file in md_files:
+                    _upsert_page_sync(conn, md_file, pages_root, source_id)
+                    count += 1
+        else:
+            # Fallback: scan content_dir/pages directly
+            pages_root = content_dir / "pages"
+            if pages_root.is_dir():
+                for md_file in sorted(p for p in pages_root.rglob("*.md") if p.is_file()):
+                    _upsert_page_sync(conn, md_file, pages_root, "local")
+                    count += 1
         return count
     finally:
         conn.close()
 
 
-def _incremental_reindex_sync(content_dir: Path) -> int:
-    """Index pages whose mtime has changed since last index. Returns number updated."""
+def _list_source_ids(repos_dir: Path) -> list[str]:
+    """List source IDs from the repos directory."""
+    if not repos_dir.is_dir():
+        return []
+    return sorted(
+        d.name for d in repos_dir.iterdir()
+        if d.is_dir() and (d / ".git").is_dir()
+    )
+
+
+def _incremental_reindex_sync(content_dir: Path, repos_dir: Path) -> int:
+    """Index pages whose mtime has changed since last index."""
     conn = _connect(content_dir)
     try:
         _ensure_schema(conn)
-        pages_root = content_dir / "pages"
         updated = 0
-        for md_file in sorted(pages_root.rglob("*.md")):
-            rel = str(md_file.relative_to(content_dir))
-            try:
-                page_path = str(normalize_page_path(rel.removeprefix("pages/").removesuffix(".md")))
-            except Exception:
-                continue
-            mtime = md_file.stat().st_mtime
-            row = conn.execute(
-                "SELECT mtime FROM pages_meta WHERE path = ?", (page_path,)
-            ).fetchone()
-            if row and abs(row["mtime"] - mtime) < 0.001:
-                continue
-            _upsert_page_sync(conn, md_file, content_dir)
-            updated += 1
+        for source_id in _list_source_ids(repos_dir):
+            pages_root, md_files = _walk_source_pages(repos_dir, source_id)
+            for md_file in md_files:
+                rel = str(md_file.relative_to(pages_root))
+                try:
+                    page_path = str(normalize_page_path(rel.removesuffix(".md")))
+                except Exception:
+                    continue
+                key = f"{source_id}:{page_path}"
+                mtime = md_file.stat().st_mtime
+                row = conn.execute(
+                    "SELECT mtime FROM pages_meta WHERE path = ?", (key,)
+                ).fetchone()
+                if row and abs(row["mtime"] - mtime) < 0.001:
+                    continue
+                _upsert_page_sync(conn, md_file, pages_root, source_id)
+                updated += 1
         return updated
     finally:
         conn.close()
@@ -154,7 +199,10 @@ def _index_single_page_sync(content_dir: Path, md_file: Path) -> None:
     conn = _connect(content_dir)
     try:
         _ensure_schema(conn)
-        _upsert_page_sync(conn, md_file, content_dir)
+        pages_root = content_dir / "pages"
+        if not pages_root.is_dir():
+            pages_root = content_dir
+        _upsert_page_sync(conn, md_file, pages_root, "local")
     finally:
         conn.close()
 
@@ -164,16 +212,17 @@ def _remove_page_from_index_sync(content_dir: Path, page_path: str) -> None:
     try:
         _ensure_schema(conn)
         _delete_page_sync(conn, page_path)
+        _delete_page_sync(conn, f"local:{page_path}")
     finally:
         conn.close()
 
 
-async def full_reindex(content_dir: Path) -> int:
-    return await asyncio.to_thread(_full_reindex_sync, content_dir)
+async def full_reindex(content_dir: Path, repos_dir: Path) -> int:
+    return await asyncio.to_thread(_full_reindex_sync, content_dir, repos_dir)
 
 
-async def incremental_reindex(content_dir: Path) -> int:
-    return await asyncio.to_thread(_incremental_reindex_sync, content_dir)
+async def incremental_reindex(content_dir: Path, repos_dir: Path) -> int:
+    return await asyncio.to_thread(_incremental_reindex_sync, content_dir, repos_dir)
 
 
 async def index_page(content_dir: Path, md_file: Path) -> None:

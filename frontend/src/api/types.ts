@@ -60,6 +60,7 @@ export interface SearchResult {
   snippet: string
   updated: string
   tags: string
+  source_id?: string | null
 }
 
 export interface AssetUploadResponse {

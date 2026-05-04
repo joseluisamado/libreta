@@ -9,7 +9,7 @@
   import Image from '@tiptap/extension-image'
   import { mergeAttributes } from '@tiptap/core'
   import { Markdown } from 'tiptap-markdown'
-  import { uploadAsset } from '@/api/client'
+  import { uploadAsset, uploadSourceAsset } from '@/api/client'
   import { resolveAssetUrl } from '@/markdown'
   import type { Editor as TiptapEditor } from '@tiptap/core'
   import { getMarkdownFromStorage } from '@/markdownStorage'
@@ -17,6 +17,7 @@
   const props = defineProps<{
     content: string
     path: string
+    sourceId?: string
   }>()
 
   const emit = defineEmits<{
@@ -32,7 +33,7 @@
   const PageScopedImage = Image.extend({
     renderHTML({ HTMLAttributes }) {
       const src = String(HTMLAttributes.src ?? '')
-      const display = resolveAssetUrl(src, props.path)
+      const display = resolveAssetUrl(src, props.path, props.sourceId)
       return ['img', mergeAttributes(this.options.HTMLAttributes, HTMLAttributes, { src: display })]
     },
   })
@@ -169,7 +170,9 @@
     if (!editor.value || editor.value.isDestroyed) return
     uploadError.value = null
     try {
-      const result = await uploadAsset(props.path, file)
+      const result = props.sourceId
+        ? await uploadSourceAsset(props.sourceId, props.path, file)
+        : await uploadAsset(props.path, file)
       const ed = editor.value
       if (result.kind === 'image') {
         const alt = file.name.replace(/\.[^.]+$/, '')

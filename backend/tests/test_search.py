@@ -54,7 +54,7 @@ def test_search_missing_q_rejected(client: TestClient) -> None:
 def test_full_reindex_cli(content_dir: Path) -> None:
     from libreta.storage.search import _full_reindex_sync, db_path
 
-    n = _full_reindex_sync(content_dir)
+    n = _full_reindex_sync(content_dir, content_dir)  # repos_dir same as content_dir (no sources)
     assert n >= 3  # index.md + recipes.md + recipes/pizza-dough.md
     assert db_path(content_dir).exists()
 
@@ -62,16 +62,16 @@ def test_full_reindex_cli(content_dir: Path) -> None:
 def test_incremental_reindex_skips_unchanged(content_dir: Path) -> None:
     from libreta.storage.search import _full_reindex_sync, _incremental_reindex_sync
 
-    _full_reindex_sync(content_dir)
+    _full_reindex_sync(content_dir, content_dir)
     # Second incremental pass should update nothing (files unchanged).
-    n = _incremental_reindex_sync(content_dir)
+    n = _incremental_reindex_sync(content_dir, content_dir)
     assert n == 0
 
 
 def test_page_removed_from_index_on_delete(client: TestClient, content_dir: Path) -> None:
     from libreta.storage.search import _full_reindex_sync, _search_sync
 
-    _full_reindex_sync(content_dir)
+    _full_reindex_sync(content_dir, content_dir)
     results_before = _search_sync(content_dir, "flour", 10)
     assert any("pizza" in r["path"] for r in results_before)
 

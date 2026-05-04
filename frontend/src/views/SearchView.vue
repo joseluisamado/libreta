@@ -69,10 +69,17 @@
     })
   }
 
+  function resultUrl(result: SearchResult): string {
+    if (result.source_id) {
+      return `/source/${result.source_id}/${result.path}`
+    }
+    return resultUrl(result)
+  }
+
   function selectActive(): void {
     const result = results.value[activeIndex.value]
     if (activeIndex.value >= 0 && result) {
-      void router.push(`/w/${result.path}`)
+      void router.push(resultUrl(result))
     }
   }
 
@@ -148,12 +155,12 @@
             ? 'border-blue-400 bg-blue-50'
             : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50',
         ]"
-        @click="() => $router.push(`/w/${result.path}`)"
+        @click="() => $router.push(resultUrl(result))"
         @mouseenter="activeIndex = i"
       >
         <div class="flex items-baseline justify-between gap-2 mb-1">
           <RouterLink
-            :to="`/w/${result.path}`"
+            :to="resultUrl(result)"
             class="font-medium text-blue-700 hover:underline text-sm"
           >
             {{ result.title || result.path }}

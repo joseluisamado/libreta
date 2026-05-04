@@ -1,18 +1,21 @@
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 
 from libreta.config import Settings
 from libreta.deps import get_settings
 from libreta.errors import AssetNotFoundError, InvalidPathError
 from libreta.models import (
+    AssetUploadResponse,
     GitSourceCreate,
     GitSourceResponse,
     GitSourceUpdate,
+    PageMove,
     PageNode,
     PageRead,
     PageWrite,
@@ -21,6 +24,11 @@ from libreta.models import (
 )
 from libreta.services.sync import enqueue_push
 from libreta.storage import sources as src_store, ssh as ssh_store
+from libreta.storage.assets import store_asset
+from libreta.storage.repo import _delete_commit_sync, _move_commit_sync, commit_page, open_repo
+from libreta.storage.sources import _commit_sync
+
+MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 
 router = APIRouter(prefix="/sources")
 
@@ -130,8 +138,13 @@ async def trigger_sync(
         raise GitSourceNotFoundError(source_id)
 
     async def _sync() -> None:
-        from libreta.storage.sources import fetch_and_ff, record_sync_result
+        from libreta.storage.sources import fetch_and_ff, push_source, record_sync_result
 
+        try:
+            # Push local commits first, then pull remote changes
+            await push_source(settings.repos_dir, settings.ssh_keys_dir, entry)
+        except Exception:
+            pass  # push failures are non-fatal; pull may still work
         try:
             await fetch_and_ff(settings.repos_dir, settings.ssh_keys_dir, entry)
             await record_sync_result(settings.content_dir, source_id, None)
@@ -195,6 +208,39 @@ async def get_source_asset(
     return FileResponse(candidate)
 
 
+@router.post("/{source_id}/pages/{path:path}/assets", response_model=AssetUploadResponse)
+async def upload_source_asset(
+    source_id: str,
+    path: str,
+    file: UploadFile,
+    background: BackgroundTasks,
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> AssetUploadResponse:
+    """Upload an attachment scoped to a page in a git source."""
+    if file.filename is None:
+        raise HTTPException(status_code=400, detail="missing filename")
+    data = await file.read()
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="file too large")
+    if not data:
+        raise HTTPException(status_code=400, detail="empty upload")
+
+    # page_to_file handles repos with/without a pages/ subdirectory
+    local = (settings.repos_dir / source_id).resolve()
+    result = await store_asset(local, path, file.filename, data, file.content_type)
+    if not result.deduped:
+        repo = open_repo(local)
+        await commit_page(repo, result.rel_path, "attach")
+        background.add_task(enqueue_push, source_id)
+    return AssetUploadResponse(
+        filename=result.filename,
+        size=result.size,
+        sha256=result.sha256,
+        kind=result.kind,
+        deduped=result.deduped,
+    )
+
+
 @router.put("/{source_id}/pages/{path:path}", response_model=PageRead)
 async def put_source_page(
     source_id: str,
@@ -213,3 +259,128 @@ async def put_source_page(
     )
     background.add_task(enqueue_push, source_id)
     return result
+
+
+@router.post("/{source_id}/folders/{path:path}", status_code=201)
+async def create_source_folder(
+    source_id: str,
+    path: str,
+    background: BackgroundTasks,
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> None:
+    """Create an empty directory (with .gitkeep) in a git source."""
+    local = (settings.repos_dir / source_id).resolve()
+    pages_root = local / "pages" if (local / "pages").is_dir() else local
+    dir_path = pages_root / path
+    if dir_path.exists():
+        raise HTTPException(status_code=409, detail=f"folder already exists: {path}")
+    dir_path.mkdir(parents=True)
+    gitkeep = dir_path / ".gitkeep"
+    gitkeep.write_text("")
+    rel = str(gitkeep.relative_to(local))
+    repo = open_repo(local)
+    await asyncio.to_thread(_commit_sync, repo, [rel], f"create {path}/")
+    background.add_task(enqueue_push, source_id)
+
+
+@router.delete("/{source_id}/pages/{path:path}", status_code=204)
+async def delete_source_page(
+    source_id: str,
+    path: str,
+    background: BackgroundTasks,
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> None:
+    """Delete a page (or bare directory) and its sidecar from a git source."""
+    local = (settings.repos_dir / source_id).resolve()
+    pages_root = local / "pages" if (local / "pages").is_dir() else local
+
+    md_file = pages_root / f"{path}.md"
+    dir_path = pages_root / path
+
+    if md_file.is_file():
+        sidecar = md_file.parent / f".{md_file.name}"
+        rel = str(md_file.relative_to(local))
+        md_file.unlink()
+        if sidecar.is_dir():
+            for f in sidecar.rglob("*"):
+                if f.is_file():
+                    f.unlink()
+            sidecar.rmdir()
+        repo = open_repo(local)
+        await asyncio.to_thread(_delete_commit_sync, repo, rel)
+    elif dir_path.is_dir():
+        # A bare directory may have a .gitkeep — remove it before checking
+        gitkeep = dir_path / ".gitkeep"
+        if gitkeep.is_file():
+            gitkeep.unlink()
+        contents = [p for p in dir_path.iterdir() if not p.name.startswith(".")]
+        if contents:
+            raise HTTPException(status_code=409, detail=f"folder not empty: {path}")
+        rel = str(dir_path.relative_to(local)) + "/"
+        # Remove any remaining dot-files, then the directory
+        for p in dir_path.iterdir():
+            p.unlink()
+        dir_path.rmdir()
+        repo = open_repo(local)
+        await asyncio.to_thread(_delete_commit_sync, repo, rel)
+    else:
+        raise HTTPException(status_code=404, detail=f"page not found: {path}")
+    background.add_task(enqueue_push, source_id)
+
+
+@router.post("/{source_id}/pages/{path:path}/move", response_model=PageRead)
+async def move_source_page(
+    source_id: str,
+    path: str,
+    body: PageMove,
+    background: BackgroundTasks,
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> PageRead:
+    """Rename/move a page (or bare directory) and its sidecar in a git source."""
+    local = (settings.repos_dir / source_id).resolve()
+    pages_root = local / "pages" if (local / "pages").is_dir() else local
+
+    old_md = pages_root / f"{path}.md"
+    old_dir = pages_root / path
+    new_md = pages_root / f"{body.new_path}.md"
+    new_dir = pages_root / body.new_path
+
+    if old_md.is_file():
+        # Rename a page (and its sidecar)
+        if new_md.exists() or new_dir.is_dir():
+            raise HTTPException(status_code=409, detail=f"target exists: {body.new_path}")
+        new_md.parent.mkdir(parents=True, exist_ok=True)
+        old_rel = str(old_md.relative_to(local))
+        old_md.rename(new_md)
+        new_rel = str(new_md.relative_to(local))
+        old_sidecar = old_md.parent / f".{old_md.name}"
+        if old_sidecar.is_dir():
+            new_sidecar = new_md.parent / f".{new_md.name}"
+            old_sidecar.rename(new_sidecar)
+        repo = open_repo(local)
+        await asyncio.to_thread(_move_commit_sync, repo, old_rel, new_rel)
+        background.add_task(enqueue_push, source_id)
+        return await src_store.read_source_page(settings.repos_dir, source_id, body.new_path)
+
+    elif old_dir.is_dir():
+        # Rename a bare directory.
+        if new_dir.exists() or new_md.is_file():
+            raise HTTPException(status_code=409, detail=f"target exists: {body.new_path}")
+        new_dir.parent.mkdir(parents=True, exist_ok=True)
+        # If the dir has a .gitkeep, record paths before the rename
+        old_gitkeep = old_dir / ".gitkeep"
+        has_gitkeep = old_gitkeep.is_file()
+        if has_gitkeep:
+            old_gk_rel = str(old_gitkeep.relative_to(local))
+        old_dir.rename(new_dir)
+        if has_gitkeep:
+            new_gk_rel = str((new_dir / ".gitkeep").relative_to(local))
+            repo = open_repo(local)
+            await asyncio.to_thread(
+                _move_commit_sync, repo, old_gk_rel, new_gk_rel
+            )
+        background.add_task(enqueue_push, source_id)
+        return await src_store.read_source_page(settings.repos_dir, source_id, body.new_path)
+
+    else:
+        raise HTTPException(status_code=404, detail=f"page not found: {path}")

@@ -1,0 +1,142 @@
+<script setup lang="ts">
+import type { PageNode } from '@/api/types'
+
+defineProps<{
+  children: PageNode[]
+  basePath: string
+  getChildUrl: (childPath: string) => string
+}>()
+
+const emit = defineEmits<{
+  createPage: [name: string]
+  createFolder: [name: string]
+  rename: [childPath: string]
+  delete: [childPath: string]
+}>()
+
+function onCreatePage(): void {
+  const name = window.prompt('Page name:')
+  if (!name || !name.trim()) return
+  emit('createPage', name.trim())
+}
+
+function onCreateFolder(): void {
+  const name = window.prompt('Folder name:')
+  if (!name || !name.trim()) return
+  emit('createFolder', name.trim())
+}
+</script>
+
+<template>
+  <section class="mt-8 border-t border-slate-200 pt-4">
+    <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-500 mb-2">
+      In this folder
+    </h2>
+    <div class="flex gap-2 mb-3">
+      <button
+        type="button"
+        class="text-xs px-3 py-1 rounded border border-slate-300 text-slate-600 hover:bg-slate-50 hover:text-blue-600 cursor-pointer"
+        @click="onCreatePage"
+      >
+        + New page
+      </button>
+      <button
+        type="button"
+        class="text-xs px-3 py-1 rounded border border-slate-300 text-slate-600 hover:bg-slate-50 hover:text-blue-600 cursor-pointer"
+        @click="onCreateFolder"
+      >
+        + New folder
+      </button>
+    </div>
+
+    <ul v-if="children.length" class="text-sm space-y-1">
+      <li
+        v-for="child in children"
+        :key="child.path"
+        class="flex items-center gap-1 group"
+      >
+        <RouterLink
+          :to="getChildUrl(child.path)"
+          class="flex items-center flex-1 min-w-0 text-slate-700 hover:text-blue-600 hover:underline"
+        >
+          <!-- Folder icon -->
+          <svg
+            v-if="child.is_directory || child.children.length"
+            xmlns="http://www.w3.org/2000/svg"
+            class="w-4 h-4 shrink-0 mr-1.5 text-amber-500"
+            viewBox="0 0 24 24"
+            fill="currentColor"
+            stroke="none"
+          >
+            <path
+              d="M2 6a2 2 0 0 1 2-2h5l2 2h9a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6z"
+            />
+          </svg>
+          <!-- File icon -->
+          <svg
+            v-else
+            xmlns="http://www.w3.org/2000/svg"
+            class="w-4 h-4 shrink-0 mr-1.5 text-slate-400"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+            <polyline points="14 2 14 8 20 8" />
+          </svg>
+          <span class="truncate">{{ child.title }}</span>
+        </RouterLink>
+        <button
+          type="button"
+          class="shrink-0 opacity-0 group-hover:opacity-100 text-slate-400 hover:text-slate-600 p-0.5 rounded transition-opacity cursor-pointer"
+          title="Rename"
+          aria-label="Rename"
+          @click="emit('rename', child.path)"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            class="w-3.5 h-3.5"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path d="M12 20h9" />
+            <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+          </svg>
+        </button>
+        <button
+          type="button"
+          class="shrink-0 opacity-0 group-hover:opacity-100 text-slate-400 hover:text-red-600 p-0.5 rounded transition-opacity cursor-pointer"
+          title="Delete"
+          aria-label="Delete"
+          @click="emit('delete', child.path)"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            class="w-3.5 h-3.5"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <polyline points="3 6 5 6 21 6" />
+            <path
+              d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"
+            />
+            <line x1="10" y1="11" x2="10" y2="17" />
+            <line x1="14" y1="11" x2="14" y2="17" />
+          </svg>
+        </button>
+      </li>
+    </ul>
+    <p v-else class="text-sm text-slate-400 italic">Empty folder</p>
+  </section>
+</template>

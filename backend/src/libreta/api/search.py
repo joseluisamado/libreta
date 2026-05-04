@@ -19,4 +19,17 @@ async def search_pages(
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
 ) -> list[SearchResult]:
     results = await search_index(settings.content_dir, q, limit)
-    return [SearchResult(**r) for r in results]
+    out: list[SearchResult] = []
+    for r in results:
+        key: str = r["path"]
+        # Keys are source_id:page_path — split them
+        sid, _, page_path = key.partition(":")
+        out.append(SearchResult(
+            path=page_path,
+            title=r["title"],
+            snippet=r["snippet"],
+            updated=r["updated"],
+            tags=r["tags"],
+            source_id=sid if sid else None,
+        ))
+    return out

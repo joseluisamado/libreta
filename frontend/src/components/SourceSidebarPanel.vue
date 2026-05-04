@@ -9,6 +9,7 @@
   const store = useSourcesStore()
   const expanded = ref(false)
   const syncing = ref(false)
+  const syncMessage = ref<string | null>(null)
 
   watch(
     expanded,
@@ -22,11 +23,26 @@
 
   async function handleSync(): Promise<void> {
     syncing.value = true
-    await store.syncSource(props.source.id)
-    if (expanded.value) {
-      await store.loadTree(props.source.id)
+    syncMessage.value = null
+    const before = props.source.last_synced_at
+    try {
+      await store.syncSource(props.source.id)
+      // The sync runs in background — poll for completion
+      await new Promise((r) => setTimeout(r, 1500))
+      // Refresh the source list to get updated sync status
+      await store.loadSources()
+      if (expanded.value) {
+        await store.loadTree(props.source.id)
+      }
+      if (props.source.last_sync_error) {
+        syncMessage.value = 'Sync failed'
+      } else {
+        syncMessage.value = 'Synced'
+      }
+    } finally {
+      syncing.value = false
+      setTimeout(() => { syncMessage.value = null }, 3000)
     }
-    syncing.value = false
   }
 
   function statusDot(src: GitSource): string {
@@ -73,17 +89,33 @@
 
       <button
         type="button"
-        class="flex-1 truncate text-left text-sm font-medium text-slate-700 hover:text-blue-600"
+        class="flex-1 min-w-0 truncate text-left text-sm font-medium text-slate-700 hover:text-blue-600"
         @click="expanded = !expanded"
       >
         {{ source.label }}
       </button>
 
+      <!-- Inline sync status -->
+      <span
+        v-if="syncing || syncMessage"
+        class="text-[10px] whitespace-nowrap"
+        :class="syncMessage === 'Synced' ? 'text-emerald-500' : 'text-blue-400'"
+      >
+        {{ syncing ? 'push & pull…' : syncMessage.toLowerCase() }}
+      </span>
+      <span
+        v-else-if="source.last_sync_error"
+        class="text-[10px] whitespace-nowrap text-amber-500"
+        :title="source.last_sync_error"
+      >
+        error
+      </span>
+
       <!-- Sync button -->
       <button
         type="button"
         class="shrink-0 text-slate-400 hover:text-blue-600 p-0.5 rounded"
-        title="Sync now"
+        title="Push & pull"
         :disabled="syncing"
         @click.prevent="handleSync"
       >
@@ -104,15 +136,6 @@
         </svg>
       </button>
     </div>
-
-    <!-- Sync error banner -->
-    <p
-      v-if="source.last_sync_error"
-      class="text-[11px] text-amber-600 ml-5 truncate"
-      :title="source.last_sync_error"
-    >
-      {{ source.last_sync_error }}
-    </p>
 
     <!-- Tree -->
     <PageTree

@@ -3,7 +3,11 @@
   import { useTreeStore } from '@/stores/tree'
   import type { PageNode } from '@/api/types'
 
-  const props = defineProps<{ path: string; watchedLabel?: string }>()
+  const props = defineProps<{
+    path: string
+    watchedLabel?: string
+    sourceId?: string
+  }>()
   const tree = useTreeStore()
 
   interface Crumb {
@@ -46,6 +50,11 @@
         out.push({
           label: title,
           to: isLast ? null : `/watch/${props.watchedLabel}/${acc}`,
+        })
+      } else if (props.sourceId) {
+        out.push({
+          label: title,
+          to: isLast ? null : `/source/${props.sourceId}/${acc}`,
         })
       } else {
         out.push({ label: title, to: isLast ? null : `/w/${acc}` })

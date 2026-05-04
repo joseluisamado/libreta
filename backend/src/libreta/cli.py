@@ -35,5 +35,5 @@ def _run_reindex(content_dir: Path | None) -> None:
         sys.exit(1)
 
     print(f"Reindexing {settings.content_dir} …", flush=True)
-    n = asyncio.run(full_reindex(settings.content_dir))
+    n = asyncio.run(full_reindex(settings.content_dir, settings.repos_dir))
     print(f"Done — indexed {n} page(s).")
