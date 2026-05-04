@@ -11,8 +11,15 @@ import taskLists from 'markdown-it-task-lists'
 import anchor from 'markdown-it-anchor'
 import hljs from 'highlight.js'
 import katex from 'katex'
+import mermaid from 'mermaid'
 import 'katex/dist/katex.min.css'
 import 'highlight.js/styles/github.css'
+
+mermaid.initialize({
+  startOnLoad: false,
+  theme: 'default',
+  securityLevel: 'antiscript',
+})
 
 const md = new MarkdownIt({
   html: false, // P4/R6 — strip raw HTML at render. Save-side stripping comes with M2.
@@ -247,6 +254,19 @@ function looksLikeAssetHref(href: string): boolean {
 }
 
 function patchRenderer(): void {
+  // Mermaid fence blocks: emit <pre class="mermaid"> so the mermaid library
+  // picks them up and replaces them with rendered SVG diagrams in view mode.
+  const defaultFence: RenderRule =
+    md.renderer.rules.fence ??
+    ((tokens, idx, options, _env, self) => self.renderToken(tokens, idx, options))
+  md.renderer.rules.fence = (tokens, idx, options, env, self) => {
+    const token = tokens[idx]
+    if (token && token.info.trim() === 'mermaid') {
+      return `<pre class="mermaid">${token.content}</pre>\n`
+    }
+    return defaultFence(tokens, idx, options, env, self)
+  }
+
   const defaultImage: RenderRule =
     md.renderer.rules.image ??
     ((tokens, idx, options, _env, self) => self.renderToken(tokens, idx, options))
@@ -301,4 +321,11 @@ export function renderMarkdown(
   sourceId?: string,
 ): string {
   return md.render(source, { pagePath, sourceId })
+}
+
+export async function renderMermaidIn(container: HTMLElement): Promise<void> {
+  const elements = container.querySelectorAll<HTMLElement>('.mermaid')
+  if (elements.length > 0) {
+    await mermaid.run({ nodes: Array.from(elements) })
+  }
 }

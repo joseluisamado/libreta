@@ -1,5 +1,5 @@
 <script setup lang="ts">
-  import { computed, ref, watch } from 'vue'
+  import { computed, ref, watch, nextTick } from 'vue'
   import { useRoute, useRouter } from 'vue-router'
   import {
     getSourcePage,
@@ -9,7 +9,7 @@
     createSourceFolder,
   } from '@/api/client'
   import type { PageNode, PageRead } from '@/api/types'
-  import { renderMarkdown } from '@/markdown'
+  import { renderMarkdown, renderMermaidIn } from '@/markdown'
   import { useReadingWidth } from '@/composables/usePrefs'
   import { useViewMode } from '@/composables/useViewMode'
   import { useSourcesStore } from '@/stores/sources'
@@ -28,6 +28,7 @@
   const sources = useSourcesStore()
   const page = ref<PageRead | null>(null)
   const error = ref<string | null>(null)
+  const contentEl = ref<HTMLElement | null>(null)
 
   const sourceId = computed(() => String(route.params.sourceId))
   const path = computed(() => {
@@ -159,6 +160,11 @@
     return renderMarkdown(page.value.body, page.value.path, sourceId.value)
   })
 
+  watch(html, async () => {
+    await nextTick()
+    if (contentEl.value) await renderMermaidIn(contentEl.value)
+  })
+
   const highlightedSource = computed(() => {
     if (!page.value) return ''
     return hljs.highlight(page.value.body, { language: 'markdown' }).value
@@ -235,7 +241,7 @@
         <Breadcrumbs :path="page.path" :source-id="sourceId" />
       </header>
       <h1 v-if="!bodyHasMatchingH1" class="text-3xl font-bold">{{ page.meta.title }}</h1>
-      <div v-if="mode === 'rendered' && page.body" class="prose" v-html="html" />
+      <div v-if="mode === 'rendered' && page.body" ref="contentEl" class="prose" v-html="html" />
       <pre
         v-else-if="mode === 'source'"
         class="bg-[#f6f8fa] rounded-md p-6 overflow-auto text-sm leading-relaxed border border-slate-200"

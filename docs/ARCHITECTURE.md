@@ -425,7 +425,7 @@ This is the trickiest part of the system. We must:
 - YAML frontmatter (treated as metadata, not body)
 - Wiki-style links: `[[Page Title]]` (custom plugin)
 - Drawio embed: `![alt](path/to/file.drawio.svg)` — detected by extension
-- Mermaid: ` ```mermaid ` fenced blocks (rendered as image in view mode; source-only editing in v1)
+- Mermaid: ` ```mermaid ` fenced blocks — rendered as SVG diagrams in view mode. In the editor, mermaid blocks are edited as source text with the `mermaid` language selected from the code-block language dropdown. A visual mermaid editor (live preview while editing) is tracked in the roadmap under "Beyond v1."
 - Callouts: `> [!NOTE]` / `> [!WARNING]` style (GitHub-compatible)
 
 ### Source mode

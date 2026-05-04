@@ -189,6 +189,10 @@ A typed extension API for client-side editor extensions and server-side render h
 
 Not a milestone-sized chunk; tracked here so it isn't forgotten. CLI command (and eventually a UI affordance) that lists asset files in `pages/` whose filenames are not referenced by any sibling `.md` file in the same directory. Optionally deletes them with a commit per page. Follows the policy in `ARCHITECTURE.md` "Asset handling": removing on save is too aggressive; explicit garbage collection is the right model.
 
+### Visual mermaid editor (small, anytime)
+
+Mermaid blocks currently render as SVG diagrams in view mode but are edited as plain source text in a code block (2026-05-04). A future improvement: a TipTap node view that renders the mermaid diagram live in the editor as you type, similar to how the drawio iframe provides visual editing for drawio diagrams. Likely approach: a custom `MermaidBlock` TipTap extension with a `NodeView` that runs mermaid on content changes and displays the rendered SVG. The source text remains the canonical representation (editable via a toggle or inline code editor), so the markdown round-trip is unaffected.
+
 ---
 
 ## What we will not do

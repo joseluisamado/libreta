@@ -1,9 +1,9 @@
 <script setup lang="ts">
-  import { computed, ref, watch } from 'vue'
+  import { computed, ref, watch, nextTick } from 'vue'
   import { useRoute, useRouter } from 'vue-router'
   import { getPage, savePage, deletePage, movePage } from '@/api/client'
   import type { PageNode, PageRead } from '@/api/types'
-  import { renderMarkdown } from '@/markdown'
+  import { renderMarkdown, renderMermaidIn } from '@/markdown'
   import { useTreeStore } from '@/stores/tree'
   import { useReadingWidth } from '@/composables/usePrefs'
   import { useViewMode } from '@/composables/useViewMode'
@@ -21,6 +21,7 @@
   const tree = useTreeStore()
   const page = ref<PageRead | null>(null)
   const error = ref<string | null>(null)
+  const contentEl = ref<HTMLElement | null>(null)
 
   function findNode(nodes: PageNode[], target: string): PageNode | null {
     for (const n of nodes) {
@@ -136,6 +137,11 @@
     page.value ? renderMarkdown(page.value.body, page.value.path) : '',
   )
 
+  watch(html, async () => {
+    await nextTick()
+    if (contentEl.value) await renderMermaidIn(contentEl.value)
+  })
+
   const highlightedSource = computed(() => {
     if (!page.value) return ''
     return hljs.highlight(page.value.body, { language: 'markdown' }).value
@@ -232,7 +238,7 @@
         </RouterLink>
       </header>
       <h1 v-if="!bodyHasMatchingH1" class="text-3xl font-bold">{{ page.meta.title }}</h1>
-      <div v-if="mode === 'rendered'" class="prose" v-html="html" />
+      <div v-if="mode === 'rendered'" ref="contentEl" class="prose" v-html="html" />
       <pre
         v-else
         class="bg-[#f6f8fa] rounded-md p-6 overflow-auto text-sm leading-relaxed border border-slate-200"

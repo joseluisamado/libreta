@@ -14,6 +14,22 @@ Living document. Update as work progresses. Latest at the top.
 
 ---
 
+## 2026-05-04 — Mermaid code blocks
+
+**What changed**: Added mermaid diagram support via fenced code blocks. Mermaid blocks (` ```mermaid `) are rendered as SVG diagrams in view mode using the mermaid library. In the editor, mermaid is available as a language option in the code block dropdown — users edit the mermaid source text directly.
+
+**How it works**:
+- **Rendering**: `markdown.ts` overrides the markdown-it fence renderer for `mermaid` language blocks, emitting `<pre class="mermaid">` instead of syntax-highlighted HTML. After the view components render via `v-html`, a watcher calls `mermaid.run()` scoped to the content container to transform those elements into SVG diagrams.
+- **Security**: mermaid initialised with `securityLevel: 'antiscript'` which strips `<script>` tags from node labels (R6-compliant). No external resources are fetched at render time (R5-compliant).
+- **Editor**: `mermaid` added to `CODE_LANGS` in `Editor.vue`. Mermaid blocks are standard GFM fenced code blocks — no custom markdown syntax (R4-compliant). The round-trip is byte-identical (R1 — new fixture `mermaid.md` added to the test corpus).
+- **No backend changes**: mermaid blocks are just fenced code blocks with `language=mermaid`. The backend stores and returns raw markdown; rendering happens entirely in the frontend.
+
+**Future**: A visual mermaid editor (live preview in the editor as you type) is tracked in `ROADMAP.md` under "Beyond v1." The current implementation follows the architecture doc's plan: render in view mode, source-only editing in v1.
+
+**Pre-flight**: frontend 65/65 tests pass, vue-tsc clean, eslint 0 errors (6 pre-existing v-html warnings).
+
+**Files touched**: `package.json`, `markdown.ts`, `Editor.vue`, `PageView.vue`, `SourcePageView.vue`, `WatchedPageView.vue`, `tests/round-trip/fixtures/mermaid.md`, `tests/round-trip/roundtrip.test.ts`.
+
 ## 2026-05-04 — Sidecar attachment model
 
 **What changed**: Replaced the `index.md`-based directory model with a sidecar-directory model for attachments.

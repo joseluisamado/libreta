@@ -1,5 +1,5 @@
 <script setup lang="ts">
-  import { computed, ref, watch } from 'vue'
+  import { computed, ref, watch, nextTick } from 'vue'
   import { useRoute, useRouter } from 'vue-router'
   import {
     getWatchedPage,
@@ -9,7 +9,7 @@
   } from '@/api/client'
   import { useWatchedStore } from '@/stores/watched'
   import type { PageNode, PageRead } from '@/api/types'
-  import { renderMarkdown } from '@/markdown'
+  import { renderMarkdown, renderMermaidIn } from '@/markdown'
   import { useReadingWidth } from '@/composables/usePrefs'
   import { useViewMode } from '@/composables/useViewMode'
   import Breadcrumbs from '@/components/Breadcrumbs.vue'
@@ -27,6 +27,7 @@
   const watched = useWatchedStore()
   const page = ref<PageRead | null>(null)
   const error = ref<string | null>(null)
+  const contentEl = ref<HTMLElement | null>(null)
 
   const label = computed(() => String(route.params.label))
   const path = computed(() => {
@@ -145,6 +146,11 @@
     return renderMarkdown(page.value.body, page.value.path)
   })
 
+  watch(html, async () => {
+    await nextTick()
+    if (contentEl.value) await renderMermaidIn(contentEl.value)
+  })
+
   const highlightedSource = computed(() => {
     if (!page.value) return ''
     return hljs.highlight(page.value.body, { language: 'markdown' }).value
@@ -233,7 +239,7 @@
         @delete="onDelete"
       />
 
-      <div v-if="mode === 'rendered' && page.body" class="prose" v-html="html" />
+      <div v-if="mode === 'rendered' && page.body" ref="contentEl" class="prose" v-html="html" />
       <pre
         v-else-if="mode === 'source' && page.body"
         class="bg-[#f6f8fa] rounded-md p-6 overflow-auto text-sm leading-relaxed border border-slate-200"

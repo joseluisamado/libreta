@@ -145,6 +145,7 @@
     { value: 'json', label: 'json' },
     { value: 'kotlin', label: 'kotlin' },
     { value: 'markdown', label: 'markdown' },
+    { value: 'mermaid', label: 'mermaid' },
     { value: 'python', label: 'python' },
     { value: 'ruby', label: 'ruby' },
     { value: 'rust', label: 'rust' },

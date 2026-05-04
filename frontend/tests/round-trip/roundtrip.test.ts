@@ -27,6 +27,7 @@ const fixtures = [
   'tables.md',
   'images.md',
   'file-attachments.md',
+  'mermaid.md',
 ]
 
 function readFixture(name: string): string {
