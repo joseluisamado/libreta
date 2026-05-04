@@ -1,45 +1,13 @@
 <script setup lang="ts">
-  import { ref, computed } from 'vue'
+  import { ref } from 'vue'
   import type { Editor } from '@tiptap/core'
 
-  const LANGUAGES = [
-    { value: '', label: 'plain' },
-    { value: 'bash', label: 'bash' },
-    { value: 'c', label: 'c' },
-    { value: 'cpp', label: 'c++' },
-    { value: 'css', label: 'css' },
-    { value: 'diff', label: 'diff' },
-    { value: 'go', label: 'go' },
-    { value: 'html', label: 'html' },
-    { value: 'java', label: 'java' },
-    { value: 'javascript', label: 'javascript' },
-    { value: 'json', label: 'json' },
-    { value: 'kotlin', label: 'kotlin' },
-    { value: 'markdown', label: 'markdown' },
-    { value: 'python', label: 'python' },
-    { value: 'ruby', label: 'ruby' },
-    { value: 'rust', label: 'rust' },
-    { value: 'sql', label: 'sql' },
-    { value: 'swift', label: 'swift' },
-    { value: 'toml', label: 'toml' },
-    { value: 'typescript', label: 'typescript' },
-    { value: 'xml', label: 'xml' },
-    { value: 'yaml', label: 'yaml' },
-  ]
 
   const props = defineProps<{
     editor: Editor | null
   }>()
 
-  const activeCodeBlockLanguage = computed<string>(() => {
-    if (!props.editor?.isActive('codeBlock')) return ''
-    return (props.editor.getAttributes('codeBlock').language as string | undefined) ?? ''
-  })
 
-  function setCodeBlockLanguage(lang: string): void {
-    if (!props.editor || props.editor.isDestroyed) return
-    props.editor.chain().focus().updateAttributes('codeBlock', { language: lang || null }).run()
-  }
 
   const emit = defineEmits<{
     'upload-files': [files: File[]]
@@ -88,7 +56,7 @@
 
 <template>
   <div
-    class="flex items-center gap-0.5 overflow-x-auto border-b border-slate-200 bg-white px-2 py-1.5"
+    class="sticky top-0 z-10 flex items-center gap-0.5 overflow-x-auto border-b border-slate-200 bg-white px-2 py-1.5"
   >
     <!-- Undo / Redo -->
     <button
@@ -222,17 +190,28 @@
         <polyline points="8 6 2 12 8 18" />
       </svg>
     </button>
-    <select
-      v-if="editor?.isActive('codeBlock')"
-      :value="activeCodeBlockLanguage"
-      class="ml-1 rounded border border-slate-200 bg-white px-1.5 py-1 text-xs text-slate-700 hover:border-slate-400 focus:outline-none"
-      title="Code block language"
-      @change="setCodeBlockLanguage(($event.target as HTMLSelectElement).value)"
+    <button
+      type="button"
+      class="p-1.5 rounded hover:bg-slate-100 text-slate-600"
+      :class="{ 'bg-slate-200 text-slate-900': editor?.isActive('codeBlock') }"
+      title="Code block"
+      @click="run(editor, (e) => e.commands.toggleCodeBlock())"
     >
-      <option v-for="lang in LANGUAGES" :key="lang.value" :value="lang.value">
-        {{ lang.label }}
-      </option>
-    </select>
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        class="w-4 h-4"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      >
+        <polyline points="4 7 4 4 20 4 20 7" />
+        <line x1="9" y1="20" x2="15" y2="20" />
+        <line x1="12" y1="4" x2="12" y2="20" />
+      </svg>
+    </button>
 
     <button
       type="button"

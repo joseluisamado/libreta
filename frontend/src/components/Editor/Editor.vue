@@ -132,6 +132,40 @@
     editor.value?.destroy()
   })
 
+  const CODE_LANGS = [
+    { value: 'bash', label: 'bash' },
+    { value: 'c', label: 'c' },
+    { value: 'cpp', label: 'c++' },
+    { value: 'css', label: 'css' },
+    { value: 'diff', label: 'diff' },
+    { value: 'go', label: 'go' },
+    { value: 'html', label: 'html' },
+    { value: 'java', label: 'java' },
+    { value: 'javascript', label: 'javascript' },
+    { value: 'json', label: 'json' },
+    { value: 'kotlin', label: 'kotlin' },
+    { value: 'markdown', label: 'markdown' },
+    { value: 'python', label: 'python' },
+    { value: 'ruby', label: 'ruby' },
+    { value: 'rust', label: 'rust' },
+    { value: 'sql', label: 'sql' },
+    { value: 'swift', label: 'swift' },
+    { value: 'toml', label: 'toml' },
+    { value: 'typescript', label: 'typescript' },
+    { value: 'xml', label: 'xml' },
+    { value: 'yaml', label: 'yaml' },
+  ]
+
+  const activeCodeBlockLang = computed(() => {
+    if (!editor.value?.isActive('codeBlock')) return ''
+    return (editor.value.getAttributes('codeBlock').language as string | undefined) ?? ''
+  })
+
+  function setCodeBlockLang(lang: string): void {
+    if (!editor.value || editor.value.isDestroyed) return
+    editor.value.chain().focus().updateAttributes('codeBlock', { language: lang || null }).run()
+  }
+
   const editorRoot = ref<HTMLDivElement | null>(null)
 
   // While the editor is mounted (i.e. the user is on the edit page), accept
@@ -218,6 +252,20 @@
 
 <template>
   <div ref="editorRoot" class="libreta-editor prose max-w-none">
+    <div
+      v-if="editor && editor.isActive('codeBlock')"
+      class="code-lang-float mb-1 flex items-center gap-1"
+    >
+      <span class="text-[10px] text-slate-400">language:</span>
+      <select
+        :value="activeCodeBlockLang"
+        class="rounded border border-slate-200 bg-white px-1.5 py-0.5 text-[11px] text-slate-600 hover:border-slate-400 focus:outline-none"
+        @change="setCodeBlockLang(($event.target as HTMLSelectElement).value)"
+      >
+        <option value="">plain</option>
+        <option v-for="l in CODE_LANGS" :key="l.value" :value="l.value">{{ l.label }}</option>
+      </select>
+    </div>
     <p
       v-if="uploadError"
       class="my-2 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
