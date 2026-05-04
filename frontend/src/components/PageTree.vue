@@ -15,7 +15,10 @@
     linkPrefix?: string
     storageKey?: string
     openState?: Record<string, boolean>
-    onToggle?: (path: string) => void
+    onToggle?: (path: string, node?: PageNode) => void
+    onExpand?: (node: PageNode) => Promise<void>
+    loadingPaths?: Set<string>
+    defaultOpenDepth?: number
   }>()
 
   // ----- Open/closed state ---------------------------------------------------
@@ -59,21 +62,41 @@
     return props.openState ?? ownState?.value ?? {}
   }
 
-  function isOpen(path: string): boolean {
-    return getState()[path] !== false
+  function pathDepth(path: string): number {
+    if (!path) return 0
+    let count = 1
+    for (let i = 0; i < path.length; i++) {
+      if (path[i] === '/') count++
+    }
+    return count
   }
 
-  function toggle(path: string): void {
+  function isOpen(path: string): boolean {
+    const state = getState()
+    if (path in state) return state[path] !== false
+    // No saved preference — use default based on depth
+    const maxOpen = props.defaultOpenDepth ?? 1
+    return pathDepth(path) <= maxOpen
+  }
+
+  async function toggle(path: string, node?: PageNode): Promise<void> {
+    const currentlyOpen = isOpen(path)
+
+    // Lazy-load children before expanding a stub node
+    if (node?.has_more && props.onExpand && !currentlyOpen) {
+      await props.onExpand(node)
+    }
+
     if (props.onToggle) {
-      props.onToggle(path)
+      props.onToggle(path, node)
       return
     }
     if (!ownState) return
     const next = { ...ownState.value }
-    if (isOpen(path)) {
-      next[path] = false  // record the closure
+    if (currentlyOpen) {
+      next[path] = false
     } else {
-      delete next[path]   // back to default-open; remove the entry
+      next[path] = true  // force open (important after lazy load)
     }
     ownState.value = next
   }
@@ -82,8 +105,17 @@
     return props.openState ?? ownState?.value ?? {}
   }
 
-  function childOnToggle(): (path: string) => void {
-    return props.onToggle ?? toggle
+  function childOnToggle(): (path: string, node?: PageNode) => void {
+    const fn = props.onToggle ?? toggle
+    return (p: string, n?: PageNode) => { fn(p, n) }
+  }
+
+  function childLoadingPaths(): Set<string> | undefined {
+    return props.loadingPaths
+  }
+
+  function childOnExpand(): ((node: PageNode) => Promise<void>) | undefined {
+    return props.onExpand
   }
 
   // ----- Namespace palette ---------------------------------------------------
@@ -134,14 +166,15 @@
     <li v-for="node in nodes" :key="node.path" class="my-0.5">
       <div class="flex items-start gap-1">
         <button
-          v-if="node.children.length"
+          v-if="node.children.length || node.has_more"
           type="button"
           class="shrink-0 w-4 h-4 mt-0.5 flex items-center justify-center text-slate-400 hover:text-slate-700"
           :aria-expanded="isOpen(node.path)"
           :aria-label="isOpen(node.path) ? 'Collapse folder' : 'Expand folder'"
-          @click="toggle(node.path)"
+          @click="toggle(node.path, node)"
         >
           <svg
+            v-if="!loadingPaths?.has(node.path)"
             xmlns="http://www.w3.org/2000/svg"
             class="w-3 h-3 transition-transform"
             :class="{ 'rotate-90': isOpen(node.path) }"
@@ -150,13 +183,22 @@
           >
             <path d="M4 2 L8 6 L4 10 Z" />
           </svg>
+          <svg
+            v-else
+            class="w-3 h-3 animate-spin"
+            viewBox="0 0 24 24"
+            fill="none"
+          >
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+          </svg>
         </button>
         <span v-else class="shrink-0 w-4 h-4" aria-hidden="true" />
         <RouterLink
           :to="`${linkPrefix ?? '/w'}/${node.path}`"
           class="flex-1 truncate"
           :class="
-            node.children.length
+            node.children.length || node.has_more
               ? 'text-slate-800 font-medium hover:text-blue-600'
               : 'text-slate-700 hover:text-blue-600'
           "
@@ -166,13 +208,16 @@
         </RouterLink>
       </div>
       <PageTree
-        v-if="node.children.length && isOpen(node.path)"
+        v-if="(node.children.length || node.has_more) && isOpen(node.path)"
         :nodes="node.children"
         :root-namespace="childRootNamespace(node)"
         :link-prefix="linkPrefix"
         :storage-key="storageKey"
         :open-state="childOpenState()"
         :on-toggle="childOnToggle()"
+        :on-expand="childOnExpand()"
+        :loading-paths="childLoadingPaths()"
+        :default-open-depth="props.defaultOpenDepth"
         class="ml-3 border-l-2 pl-2"
         :class="railClass(node)"
       />

@@ -170,8 +170,22 @@ async def trigger_sync(
 async def get_source_tree(
     source_id: str,
     settings: Annotated[Settings, Depends(get_settings)],
+    depth: int = 2,
 ) -> list[PageNode]:
-    return await src_store.walk_source_tree(settings.repos_dir, source_id)
+    return await src_store.walk_source_tree(
+        settings.repos_dir, source_id, max_depth=depth
+    )
+
+
+@router.get("/{source_id}/children/{path:path}", response_model=list[PageNode])
+async def get_source_children(
+    source_id: str,
+    path: str,
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> list[PageNode]:
+    return await src_store.walk_source_children(
+        settings.repos_dir, source_id, path
+    )
 
 
 @router.get("/{source_id}/pages/{path:path}", response_model=PageRead)

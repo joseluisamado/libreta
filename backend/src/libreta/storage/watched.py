@@ -118,7 +118,10 @@ def _read_title_only(file: Path, fallback: str) -> str:
         return fallback
 
 
-def _walk_watched_tree_sync(watched_root: Path) -> list[PageNode]:
+def _walk_watched_tree_sync(
+    watched_root: Path,
+    max_depth: int | None = None,
+) -> list[PageNode]:
     try:
         if not watched_root.exists():
             return []
@@ -126,7 +129,7 @@ def _walk_watched_tree_sync(watched_root: Path) -> list[PageNode]:
         logger.warning("cannot access watched root %s", watched_root)
         return []
 
-    def build(dir_path: Path, url_prefix: str) -> list[PageNode]:
+    def build(dir_path: Path, url_prefix: str, depth: int = 0) -> list[PageNode]:
         nodes: list[PageNode] = []
         try:
             entries = sorted(dir_path.iterdir(), key=lambda p: (not p.is_dir(), p.name.casefold()))
@@ -151,37 +154,76 @@ def _walk_watched_tree_sync(watched_root: Path) -> list[PageNode]:
         all_names.update(md_names.keys())
         all_names.update(dir_names.keys())
 
+        hit_max = max_depth is not None and depth >= max_depth
+
         for name in sorted(all_names):
             md_file = md_names.get(name)
             sub_dir = dir_names.get(name)
             child_url = f"{url_prefix}/{name}" if url_prefix else name
-            children = build(sub_dir, child_url) if sub_dir else []
-            if md_file:
-                title = _read_title_only(md_file, name.replace("-", " ").replace("_", " ").title())
+            has_real_children = bool(sub_dir)
+
+            if hit_max and has_real_children:
+                title = (
+                    _read_title_only(md_file, name.replace("-", " ").replace("_", " ").title())
+                    if md_file
+                    else name.replace("-", " ").replace("_", " ").title()
+                )
                 nodes.append(
                     PageNode(
                         path=child_url,
                         title=title,
-                        is_directory=bool(sub_dir),
-                        children=children,
+                        is_directory=True,
+                        children=[],
+                        has_more=True,
                     )
                 )
             else:
-                nodes.append(
-                    PageNode(
-                        path=child_url,
-                        title=name.replace("-", " ").replace("_", " ").title(),
-                        is_directory=True,
-                        children=children,
+                children = build(sub_dir, child_url, depth + 1) if sub_dir else []
+                if md_file:
+                    title = _read_title_only(md_file, name.replace("-", " ").replace("_", " ").title())
+                    nodes.append(
+                        PageNode(
+                            path=child_url,
+                            title=title,
+                            is_directory=bool(sub_dir),
+                            children=children,
+                        )
                     )
-                )
+                else:
+                    nodes.append(
+                        PageNode(
+                            path=child_url,
+                            title=name.replace("-", " ").replace("_", " ").title(),
+                            is_directory=True,
+                            children=children,
+                        )
+                    )
         return nodes
 
     return build(watched_root, "")
 
 
-async def walk_watched_tree(watched_root: Path) -> list[PageNode]:
-    return await asyncio.to_thread(_walk_watched_tree_sync, watched_root)
+def _walk_watched_children_sync(watched_root: Path, raw_path: str) -> list[PageNode]:
+    """Return immediate children of *raw_path* at max_depth=1."""
+    child_dir = (watched_root / raw_path).resolve()
+    try:
+        child_dir.relative_to(watched_root)
+    except ValueError:
+        return []
+    if not child_dir.is_dir():
+        return []
+    return _walk_watched_tree_sync(child_dir, max_depth=1)
+
+
+async def walk_watched_tree(
+    watched_root: Path,
+    max_depth: int | None = None,
+) -> list[PageNode]:
+    return await asyncio.to_thread(_walk_watched_tree_sync, watched_root, max_depth)
+
+
+async def walk_watched_children(watched_root: Path, raw_path: str) -> list[PageNode]:
+    return await asyncio.to_thread(_walk_watched_children_sync, watched_root, raw_path)
 
 
 # ---------------------------------------------------------------------------
@@ -296,3 +338,57 @@ def _write_watched_page_sync(watched_root: Path, raw_path: str, body: str) -> tu
 
 async def write_watched_page(watched_root: Path, raw_path: str, body: str) -> tuple[PageRead, str]:
     return await asyncio.to_thread(_write_watched_page_sync, watched_root, raw_path, body)
+
+
+def _create_watched_folder_sync(watched_root: Path, raw_path: str) -> None:
+    """Create an empty directory (with .gitkeep) in a watched folder."""
+    dir_path = (watched_root / raw_path).resolve()
+    try:
+        dir_path.relative_to(watched_root)
+    except ValueError:
+        raise WatchedFileOutsideRootError(raw_path)
+    if dir_path.exists():
+        raise FileExistsError(str(dir_path))
+    dir_path.mkdir(parents=True)
+    (dir_path / ".gitkeep").write_text("")
+
+
+async def create_watched_folder(watched_root: Path, raw_path: str) -> None:
+    await asyncio.to_thread(_create_watched_folder_sync, watched_root, raw_path)
+
+
+def _delete_watched_page_sync(watched_root: Path, raw_path: str) -> None:
+    """Delete a page or empty directory from a watched folder."""
+    md_file = (watched_root / raw_path).with_suffix(".md")
+    dir_path = watched_root / raw_path
+
+    try:
+        (watched_root / raw_path).resolve().relative_to(watched_root.resolve())
+    except ValueError:
+        raise WatchedFileOutsideRootError(raw_path)
+
+    if md_file.is_file():
+        sidecar = md_file.parent / f".{md_file.name}"
+        md_file.unlink()
+        if sidecar.is_dir():
+            for f in sidecar.rglob("*"):
+                if f.is_file():
+                    f.unlink()
+            sidecar.rmdir()
+    elif dir_path.is_dir():
+        gitkeep = dir_path / ".gitkeep"
+        if gitkeep.is_file():
+            gitkeep.unlink()
+        contents = [p for p in dir_path.iterdir() if not p.name.startswith(".")]
+        if contents:
+            raise OSError(f"Directory not empty: {raw_path}")
+        for p in dir_path.iterdir():
+            if p.is_file():
+                p.unlink()
+        dir_path.rmdir()
+    else:
+        raise PageNotFoundError(raw_path)
+
+
+async def delete_watched_page(watched_root: Path, raw_path: str) -> None:
+    await asyncio.to_thread(_delete_watched_page_sync, watched_root, raw_path)

@@ -2,7 +2,7 @@
   import { ref, watch } from 'vue'
   import { useSourcesStore } from '@/stores/sources'
   import PageTree from '@/components/PageTree.vue'
-  import type { GitSource } from '@/api/types'
+  import type { GitSource, PageNode } from '@/api/types'
 
   const props = defineProps<{ source: GitSource }>()
 
@@ -10,6 +10,7 @@
   const expanded = ref(true)
   const syncing = ref(false)
   const syncMessage = ref<string | null>(null)
+  const loadingPaths = ref<Set<string>>(new Set())
 
   watch(
     expanded,
@@ -21,15 +22,23 @@
     { immediate: true },
   )
 
+  async function handleExpand(node: PageNode): Promise<void> {
+    loadingPaths.value = new Set([...loadingPaths.value, node.path])
+    try {
+      await store.loadTreeChildren(props.source.id, node.path)
+    } finally {
+      const next = new Set(loadingPaths.value)
+      next.delete(node.path)
+      loadingPaths.value = next
+    }
+  }
+
   async function handleSync(): Promise<void> {
     syncing.value = true
     syncMessage.value = null
-    const before = props.source.last_synced_at
     try {
       await store.syncSource(props.source.id)
-      // The sync runs in background — poll for completion
       await new Promise((r) => setTimeout(r, 1500))
-      // Refresh the source list to get updated sync status
       await store.loadSources()
       if (expanded.value) {
         await store.loadTree(props.source.id)
@@ -143,6 +152,9 @@
       :nodes="store.trees[source.id]!"
       :link-prefix="`/source/${source.id}`"
       :storage-key="`libreta:tree-source-${source.id}`"
+      :on-expand="handleExpand"
+      :loading-paths="loadingPaths"
+      :default-open-depth="1"
       class="ml-3 border-l-2 border-slate-200 pl-2 mt-0.5"
     />
   </div>

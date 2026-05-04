@@ -163,6 +163,18 @@ export function saveWatchedPage(label: string, path: string, data: PageWrite): P
   })
 }
 
+export function getWatchedChildren(label: string, path: string): Promise<PageNode[]> {
+  return request<PageNode[]>(`/watch/${enc(label)}/children/${enc(path)}`)
+}
+
+export function createWatchedFolder(label: string, path: string): Promise<void> {
+  return requestNoContent(`/watch/${enc(label)}/folders/${enc(path)}`, { method: 'POST' })
+}
+
+export function deleteWatchedPage(label: string, path: string): Promise<void> {
+  return requestNoContent(`/watch/${enc(label)}/${enc(path)}`, { method: 'DELETE' })
+}
+
 // ---- SSH keys API -------------------------------------------------------
 
 export function getSshKeys(): Promise<SshKey[]> {
@@ -213,6 +225,10 @@ export function triggerSync(id: string): Promise<GitSource> {
 
 export function getSourceTree(id: string): Promise<PageNode[]> {
   return request<PageNode[]>(`/sources/${id}/tree`)
+}
+
+export function getSourceChildren(id: string, path: string): Promise<PageNode[]> {
+  return request<PageNode[]>(`/sources/${id}/children/${enc(path)}`)
 }
 
 export function getSourcePage(id: string, path: string): Promise<PageRead> {

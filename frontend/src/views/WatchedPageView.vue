@@ -1,12 +1,19 @@
 <script setup lang="ts">
   import { computed, ref, watch } from 'vue'
-  import { useRoute } from 'vue-router'
-  import { getWatchedPage } from '@/api/client'
-  import type { PageRead } from '@/api/types'
+  import { useRoute, useRouter } from 'vue-router'
+  import {
+    getWatchedPage,
+    saveWatchedPage,
+    createWatchedFolder,
+    deleteWatchedPage,
+  } from '@/api/client'
+  import { useWatchedStore } from '@/stores/watched'
+  import type { PageNode, PageRead } from '@/api/types'
   import { renderMarkdown } from '@/markdown'
   import { useReadingWidth } from '@/composables/usePrefs'
   import { useViewMode } from '@/composables/useViewMode'
   import Breadcrumbs from '@/components/Breadcrumbs.vue'
+  import DirListing from '@/components/DirListing.vue'
   import PageToolbar from '@/components/PageToolbar.vue'
   import PageToc from '@/components/PageToc.vue'
   import hljs from 'highlight.js'
@@ -16,6 +23,8 @@
   const { mode, toggle: toggleViewMode } = useViewMode()
 
   const route = useRoute()
+  const router = useRouter()
+  const watched = useWatchedStore()
   const page = ref<PageRead | null>(null)
   const error = ref<string | null>(null)
 
@@ -31,12 +40,98 @@
     error.value = null
     try {
       page.value = await getWatchedPage(label.value, path.value)
+      // Load tree so we can detect directory status
+      if (!watched.trees[label.value]) {
+        await watched.loadTree(label.value)
+      }
     } catch (e) {
       error.value = e instanceof Error ? e.message : String(e)
     }
   }
 
   watch([label, path], load, { immediate: true })
+
+  // ----- Directory detection -----------------------------------------------
+
+  function findNode(nodes: PageNode[], target: string): PageNode | null {
+    for (const n of nodes) {
+      if (n.path === target) return n
+      if (n.children?.length || n.has_more) {
+        const hit = findNode(n.children, target)
+        if (hit) return hit
+      }
+    }
+    return null
+  }
+
+  const dirNode = computed<PageNode | null>(() => {
+    if (!page.value) return null
+    const tree = watched.trees[label.value]
+    if (!tree) return null
+    return findNode(tree, page.value.path)
+  })
+
+  const isDirectory = computed(() => dirNode.value?.is_directory ?? false)
+
+  const dirChildren = computed<PageNode[]>(() => {
+    if (!dirNode.value?.is_directory) return []
+    return dirNode.value.children
+  })
+
+  const basePath = computed(() => (path.value === '' ? '' : path.value))
+
+  function getChildUrl(childPath: string): string {
+    return `/watch/${label.value}/${childPath}`
+  }
+
+  function slugify(name: string): string {
+    return name
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, '-')
+      .replace(/[^a-z0-9-]/g, '')
+  }
+
+  // ----- Actions -----------------------------------------------------------
+
+  async function onCreatePage(name: string): Promise<void> {
+    const slug = slugify(name)
+    const prefix = basePath.value
+    const newPath = prefix ? `${prefix}/${slug}` : slug
+    try {
+      await saveWatchedPage(label.value, newPath, {
+        body: `# ${name}\n\n`,
+      })
+      await watched.loadTree(label.value)
+      router.push(`/edit-watch/${label.value}/${newPath}`)
+    } catch (e) {
+      window.alert(`Failed to create page: ${e instanceof Error ? e.message : String(e)}`)
+    }
+  }
+
+  async function onCreateFolder(name: string): Promise<void> {
+    const slug = slugify(name)
+    const prefix = basePath.value
+    const newPath = prefix ? `${prefix}/${slug}` : slug
+    try {
+      await createWatchedFolder(label.value, newPath)
+      await watched.loadTree(label.value)
+    } catch (e) {
+      window.alert(`Failed to create folder: ${e instanceof Error ? e.message : String(e)}`)
+    }
+  }
+
+  async function onDelete(childPath: string): Promise<void> {
+    if (!window.confirm(`Delete "${childPath}"?`)) return
+    try {
+      await deleteWatchedPage(label.value, childPath)
+      await watched.loadTree(label.value)
+    } catch (e) {
+      window.alert(`Failed to delete: ${e instanceof Error ? e.message : String(e)}`)
+    }
+  }
+
+  // ----- Rendering ----------------------------------------------------------
 
   const bodyHasMatchingH1 = computed(() => {
     if (!page.value) return false
@@ -126,9 +221,21 @@
         <Breadcrumbs :path="page.path" :watched-label="label" />
       </header>
       <h1 v-if="!bodyHasMatchingH1" class="text-3xl font-bold">{{ page.meta.title }}</h1>
-      <div v-if="mode === 'rendered'" class="prose" v-html="html" />
+
+      <!-- Directory listing -->
+      <DirListing
+        v-if="isDirectory"
+        :children="dirChildren"
+        :base-path="basePath"
+        :get-child-url="getChildUrl"
+        @create-page="onCreatePage"
+        @create-folder="onCreateFolder"
+        @delete="onDelete"
+      />
+
+      <div v-if="mode === 'rendered' && page.body" class="prose" v-html="html" />
       <pre
-        v-else
+        v-else-if="mode === 'source' && page.body"
         class="bg-[#f6f8fa] rounded-md p-6 overflow-auto text-sm leading-relaxed border border-slate-200"
       ><code class="hljs language-markdown" v-html="highlightedSource" /></pre>
       <p v-if="page.meta.tags.length" class="mt-8 text-xs text-slate-500">

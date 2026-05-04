@@ -12,6 +12,7 @@ services:
       LIBRETA_DRAWIO_URL: http://drawio:8080
     volumes:
       - libreta-data:/var/lib/libreta
+      - /srv:/srv
     ports:
       - "8092:8080"
     depends_on:

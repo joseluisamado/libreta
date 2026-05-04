@@ -6,11 +6,26 @@ import {
   deleteSource,
   triggerSync,
   getSourceTree,
+  getSourceChildren,
   getSshKeys,
   addSshKey,
   deleteSshKey,
 } from '@/api/client'
 import type { GitSource, GitSourceCreate, GitSourceUpdate, PageNode, SshKey, SshKeyCreate } from '@/api/types'
+
+function mergeChildren(nodes: PageNode[], parentPath: string, children: PageNode[]): boolean {
+  for (const n of nodes) {
+    if (n.path === parentPath) {
+      n.children = children
+      n.has_more = false
+      return true
+    }
+    if (n.children?.length && mergeChildren(n.children, parentPath, children)) {
+      return true
+    }
+  }
+  return false
+}
 
 interface State {
   sources: GitSource[]
@@ -108,6 +123,18 @@ export const useSourcesStore = defineStore('sources', {
       try {
         await deleteSshKey(id)
         this.sshKeys = this.sshKeys.filter((k) => k.id !== id)
+      } catch (e) {
+        this.error = e instanceof Error ? e.message : String(e)
+      }
+    },
+    async loadTreeChildren(sourceId: string, parentPath: string): Promise<void> {
+      try {
+        const children = await getSourceChildren(sourceId, parentPath)
+        const tree = this.trees[sourceId]
+        if (tree) {
+          mergeChildren(tree, parentPath, children)
+          this.trees[sourceId] = [...tree]
+        }
       } catch (e) {
         this.error = e instanceof Error ? e.message : String(e)
       }

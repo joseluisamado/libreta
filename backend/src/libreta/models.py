@@ -80,6 +80,7 @@ class PageNode(BaseModel):
     title: str
     is_directory: bool
     children: list[PageNode] = Field(default_factory=list)
+    has_more: bool = False
 
 
 class HistoryEntry(BaseModel):

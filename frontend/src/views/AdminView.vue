@@ -1,9 +1,11 @@
 <script setup lang="ts">
   import { ref, onMounted } from 'vue'
   import { useSourcesStore } from '@/stores/sources'
+  import { useWatchedStore } from '@/stores/watched'
   import type { GitSourceCreate } from '@/api/types'
 
   const store = useSourcesStore()
+  const watched = useWatchedStore()
 
   // ---- Add source form ------------------------------------------------
   const showSourceForm = ref(false)
@@ -65,6 +67,39 @@
     await store.syncSource(id)
   }
 
+  // ---- Add watch form -------------------------------------------------
+  const showWatchForm = ref(false)
+  const watchLabel = ref('')
+  const watchPath = ref('')
+  const watchError = ref<string | null>(null)
+  const watchAdding = ref(false)
+
+  async function submitWatch(): Promise<void> {
+    watchError.value = null
+    const lbl = watchLabel.value.trim()
+    const pth = watchPath.value.trim()
+    if (!lbl || !pth) {
+      watchError.value = 'Label and path are required.'
+      return
+    }
+    watchAdding.value = true
+    try {
+      await watched.addFolder(lbl, pth)
+      showWatchForm.value = false
+      watchLabel.value = ''
+      watchPath.value = ''
+    } catch (e) {
+      watchError.value = e instanceof Error ? e.message : String(e)
+    } finally {
+      watchAdding.value = false
+    }
+  }
+
+  async function removeWatch(label: string): Promise<void> {
+    if (!window.confirm(`Remove watched folder "${label}"?`)) return
+    await watched.removeFolder(label)
+  }
+
   // ---- Add SSH key form -----------------------------------------------
   const showKeyForm = ref(false)
   const keyLabel = ref('')
@@ -99,6 +134,7 @@
   onMounted(() => {
     store.loadSources()
     store.loadSshKeys()
+    watched.loadFolders()
   })
 </script>
 
@@ -266,6 +302,76 @@
         </div>
       </div>
       <p v-else-if="store.loaded" class="text-sm text-slate-400">No git sources configured yet.</p>
+    </section>
+
+    <!-- ==================== Watched Folders ==================== -->
+    <section class="mb-10">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-lg font-semibold">Watched Folders</h2>
+        <button
+          type="button"
+          class="text-sm px-3 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 cursor-pointer"
+          @click="showWatchForm = !showWatchForm"
+        >
+          {{ showWatchForm ? 'Cancel' : '+ Add watch' }}
+        </button>
+      </div>
+
+      <!-- Add form -->
+      <div v-if="showWatchForm" class="mb-4 p-4 border border-slate-200 rounded-lg bg-slate-50">
+        <p v-if="watchError" class="text-red-600 text-sm mb-2">{{ watchError }}</p>
+        <div class="grid grid-cols-2 gap-3 mb-3">
+          <div>
+            <label class="block text-xs text-slate-500 mb-1">Label</label>
+            <input
+              v-model.trim="watchLabel"
+              type="text"
+              placeholder="My Notes"
+              class="w-full border border-slate-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+            />
+            <p class="text-xs text-slate-400 mt-0.5">Letters, numbers, hyphens, underscores only.</p>
+          </div>
+          <div class="col-span-2">
+            <label class="block text-xs text-slate-500 mb-1">Path</label>
+            <input
+              v-model.trim="watchPath"
+              type="text"
+              placeholder="/absolute/path/to/folder"
+              class="w-full border border-slate-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+            />
+          </div>
+        </div>
+        <button
+          type="button"
+          :disabled="watchAdding"
+          class="px-4 py-1.5 text-sm rounded bg-blue-600 text-white hover:bg-blue-700 cursor-pointer disabled:opacity-50"
+          @click="submitWatch"
+        >
+          {{ watchAdding ? 'Adding…' : 'Add watch' }}
+        </button>
+      </div>
+
+      <!-- Watch list -->
+      <div v-if="watched.folders.length" class="space-y-3">
+        <div
+          v-for="f in watched.folders"
+          :key="f.label"
+          class="p-4 border border-slate-200 rounded-lg flex items-center justify-between"
+        >
+          <div>
+            <p class="font-medium text-sm">{{ f.label }}</p>
+            <p class="text-xs text-slate-400 mt-0.5 truncate max-w-lg" :title="f.path">{{ f.path }}</p>
+          </div>
+          <button
+            type="button"
+            class="text-xs px-2 py-1 rounded border border-red-200 text-red-600 hover:bg-red-50 cursor-pointer shrink-0 ml-4"
+            @click="removeWatch(f.label)"
+          >
+            Remove
+          </button>
+        </div>
+      </div>
+      <p v-else class="text-sm text-slate-400">No watched folders configured yet.</p>
     </section>
 
     <!-- ==================== SSH Keys ==================== -->

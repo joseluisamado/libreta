@@ -4,8 +4,23 @@ import {
   addWatchedFolder,
   removeWatchedFolder,
   getWatchedTree,
+  getWatchedChildren,
 } from '@/api/client'
 import type { PageNode, WatchedFolder } from '@/api/types'
+
+function mergeChildren(nodes: PageNode[], parentPath: string, children: PageNode[]): boolean {
+  for (const n of nodes) {
+    if (n.path === parentPath) {
+      n.children = children
+      n.has_more = false
+      return true
+    }
+    if (n.children?.length && mergeChildren(n.children, parentPath, children)) {
+      return true
+    }
+  }
+  return false
+}
 
 interface State {
   folders: WatchedFolder[]
@@ -50,6 +65,18 @@ export const useWatchedStore = defineStore('watched', {
         await removeWatchedFolder(label)
         this.folders = this.folders.filter((f) => f.label !== label)
         delete this.trees[label]
+      } catch (e) {
+        this.error = e instanceof Error ? e.message : String(e)
+      }
+    },
+    async loadTreeChildren(label: string, parentPath: string): Promise<void> {
+      try {
+        const children = await getWatchedChildren(label, parentPath)
+        const tree = this.trees[label]
+        if (tree) {
+          mergeChildren(tree, parentPath, children)
+          this.trees[label] = [...tree]
+        }
       } catch (e) {
         this.error = e instanceof Error ? e.message : String(e)
       }

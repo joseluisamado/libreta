@@ -53,7 +53,7 @@
   function findNode(nodes: PageNode[], target: string): PageNode | null {
     for (const n of nodes) {
       if (n.path === target) return n
-      if (n.children.length) {
+      if (n.children.length || n.has_more) {
         const hit = findNode(n.children, target)
         if (hit) return hit
       }

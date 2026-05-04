@@ -484,11 +484,14 @@ def _read_title_only(file: Path, fallback: str) -> str:
         return fallback
 
 
-def _walk_tree_sync(pages_root: Path) -> list[PageNode]:
+def _walk_tree_sync(
+    pages_root: Path,
+    max_depth: int | None = None,
+) -> list[PageNode]:
     if not pages_root.exists():
         return []
 
-    def build(dir_path: Path, url_prefix: str) -> list[PageNode]:
+    def build(dir_path: Path, url_prefix: str, depth: int = 0) -> list[PageNode]:
         nodes: list[PageNode] = []
         try:
             entries = sorted(dir_path.iterdir(), key=lambda p: (not p.is_dir(), p.name.casefold()))
@@ -512,37 +515,83 @@ def _walk_tree_sync(pages_root: Path) -> list[PageNode]:
         all_names.update(md_names.keys())
         all_names.update(dir_names.keys())
 
+        hit_max = max_depth is not None and depth >= max_depth
+
         for name in sorted(all_names):
             md_file = md_names.get(name)
             sub_dir = dir_names.get(name)
             child_url = f"{url_prefix}/{name}" if url_prefix else name
-            children = build(sub_dir, child_url) if sub_dir else []
-            if md_file:
-                title = _read_title_only(md_file, name.replace("-", " ").replace("_", " ").title())
+            has_real_children = bool(sub_dir)
+
+            if hit_max and has_real_children:
+                title = (
+                    _read_title_only(md_file, name.replace("-", " ").replace("_", " ").title())
+                    if md_file
+                    else name.replace("-", " ").replace("_", " ").title()
+                )
                 nodes.append(
                     PageNode(
                         path=child_url,
                         title=title,
-                        is_directory=bool(sub_dir),
-                        children=children,
+                        is_directory=True,
+                        children=[],
+                        has_more=True,
                     )
                 )
             else:
-                nodes.append(
-                    PageNode(
-                        path=child_url,
-                        title=name.replace("-", " ").replace("_", " ").title(),
-                        is_directory=True,
-                        children=children,
+                children = build(sub_dir, child_url, depth + 1) if sub_dir else []
+                if md_file:
+                    title = _read_title_only(md_file, name.replace("-", " ").replace("_", " ").title())
+                    nodes.append(
+                        PageNode(
+                            path=child_url,
+                            title=title,
+                            is_directory=bool(sub_dir),
+                            children=children,
+                        )
                     )
-                )
+                else:
+                    nodes.append(
+                        PageNode(
+                            path=child_url,
+                            title=name.replace("-", " ").replace("_", " ").title(),
+                            is_directory=True,
+                            children=children,
+                        )
+                    )
         return nodes
 
     return build(pages_root, "")
 
 
-async def walk_source_tree(repos_dir: Path, source_id: str) -> list[PageNode]:
-    return await asyncio.to_thread(_walk_tree_sync, _local_path(repos_dir, source_id))
+def _walk_source_children_sync(pages_root: Path, raw_path: str) -> list[PageNode]:
+    """Return immediate children of *raw_path* at max_depth=1."""
+    child_dir = (pages_root / raw_path).resolve()
+    try:
+        child_dir.relative_to(pages_root)
+    except ValueError:
+        return []
+    if not child_dir.is_dir():
+        return []
+    return _walk_tree_sync(child_dir, max_depth=1)
+
+
+async def walk_source_tree(
+    repos_dir: Path,
+    source_id: str,
+    max_depth: int | None = None,
+) -> list[PageNode]:
+    return await asyncio.to_thread(_walk_tree_sync, _local_path(repos_dir, source_id), max_depth)
+
+
+async def walk_source_children(
+    repos_dir: Path,
+    source_id: str,
+    raw_path: str,
+) -> list[PageNode]:
+    return await asyncio.to_thread(
+        _walk_source_children_sync, _local_path(repos_dir, source_id), raw_path
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -11,7 +11,7 @@
   const watchedStore = useWatchedStore()
   const route = useRoute()
   const drawerOpen = ref(false)
-  const watchedExpanded = ref(false)
+  const sidebarTab = ref<'repos' | 'watched'>('repos')
 
   // ----- Sidebar drag-to-resize --------------------------------------------
 
@@ -183,8 +183,32 @@
         </RouterLink>
       </div>
 
+      <!-- Sidebar tabs -->
+      <div class="flex border-b border-slate-200 mb-3">
+        <button
+          type="button"
+          class="flex-1 text-xs font-medium px-2 py-1.5 rounded-t transition-colors"
+          :class="sidebarTab === 'repos'
+            ? 'text-blue-700 border-b-2 border-blue-600 bg-white'
+            : 'text-slate-500 hover:text-slate-700'"
+          @click="sidebarTab = 'repos'"
+        >
+          Repos
+        </button>
+        <button
+          type="button"
+          class="flex-1 text-xs font-medium px-2 py-1.5 rounded-t transition-colors"
+          :class="sidebarTab === 'watched'
+            ? 'text-blue-700 border-b-2 border-blue-600 bg-white'
+            : 'text-slate-500 hover:text-slate-700'"
+          @click="sidebarTab = 'watched'"
+        >
+          Watched
+        </button>
+      </div>
+
       <!-- Git source panels (one per source, stacked) -->
-      <div v-if="sourcesStore.sources.length" class="mb-2">
+      <div v-if="sidebarTab === 'repos' && sourcesStore.sources.length" class="mb-2">
         <SourceSidebarPanel
           v-for="src in sourcesStore.sources"
           :key="src.id"
@@ -192,33 +216,13 @@
         />
       </div>
 
-      <p v-if="sourcesStore.loaded && !sourcesStore.sources.length" class="text-xs text-slate-400 mb-3">
+      <p v-if="sidebarTab === 'repos' && sourcesStore.loaded && !sourcesStore.sources.length" class="text-xs text-slate-400 mb-3">
         No git sources configured.
         <RouterLink to="/-/admin" class="underline hover:text-blue-600">Add one</RouterLink>
       </p>
 
-      <!-- Watched section (collapsible) -->
-      <div class="border-t border-slate-200 pt-2 mt-1">
-        <button
-          type="button"
-          class="flex items-center gap-1 w-full text-xs text-slate-500 hover:text-slate-700 mb-1"
-          @click="watchedExpanded = !watchedExpanded"
-        >
-          <span class="shrink-0 w-4 h-4 flex items-center justify-center">
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              class="w-3 h-3 transition-transform"
-              :class="{ 'rotate-90': watchedExpanded }"
-              viewBox="0 0 12 12"
-              fill="currentColor"
-            >
-              <path d="M4 2 L8 6 L4 10 Z" />
-            </svg>
-          </span>
-          Watched folders
-        </button>
-        <WatchedSidebarContent v-if="watchedExpanded" />
-      </div>
+      <!-- Watched section -->
+      <WatchedSidebarContent v-if="sidebarTab === 'watched'" />
 
       <!-- Drag handle: only interactive on desktop -->
       <div

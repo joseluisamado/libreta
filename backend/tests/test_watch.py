@@ -345,3 +345,97 @@ def test_config_persisted_to_disk(
     client_with_watchers.delete("/api/v1/watch/folders/mywiki")
     data2 = json.loads(config_path.read_text(encoding="utf-8"))
     assert data2 == []
+
+
+# ---------------------------------------------------------------------------
+# Depth-limited tree + children endpoint
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def deep_fixture(tmp_path: Path) -> Path:
+    """A 3-level tree for testing depth-limited tree walks."""
+    root = tmp_path / "deep-wiki"
+    root.mkdir()
+    (root / "readme.md").write_text("# Readme\n", encoding="utf-8")
+    l1 = root / "notes"
+    l1.mkdir()
+    (l1 / "todo.md").write_text("# Todo\n", encoding="utf-8")
+    l2 = l1 / "archive"
+    l2.mkdir()
+    (l2 / "2023.md").write_text("# 2023\n", encoding="utf-8")
+    (l2 / "2024.md").write_text("# 2024\n", encoding="utf-8")
+    return root
+
+
+def test_watched_tree_depth_limit(
+    client_with_watchers: TestClient, deep_fixture: Path
+) -> None:
+    """depth=1 returns root + immediate children; deeper dirs are stubs."""
+    client_with_watchers.post(
+        "/api/v1/watch/folders",
+        json={"label": "deep", "path": str(deep_fixture)},
+    )
+    r = client_with_watchers.get("/api/v1/watch/deep/tree?depth=1")
+    assert r.status_code == 200
+    nodes = r.json()
+    paths = {n["path"] for n in nodes}
+    assert "readme" in paths
+    assert "notes" in paths
+
+    # notes is at depth 0 (< max_depth), so it is populated with children
+    notes = next(n for n in nodes if n["path"] == "notes")
+    assert notes["is_directory"] is True
+    assert notes["has_more"] is False
+    assert len(notes["children"]) == 2
+
+    child_paths = {c["path"] for c in notes["children"]}
+    assert "notes/todo" in child_paths
+    assert "notes/archive" in child_paths
+
+    # archive is at depth 1 (>= max_depth), so it is a stub
+    archive = next(c for c in notes["children"] if c["path"] == "notes/archive")
+    assert archive["is_directory"] is True
+    assert archive["has_more"] is True
+    assert archive["children"] == []
+
+    readme = next(n for n in nodes if n["path"] == "readme")
+    assert readme["has_more"] is False
+
+
+def test_watched_children_endpoint(
+    client_with_watchers: TestClient, deep_fixture: Path
+) -> None:
+    """GET .../children/{path} returns one level of immediate children."""
+    client_with_watchers.post(
+        "/api/v1/watch/folders",
+        json={"label": "deep", "path": str(deep_fixture)},
+    )
+    # depth=0: everything at root is a stub
+    r = client_with_watchers.get("/api/v1/watch/deep/tree?depth=0")
+    assert r.status_code == 200
+    nodes = r.json()
+    assert len(nodes) == 2  # readme + notes
+    notes = next(n for n in nodes if n["path"] == "notes")
+    assert notes["has_more"] is True
+    assert notes["children"] == []
+
+    # Fetch children of "notes" via the children endpoint
+    r2 = client_with_watchers.get("/api/v1/watch/deep/children/notes")
+    assert r2.status_code == 200
+    children = r2.json()
+    child_paths = {c["path"] for c in children}
+    assert "todo" in child_paths
+    assert "archive" in child_paths
+
+    # archive has real children (2023.md, 2024.md); since max_depth=1 for
+    # the child walk, archive (depth 0 < 1) is expanded and its children
+    # appear with the prefixed path.
+    archive = next(c for c in children if c["path"] == "archive")
+    assert archive["is_directory"] is True
+    child_of_archive = {c["path"] for c in archive["children"]}
+    assert "archive/2023" in child_of_archive
+    assert "archive/2024" in child_of_archive
+
+    todo = next(c for c in children if c["path"] == "todo")
+    assert todo["has_more"] is False

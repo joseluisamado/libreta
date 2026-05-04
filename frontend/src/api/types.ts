@@ -24,6 +24,7 @@ export interface PageNode {
   title: string
   is_directory: boolean
   children: PageNode[]
+  has_more?: boolean
 }
 
 export interface HistoryEntry {
