@@ -1,6 +1,9 @@
 import type {
   AssetUploadResponse,
   DiffEntry,
+  GitSource,
+  GitSourceCreate,
+  GitSourceUpdate,
   HistoryEntry,
   PageMove,
   PageNode,
@@ -8,6 +11,8 @@ import type {
   PageWrite,
   RecentChange,
   SearchResult,
+  SshKey,
+  SshKeyCreate,
   WatchedFolder,
   WatchedFolderCreate,
 } from './types'
@@ -118,6 +123,70 @@ export function getWatchedPage(label: string, path: string): Promise<PageRead> {
 
 export function saveWatchedPage(label: string, path: string, data: PageWrite): Promise<PageRead> {
   return request<PageRead>(`/watch/${label}/${path}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+}
+
+// ---- SSH keys API -------------------------------------------------------
+
+export function getSshKeys(): Promise<SshKey[]> {
+  return request<SshKey[]>('/sources/keys')
+}
+
+export function addSshKey(data: SshKeyCreate): Promise<SshKey> {
+  return request<SshKey>('/sources/keys', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+}
+
+export function deleteSshKey(keyId: string): Promise<void> {
+  return requestNoContent(`/sources/keys/${keyId}`, { method: 'DELETE' })
+}
+
+// ---- Git sources API ----------------------------------------------------
+
+export function getSources(): Promise<GitSource[]> {
+  return request<GitSource[]>('/sources')
+}
+
+export function addSource(data: GitSourceCreate): Promise<GitSource> {
+  return request<GitSource>('/sources', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+}
+
+export function updateSource(id: string, data: GitSourceUpdate): Promise<GitSource> {
+  return request<GitSource>(`/sources/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+}
+
+export function deleteSource(id: string): Promise<void> {
+  return requestNoContent(`/sources/${id}`, { method: 'DELETE' })
+}
+
+export function triggerSync(id: string): Promise<GitSource> {
+  return request<GitSource>(`/sources/${id}/sync`, { method: 'POST' })
+}
+
+export function getSourceTree(id: string): Promise<PageNode[]> {
+  return request<PageNode[]>(`/sources/${id}/tree`)
+}
+
+export function getSourcePage(id: string, path: string): Promise<PageRead> {
+  return request<PageRead>(`/sources/${id}/pages/${path}`)
+}
+
+export function saveSourcePage(id: string, path: string, data: PageWrite): Promise<PageRead> {
+  return request<PageRead>(`/sources/${id}/pages/${path}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),

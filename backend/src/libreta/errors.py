@@ -40,3 +40,31 @@ class WatchedFileOutsideRootError(LibretaError):
 
 class WatchedFolderNotAccessibleError(LibretaError):
     status_code = 400
+
+
+class GitSourceNotFoundError(LibretaError):
+    status_code = 404
+
+
+class GitSourceAlreadyExistsError(LibretaError):
+    status_code = 409
+
+
+class GitSourceCloneError(LibretaError):
+    status_code = 500
+
+
+class GitSourceSyncError(LibretaError):
+    status_code = 500
+
+
+class SshKeyNotFoundError(LibretaError):
+    status_code = 404
+
+
+class SshKeyAlreadyExistsError(LibretaError):
+    status_code = 409
+
+
+class SshKeyInvalidError(LibretaError):
+    status_code = 400

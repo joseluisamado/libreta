@@ -36,7 +36,7 @@ Three containers in development; two in production.
 - **api** — FastAPI app, serves the *built* Vue SPA from `/`, plus REST API and asset files. The frontend container is not used.
 - **drawio** — same as in dev.
 
-In both modes, the **content** working tree (a git repo on a bind-mounted host directory) is mutated by the api process via libgit2.
+In both modes, wiki content lives in **git source clones** under the `libreta-data` Docker named volume. The api process clones, reads, commits, and pushes via libgit2. There is no host bind-mount for wiki content.
 
 ## System diagram
 
@@ -48,19 +48,23 @@ flowchart TB
         API[api: FastAPI + SPA in prod]
         Frontend[frontend: Vite dev server, dev profile only]
         Drawio[drawio: jgraph/drawio]
-        Content[(content: git working tree)]
-        Index[(search.db: SQLite FTS5)]
+        subgraph Volume[libreta-data volume]
+            Repos[repos/&lt;source-id&gt;/ git working trees]
+            SSHKeys[ssh_keys/ private key material]
+            Meta[meta/_meta/ sources.json, watched.json]
+            Index[(search.db: SQLite FTS5)]
+        end
     end
 
-    Remote[Remote git remote — optional]
+    Remote[Remote git repos — GitHub, Gitea, etc.]
 
     Browser -- HTTP --> API
     Browser -. dev only .-> Frontend
     Frontend -- proxy /api, /assets --> API
     Browser -- iframe + postMessage --> Drawio
-    API -- libgit2 --> Content
+    API -- libgit2 read/write/commit --> Repos
+    API -- async push / periodic fetch --> Remote
     API -- query/index --> Index
-    Content -. push/pull .-> Remote
 ```
 
 ## Components
@@ -72,7 +76,8 @@ A FastAPI application that:
 - Serves the compiled Vue SPA from `/` (production only)
 - Exposes a versioned REST API at `/api/v1/...`
 - Serves uploaded assets at `/assets/...`
-- Mediates all writes to the content repo (no other process writes to it)
+- Manages one or more **git sources**: clones remote repos, reads/writes pages into local working trees, commits every save, and pushes asynchronously
+- Runs a background sync loop that fast-forwards each source clone on a configurable interval
 - Maintains a SQLite-based search index in the background
 
 ### `frontend` — Vite dev server (development only)
@@ -81,17 +86,19 @@ A Node container running `pnpm dev`. Provides hot module reload during developme
 
 ### `drawio` — diagram editor
 
-The official `jgraph/drawio` image, run as a sidecar container. Loaded in a sandboxed iframe from the SPA. Communicates via the documented `postMessage` protocol. No state persists in this container — diagrams are saved by the api process to the content repo.
+The official `jgraph/drawio` image, run as a sidecar container. Loaded in a sandboxed iframe from the SPA. Communicates via the documented `postMessage` protocol. No state persists in this container — diagrams are saved by the api process to the source repo.
 
-### `content` — repository volume
+### `libreta-data` — named Docker volume
 
-A bind-mounted directory containing:
+A single Docker named volume at `/var/lib/libreta/` inside the container, containing three subdirectories:
 
-- `.git/` — the version control history
-- `pages/` — markdown files
-- `assets/` — uploaded files (images, attachments, diagrams)
+| Path | Contents |
+|---|---|
+| `repos/<source-id>/` | Full git working tree for each configured source (`.git/` + `pages/`) |
+| `ssh_keys/` | Private SSH key files + `index.json` manifest. Mode 0600. Never committed anywhere. |
+| `meta/_meta/` | `sources.json` (source config), `watched.json` (watched-folder config) |
 
-This is the only stateful volume that matters. Backups = back this up.
+This is the only stateful volume that matters for backups. The search index lives here too but is fully regenerable.
 
 ## Technology choices
 
@@ -125,10 +132,36 @@ This is the only stateful volume that matters. Backups = back this up.
 
 ## Data model
 
-### Filesystem layout
+### Git source configuration
+
+Git sources are configured via the Admin UI (`/-/admin`) and persisted to
+`<meta>/_meta/sources.json` (inside the `libreta-data` volume):
+
+```json
+[
+  {
+    "id": "my-wiki",
+    "label": "My Wiki",
+    "remote_url": "git@github.com:you/wiki.git",
+    "branch": "main",
+    "ssh_key_id": "uuid-of-key-or-null",
+    "sync_interval_minutes": 15,
+    "last_synced_at": "2026-05-03T10:00:00Z",
+    "last_sync_error": null
+  }
+]
+```
+
+SSH private keys are stored as individual files under `ssh_keys/<uuid>` (mode
+0600) with a manifest at `ssh_keys/index.json`. Key material never leaves the
+volume and is never committed to any git repository.
+
+### Filesystem layout (per source)
+
+Each git source is cloned to `repos/<source-id>/`:
 
 ```
-content/                          # git repo root
+repos/my-wiki/                    # git working tree for source "my-wiki"
 ├── .git/
 └── pages/
     ├── index.md                  # the home page
@@ -193,17 +226,25 @@ Unknown frontmatter keys are preserved on roundtrip — Libreta reads what it kn
 
 ## Storage layer
 
-### Write path
+### Git source lifecycle
 
-Every page save:
+At **startup**, the api clones any configured sources that don't have a local clone yet, and fast-forwards those that do (if the working tree is clean). This happens concurrently for all sources.
+
+A **background push worker** (asyncio task) drains a queue of pending pushes. Every local commit enqueues a push. The worker retries up to 3 times with exponential backoff (5 s, 10 s, 20 s). On final failure the error is written to `sources.json` and surfaced in the UI.
+
+A **periodic sync loop** (asyncio task) checks every 60 seconds which sources are due for a pull (based on their `sync_interval_minutes`). It runs a `fetch` + `fast-forward` for each due source. If the working tree has local changes that would conflict, the sync is skipped with a warning.
+
+### Write path (per-page save)
 
 1. Validate the incoming markdown (parses cleanly, frontmatter valid).
-2. Acquire a per-repo write lock (asyncio lock; only one git operation at a time).
-3. Write the file to the working tree.
+2. Acquire the per-source asyncio write lock (one git operation at a time per source).
+3. Write the file to the local working tree clone.
 4. Stage and commit using pygit2 with a structured message (see below).
-5. Notify the indexer (in-process queue) to reindex the changed file.
-6. Optionally push to a configured remote (async, fire-and-forget with retry).
-7. Release the lock and return.
+5. Enqueue a push to the remote (async, handled by the push worker with retry).
+6. Notify the indexer to reindex the changed file.
+7. Release the lock and return the saved `PageRead`.
+
+The HTTP response returns as soon as the local commit is done. The push happens in the background — the user is not blocked waiting for the remote.
 
 ### Commit message format
 
@@ -211,8 +252,6 @@ Every page save:
 <verb> <path>
 
 Optional body with a brief change summary.
-
-Co-authored-by: <user> <email>   # for future multi-user
 ```
 
 Verbs: `create`, `update`, `delete`, `rename`, `attach`, `draw`. Examples:
@@ -228,14 +267,14 @@ This makes `git log --oneline` immediately scannable.
 
 ### Read path
 
-- Lists and trees: `os.scandir` from the working tree (cheap; the kernel caches it).
+- Lists and trees: `os.scandir` from the local working tree clone (cheap; the kernel caches it).
 - Page content: read the file. No object-DB lookup.
 - History: pygit2 walk of commits touching the path.
 - Specific revision: pygit2 blob lookup at the given OID.
 
-### External edits
+### External edits and remote changes
 
-A user may edit files directly with VS Code or `git pull` from a remote. The api process watches `content/` with `watchdog`; on detected change it re-indexes affected files. The frontend's page-tree query is short-TTL cached so external edits show up within seconds.
+A user may edit files directly in the remote git repository (via GitHub UI, VS Code + git push, etc.). The periodic sync loop will fetch and fast-forward those changes into the local clone on the next sync cycle. The search index is updated after each sync. The UI shows the last sync time and any errors in the sidebar panel for each source.
 
 ## HTTP API
 
@@ -270,6 +309,27 @@ All routes prefixed with `/api/v1`. JSON throughout. OpenAPI at `/api/v1/docs`.
 | PUT    | `/pages/{path:path}/diagrams/{filename}` | Update an existing diagram in the page's directory.                                                                                          |
 | GET    | `/assets/{path:path}`             | Fetch diagram (same route as ordinary assets — `.drawio.svg` is just an SVG file).                                                                    |
 
+### Git Sources
+
+| Method | Path                                   | Description                                                       |
+| ------ | -------------------------------------- | ----------------------------------------------------------------- |
+| GET    | `/sources`                             | List all configured git sources with sync status                  |
+| POST   | `/sources`                             | Add a new git source (clone starts in background)                 |
+| PUT    | `/sources/{id}`                        | Update label, branch, SSH key, or sync interval                   |
+| DELETE | `/sources/{id}`                        | Remove source from config (local clone not deleted)               |
+| POST   | `/sources/{id}/sync`                   | Trigger an immediate fetch+fast-forward for a source              |
+| GET    | `/sources/{id}/tree`                   | Page tree for a specific source                                   |
+| GET    | `/sources/{id}/pages/{path:path}`      | Read a page from a source                                         |
+| PUT    | `/sources/{id}/pages/{path:path}`      | Write a page (commits locally + enqueues push)                    |
+
+### SSH Keys
+
+| Method | Path                     | Description                                              |
+| ------ | ------------------------ | -------------------------------------------------------- |
+| GET    | `/sources/keys`          | List SSH keys (label + fingerprint; no private key)      |
+| POST   | `/sources/keys`          | Upload a private key PEM; returns fingerprint            |
+| DELETE | `/sources/keys/{key_id}` | Remove an SSH key                                        |
+
 ### Search
 
 | Method | Path                       | Description                                  |
@@ -288,39 +348,51 @@ All routes prefixed with `/api/v1`. JSON throughout. OpenAPI at `/api/v1/docs`.
 
 ### Routes (Vue Router)
 
-| Route              | View          | Notes                       |
-| ------------------ | ------------- | --------------------------- |
-| `/`                | PageView      | Home — `pages/index.md`     |
-| `/w/:path*`        | PageView      | Read-only view              |
-| `/edit/:path*`     | EditorView    | WYSIWYG editor              |
-| `/history/:path*`  | HistoryView   | Commit list, diff viewer    |
-| `/search`          | SearchView    |                             |
-| `/-/admin`         | AdminView     | Stub for future settings    |
+| Route                          | View               | Notes                                         |
+| ------------------------------ | ------------------ | --------------------------------------------- |
+| `/`                            | DashboardView      | Home / recent changes                         |
+| `/w/:path*`                    | PageView           | Content repo read-only view (legacy)          |
+| `/edit/:path*`                 | EditorView         | Content repo WYSIWYG editor (legacy)          |
+| `/history/:path*`              | HistoryView        | Commit list, diff viewer                      |
+| `/search`                      | SearchView         |                                               |
+| `/source/:sourceId/:path*`     | SourcePageView     | Read page from a git source                   |
+| `/edit-source/:sourceId/:path*`| SourceEditorView   | Edit page in a git source                     |
+| `/watch/:label/:path*`         | WatchedPageView    | Read page from a watched local folder         |
+| `/edit-watch/:label/:path*`    | WatchedEditorView  | Edit page in a watched local folder           |
+| `/-/admin`                     | AdminView          | Git sources + SSH key management              |
 
 ### State
 
 Pinia stores:
 
-- `pageStore` — current page content, dirty flag, save status
-- `treeStore` — page hierarchy (cached)
-- `assetStore` — recent uploads
-- `uiStore` — theme, sidebar collapsed, breakpoint
+- `pageStore` — current page content, dirty flag, save status (legacy content repo)
+- `treeStore` — page hierarchy for the legacy content repo
+- `sourcesStore` — git source list, per-source trees, SSH key list
+- `watchedStore` — watched-folder list, per-folder trees
+- `uiStore` — theme, sidebar width, breakpoint
 
 ### Component tree (high level)
 
 ```
-App.vue
-├── AppShell.vue                   # sidebar + topbar layout
-│   ├── Sidebar.vue (PageTree.vue)
-│   ├── TopBar.vue (Search, theme, user menu placeholder)
-│   └── <RouterView>
-│       ├── PageView.vue           # rendered page
-│       ├── EditorView.vue
-│       │   └── Editor.vue         # TipTap instance
-│       │       ├── EditorToolbar.vue
-│       │       ├── DiagramNode.vue
-│       │       └── TableNode.vue
-│       └── HistoryView.vue
+App.vue                            # sidebar (stacked panels) + main RouterView
+├── SourceSidebarPanel.vue         # one per git source — sync status dot, expand/collapse
+│   └── PageTree.vue
+├── WatchedSidebarContent.vue      # collapsible section for watched local folders
+│   └── PageTree.vue
+└── <RouterView>
+    ├── DashboardView.vue
+    ├── SourcePageView.vue
+    ├── SourceEditorView.vue
+    │   └── Editor.vue             # TipTap instance
+    │       └── EditorToolbar.vue
+    ├── WatchedPageView.vue
+    ├── WatchedEditorView.vue
+    ├── PageView.vue               # legacy content repo
+    ├── EditorView.vue             # legacy content repo
+    ├── HistoryView.vue
+    ├── DiffView.vue
+    ├── SearchView.vue
+    └── AdminView.vue              # git sources + SSH keys CRUD
 ```
 
 ## Editor and markdown roundtrip
@@ -441,21 +513,21 @@ When multi-user lands:
 
 ## Deployment topology
 
-### docker-compose.yml shape (illustrative)
+### docker-compose.yml shape
 
 ```yaml
 services:
   api:
-    build: ./backend                  # dev: build from source
-    image: libreta:${LIBRETA_VERSION:-latest}
+    build: ./backend
+    image: libreta-api:${VERSION:-latest}
     restart: unless-stopped
     environment:
-      LIBRETA_CONTENT_DIR: /content
+      LIBRETA_CONTENT_DIR: /var/lib/libreta/meta   # sources.json, watched.json, search index
+      LIBRETA_REPOS_DIR: /var/lib/libreta/repos    # cloned git source working trees
+      LIBRETA_SSH_KEYS_DIR: /var/lib/libreta/ssh_keys
       LIBRETA_DRAWIO_URL: http://drawio:8080
-      LIBRETA_REMOTE_URL: ${LIBRETA_REMOTE_URL:-}
     volumes:
-      - ./data/content:/content
-      - libreta-search:/var/lib/libreta
+      - libreta-data:/var/lib/libreta
     ports:
       - "8092:8080"                   # api: host 8092 → container 8080
     depends_on:
@@ -469,6 +541,7 @@ services:
     volumes:
       - ./frontend:/app
       - /app/node_modules
+      - pnpm-store:/pnpm-store
     ports:
       - "8091:5173"                   # frontend: host 8091 → container 5173
     depends_on:
@@ -478,10 +551,11 @@ services:
     image: jgraph/drawio:latest
     restart: unless-stopped
     ports:
-      - "8093:8080"                   # drawio: host 8093 → container 8080 (for the editor iframe)
+      - "8093:8080"                   # drawio: host 8093 → container 8080
 
 volumes:
-  libreta-search:
+  libreta-data:    # repos + ssh_keys + meta — the only volume you need to back up
+  pnpm-store:
 ```
 
 ### Production hardening (user responsibility)
@@ -541,6 +615,20 @@ We do not read content from git objects on the hot path. We read from the workin
 ### D-08 — No realtime collaboration in v1
 
 **Why:** Y.js / Hocuspocus-grade collaboration is a project of its own. v1 is a personal wiki; collaboration is v3.
+
+### D-09 — Git sources replace the fixed content bind-mount (2026-05-03)
+
+The original design had a single bind-mounted `./data/content` directory that Libreta owned. This is replaced by **dynamically-configured git sources**: each source is a remote git repository that Libreta clones to a Docker named volume, writes into with local commits, and pushes asynchronously.
+
+**Why:** The user's actual wiki content already lives in a remote git repository. A fixed bind-mount requires manual initialisation and makes deployment fragile (the server needs a clone of the content repo in exactly the right place before Libreta can start). Git sources let the deployment be stateless beyond the `libreta-data` volume: add a source in the Admin UI, Libreta clones it, done.
+
+**Consequence:** `LIBRETA_CONTENT_DIR` is now used only for configuration files (`sources.json`, `watched.json`) and the search index — it no longer holds wiki content. The `libreta-data` named Docker volume is the single backup target. A two-Libreta-instances-on-the-same-remote scenario is still a conflict risk (D-06 still applies).
+
+### D-10 — Local commit first, async push (2026-05-03)
+
+Every page save commits to the local clone immediately and returns. A background push worker then pushes to the remote with up to 3 retries (exponential backoff). Push errors are surfaced in the Admin page and sidebar but do not block editing.
+
+**Why:** Remote git operations (especially over SSH) can take seconds and can fail transiently. Blocking the user's save on a push would degrade the editing experience significantly. The local commit provides immediate durability (the data is safe in the volume) and git history; the push is a best-effort sync. Losing the volume without a recent push means losing the commits since the last push — acceptable for a personal wiki, not acceptable to silently ignore.
 
 ## Open questions
 

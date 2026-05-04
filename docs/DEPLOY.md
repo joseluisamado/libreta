@@ -1,4 +1,4 @@
-# DEPLOY.md — bootstrapping a Libreta from scratch
+# DEPLOY.md — bootstrapping Libreta from scratch
 
 This guide takes you from "empty server" to a running Libreta on your own
 hardware. It covers a single-host Docker Compose deployment — the simplest
@@ -9,22 +9,39 @@ shape that makes sense for v0.x, where Libreta is a single-user wiki.
 
 ---
 
+## Architecture overview (new model)
+
+In this version, **all wiki content lives in git repositories that Libreta
+clones and manages**. There is no `data/content/` wiki directory to initialise
+manually. Instead, you:
+
+1. Create (or already have) a git repo containing your wiki pages.
+2. Tell Libreta about it via the Admin UI (`/-/admin` → Git Sources).
+3. Libreta clones it locally, reads/writes pages into it, and pushes commits
+   back to the remote asynchronously.
+
+Docker volumes (not bind mounts) hold the cloned repos and SSH keys so they
+survive container restarts and upgrades.
+
+---
+
 ## 1. Prerequisites
 
-- A host with at least 1 vCPU, 1 GB RAM, 5 GB free disk for the wiki itself
-  (more if you'll attach lots of media).
+- A host with at least 1 vCPU, 1 GB RAM, 5 GB free disk.
 - Docker Engine 24+ and the `docker compose` plugin.
-- Git ≥ 2.40.
-- A domain name pointed at the host (optional but recommended; without it
-  you can serve over plain HTTP on a LAN).
-- Outbound HTTPS for pulling base images on first deploy.
+- Git ≥ 2.40 (on the host, for checking out the project).
+- A git repository for your wiki content (GitHub, Gitea, Forgejo, or a bare
+  repo on another server). The repo should have at least one commit and a
+  `pages/` directory (or be empty — Libreta will create `pages/` on first
+  save).
+- An SSH key pair with read/write access to that repo, if it is private.
+- A domain name pointed at the host (optional but recommended for TLS).
 
 Check:
 
 ```bash
 docker --version
 docker compose version
-git --version
 ```
 
 ---
@@ -39,47 +56,12 @@ cd /opt/libreta
 Pin to a released version rather than `main` for production:
 
 ```bash
-git checkout v0.1.0          # whatever the latest released tag is
-cat VERSION                  # sanity-check that the project's VERSION matches
+git checkout v0.2.0          # whatever the latest released tag is
 ```
 
 ---
 
-## 3. Initialise the content repository
-
-The wiki content lives in `./data/content/` as its own git repository,
-**separate from the project repo** (this is enforced by the project's
-`.gitignore`).
-
-```bash
-mkdir -p ./data/content/pages
-git -C ./data/content init
-git -C ./data/content commit --allow-empty -m "init libreta content"
-
-# A starter home page so you can verify the install:
-cat > ./data/content/pages/index.md <<'EOF'
----
-title: Home
----
-
-# Welcome to Libreta
-
-This is the home page. Edit me!
-EOF
-git -C ./data/content add pages/index.md
-git -C ./data/content commit -m "seed home page"
-```
-
-If you have an existing wiki to migrate (DokuWiki, OtterWiki, etc.) see the
-import scripts under `scripts/` — `make import-dokuwiki SOURCE=/path/to/data`
-is the supported one today.
-
-If you want the content repo to live elsewhere on disk, set
-`LIBRETA_CONTENT_DIR` in the environment (see step 5).
-
----
-
-## 4. Build the production images
+## 3. Build the production images
 
 Libreta currently builds images locally; there is no public registry yet.
 
@@ -90,29 +72,23 @@ make build-prod
 This produces:
 
 ```
-libreta-api:0.1.0       libreta-api:latest
-libreta-frontend:0.1.0  libreta-frontend:latest
+libreta-api:0.2.0       libreta-api:latest
+libreta-frontend:0.2.0  libreta-frontend:latest
 ```
-
-The `:latest` aliases are convenient for compose; the version-pinned tags are
-what you should reference in production so a careless `make build-prod` on
-top doesn't replace the running version mid-day.
 
 ---
 
-## 5. Configure the runtime
+## 4. Configure the runtime
 
 Create `.env` next to the compose files:
 
 ```bash
 cat > .env <<'EOF'
-# Which version's images to run. Defaults to "latest" if unset, but pinning
-# is strongly recommended in prod.
-VERSION=0.1.0
+# Version tag that matches what `make build-prod` just produced.
+VERSION=0.2.0
 
-# Public HTTP port — what users hit in the browser. Front this with a real
-# reverse proxy (Caddy / Nginx / Traefik) for TLS; nginx in the frontend
-# image only speaks HTTP.
+# Public HTTP port — what users hit in the browser.
+# Front this with Caddy / Nginx / Traefik for TLS.
 LIBRETA_HTTP_PORT=8080
 EOF
 ```
@@ -121,7 +97,7 @@ EOF
 
 ---
 
-## 6. Start the stack
+## 5. Start the stack
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
@@ -129,11 +105,11 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 
 That brings up three containers:
 
-| Service        | Image                          | Port (host)           | Purpose                                |
-|----------------|--------------------------------|-----------------------|----------------------------------------|
-| `api`          | `libreta-api:${VERSION}`       | 8092 (debug only)     | FastAPI backend                        |
-| `frontend-prod`| `libreta-frontend:${VERSION}`  | `${LIBRETA_HTTP_PORT}`| Nginx serving the SPA + reverse-proxying `/api/` to `api` |
-| `drawio`       | `jgraph/drawio:latest`         | 8093                  | Diagram editor sidecar (optional, used in M4) |
+| Service         | Image                           | Port (host)            | Purpose                                        |
+| --------------- | ------------------------------- | ---------------------- | ---------------------------------------------- |
+| `api`           | `libreta-api:${VERSION}`        | 8092 (debug only)      | FastAPI backend, git source manager            |
+| `frontend-prod` | `libreta-frontend:${VERSION}`   | `${LIBRETA_HTTP_PORT}` | Nginx serving the SPA + reverse-proxy to `api` |
+| `drawio`        | `jgraph/drawio:latest`          | 8093                   | Diagram editor sidecar                         |
 
 Smoke-test:
 
@@ -142,15 +118,50 @@ curl -sf http://localhost:${LIBRETA_HTTP_PORT:-8080}/  | head -1
 curl -sf http://localhost:${LIBRETA_HTTP_PORT:-8080}/api/v1/info
 ```
 
-You should see the SPA's `index.html` and a JSON `info` payload respectively.
+You should see the SPA's `index.html` and a JSON `info` payload.
+
+---
+
+## 6. Add your wiki git source (via the Admin UI)
+
+Open `http://<your-host>:${LIBRETA_HTTP_PORT}` in a browser, then navigate to
+**`/-/admin`**.
+
+### 6a. Add an SSH key (private repos only)
+
+If your wiki repo is private:
+
+1. On **Admin → SSH Keys**, click **Add key**.
+2. Paste the **private key** PEM (e.g. `cat ~/.ssh/id_ed25519`).
+3. Give it a label and save. The fingerprint is shown for verification.
+
+The key is stored inside the `libreta-data` Docker volume at
+`/var/lib/libreta/ssh_keys/`. It never touches the project source tree.
+
+### 6b. Add a Git Source
+
+1. On **Admin → Git Sources**, click **Add source**.
+2. Fill in:
+
+   | Field           | Example                              |
+   | --------------- | ------------------------------------ |
+   | ID (slug)       | `my-wiki`                            |
+   | Label           | `My Wiki`                            |
+   | Remote URL      | `git@github.com:you/wiki-private.git`|
+   | Branch          | `main`                               |
+   | Sync interval   | `15` (minutes)                       |
+   | SSH key         | select the key you added in 6a       |
+
+3. Click **Add source**. Libreta immediately begins cloning in the background.
+   The sidebar shows a grey dot while cloning; it turns green once synced.
+
+The wiki pages appear in the sidebar as soon as the clone finishes. Creating
+or editing a page commits to the local clone and pushes to the remote
+asynchronously — you don't wait for the push.
 
 ---
 
 ## 7. Front with TLS (Caddy example)
-
-The simplest reliable path on a public host is to put **Caddy** in front of
-the Libreta nginx. Caddy obtains and renews Let's Encrypt certificates
-automatically.
 
 `/etc/caddy/Caddyfile`:
 
@@ -160,27 +171,32 @@ wiki.example.com {
 }
 ```
 
-Open ports 80 and 443; close everything else. Caddy will issue the cert on
-first request. If you can't run on the standard ports (e.g. behind another
-proxy), tell Caddy to listen elsewhere and adjust your upstream.
+Open ports 80 and 443; close everything else. Caddy will obtain the Let's
+Encrypt certificate on first request.
 
 ---
 
 ## 8. Backups
 
-The wiki content is a normal git repository. Backup is `git push`:
+The entire state of Libreta lives in **one Docker named volume**: `libreta-data`.
 
 ```bash
-git -C /opt/libreta/data/content remote add origin git@github.com:<you>/<wiki-private>.git
-git -C /opt/libreta/data/content push -u origin main
+# Back up to a tar file
+docker run --rm \
+  -v libreta-data:/data \
+  -v $(pwd):/backup \
+  alpine tar czf /backup/libreta-data-$(date +%Y%m%d).tar.gz /data
 ```
 
-Schedule a periodic push (cron, systemd timer, or a `post-receive`-style
-hook). Restoring is `git clone` of the same repo back into `data/content/`.
+That archive contains:
 
-The SQLite indexes that ship in M3+ live under `data/index/` and are
-regenerable from the filesystem at any time, so they are **not** part of
-the backup contract — `make rebuild-index` in v0.x.
+- `/data/repos/<source-id>/` — the local git working trees (including `.git/`)
+- `/data/ssh_keys/` — SSH private key material
+- `/data/meta/_meta/` — sources.json, watched.json
+
+The local clone *is* the backup for the wiki content, because it is a full git
+repo. If you lose the volume but still have the remote, just re-add the source
+in the Admin UI — Libreta will re-clone.
 
 ---
 
@@ -189,12 +205,13 @@ the backup contract — `make rebuild-index` in v0.x.
 ```bash
 cd /opt/libreta
 git fetch --tags
-git checkout v0.2.0          # whatever the new release tag is
+git checkout v0.3.0          # whatever the new release tag is
 make build-prod
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 ```
 
-`up -d` recreates only the containers whose image changed.
+`up -d` recreates only the containers whose image changed. The `libreta-data`
+volume is untouched.
 
 If a release introduces a content-repo migration, the release notes will say
 so explicitly and ship a migration script under `scripts/`.
@@ -203,15 +220,14 @@ so explicitly and ship a migration script under `scripts/`.
 
 ## 10. Operational notes
 
-- **Logs**: `docker compose logs -f api frontend-prod`. Structured log
-  shipping is not built-in; run something like `vector` / `promtail` / your
-  cloud's log agent if you want centralisation.
-- **Healthchecks**: the API's `/api/v1/healthz` returns 200 when ready;
-  hook it into your monitoring of choice.
-- **Resource limits**: the default Compose stack runs without limits. On a
-  small host, consider `mem_limit: 512m` on `api` and `cpu_count: 1`.
-- **Local-network-only**: omit step 7, set `LIBRETA_HTTP_PORT=80` (needs
-  root or Docker rootless), and reach the wiki at `http://wiki.lan/`.
+- **Logs**: `docker compose logs -f api`. The API logs sync events, push
+  successes, and push errors at INFO/WARNING level.
+- **Sync errors**: visible in the sidebar (orange dot) and in the Admin page
+  under each source. Fix the underlying issue (bad SSH key, remote down) and
+  click **Sync** to retry immediately.
+- **Healthchecks**: `/api/v1/healthz` returns 200 when the API is ready.
+- **Resource limits**: the default stack has no limits. On a small host,
+  consider `mem_limit: 512m` on `api`.
 
 ---
 
@@ -221,31 +237,41 @@ so explicitly and ship a migration script under `scripts/`.
 docker compose -f docker-compose.yml -f docker-compose.prod.yml down
 ```
 
-Add `-v` to also remove the named volumes (`pnpm-store`). `data/content/` is
-a bind mount — `down -v` will not touch it. To wipe the whole installation:
+Add `-v` to also remove the named volumes:
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.prod.yml down -v
-rm -rf /opt/libreta/data/content   # ★ destroys your wiki — make sure backups are good
+# ★ This deletes all cloned repos and SSH keys — make sure remote copies exist.
 ```
 
 ---
 
 ## Troubleshooting
 
-**`pull access denied for libreta-api`**: you didn't run `make build-prod`
-on this host, or the version in `.env` doesn't match a tag that exists.
-`docker images libreta-api` should list whatever tags are available.
+**Sidebar shows orange dot / "Sync error"**: check the Admin page for the
+error message. Common causes:
+- Wrong SSH key (key not added to the remote's allowed keys).
+- Incorrect remote URL (typo, HTTPS URL used instead of SSH for a private
+  repo).
+- Remote unreachable from the server.
 
-**`502 Bad Gateway` from nginx**: the API container isn't healthy yet.
-`docker compose logs api` — the typical cause is `data/content/` doesn't
-exist or isn't a git repo.
+Fix the cause, then click **Sync** or wait for the next periodic sync.
 
-**Pages render but assets 404**: the asset URL probably points outside
-`data/content/`. Asset paths must be relative; the renderer rewrites them
-through `/api/v1/assets/pages/...`. Check the page's markdown source.
+**Clone never finishes**: run `docker compose logs api` and look for the source
+id. The clone is done in a FastAPI background task — if the container restarted
+mid-clone the working tree may be partial. Delete the partial clone directory
+from inside the volume and re-add the source:
 
-**Content edits don't appear after `git pull` in `data/content`**: the API
-caches nothing; just reload the page. If a file appears in `git status` but
-not in the wiki, ensure the filename ends in `.md` and lives under
-`pages/`.
+```bash
+docker run --rm -v libreta-data:/data alpine \
+  rm -rf /data/repos/<source-id>
+```
+
+Then re-add the source in the Admin UI.
+
+**Pages appear in git but not in the sidebar**: the tree is read from
+`pages/` inside the cloned repo. Ensure your pages are in a `pages/`
+subdirectory in the repo root, and end with `.md`.
+
+**`502 Bad Gateway`**: the API container isn't healthy yet.
+`docker compose logs api` for the cause.

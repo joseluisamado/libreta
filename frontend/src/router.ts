@@ -41,6 +41,21 @@ const routes: RouteRecordRaw[] = [
     name: 'watched-editor',
     component: () => import('./views/WatchedEditorView.vue'),
   },
+  {
+    path: '/source/:sourceId/:path(.*)*',
+    name: 'source-page',
+    component: () => import('./views/SourcePageView.vue'),
+  },
+  {
+    path: '/edit-source/:sourceId/:path(.*)*',
+    name: 'source-editor',
+    component: () => import('./views/SourceEditorView.vue'),
+  },
+  {
+    path: '/-/admin',
+    name: 'admin',
+    component: () => import('./views/AdminView.vue'),
+  },
 ]
 
 export const router = createRouter({

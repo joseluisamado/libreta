@@ -8,9 +8,9 @@ Living document. Update as work progresses. Latest at the top.
 
 ## Status
 
-**Current milestone**: M3 — complete ✅
+**Current milestone**: M3.5 — complete ✅
 **Next milestone**: M4 — Diagrams.net integration
-**Next action**: Start M4 — `jgraph/drawio` container in the Compose stack, `DrawioImage` Tiptap extension, postMessage protocol.
+**Next action**: Start M4 — `DrawioImage` Tiptap extension, postMessage protocol, toolbar button.
 
 ## At a glance
 
@@ -21,6 +21,7 @@ Living document. Update as work progresses. Latest at the top.
 | M0.5 — Read-experience polish | 🟢 Done |
 | M2 — Editing & commits | 🟢 Done |
 | M3 — Tables, attachments, search | 🟢 Done |
+| M3.5 — Git sources & remote deploy | 🟢 Done |
 | M4 — Diagrams.net integration | ⚪ Not started |
 | M5 — v1.0 release | ⚪ Not started |
 
@@ -29,6 +30,29 @@ Legend: ⚪ not started · 🟡 in progress · 🟢 done · 🔴 blocked
 ---
 
 ## Log
+
+### 2026-05-03 — M3.5 Git sources & first remote deployment
+
+Replaced the fixed `data/content` bind-mount with a fully dynamic git-source model. All wiki content now lives in remotely-configured git repositories that Libreta clones, writes into, and keeps in sync automatically.
+
+- **`storage/sources.py`** (new): clone, fetch+fast-forward, push via `pygit2.KeypairFromMemory` (in-process SSH, no subprocess). Per-source asyncio write lock. Detects diverged branches (doesn't force-push; logs a warning). Page tree walk, read, and write all mirror the watched-folder layer but commit into git on every write.
+- **`storage/ssh.py`** (new): SSH key store backed by the Docker volume. Keys stored at mode 0600, fingerprint computed from the PEM, index in `ssh_keys/index.json`. `make_callbacks()` produces a `RemoteCallbacks` subclass that injects `KeypairFromMemory` at authentication time.
+- **`services/sync.py`** (new): two background asyncio tasks wired into FastAPI `lifespan`:
+  1. **Push worker** — drains a queue of pending pushes after each local commit. Retries ×3 with exponential back-off (5 s → 10 s → 20 s). Records `last_sync_error` in `sources.json` on final failure.
+  2. **Periodic sync loop** — checks every 60 s which sources are due for a pull (based on `sync_interval_minutes`). Runs fetch+fast-forward; skips if working tree is dirty.
+- **`api/sources.py`** (new): full CRUD for git sources and SSH keys. Clone triggered as a FastAPI `BackgroundTask` on source creation so the HTTP response returns immediately. Manual sync endpoint available.
+- **`docker-compose.yml`**: `libreta-data` named volume at `/var/lib/libreta/` replaces the `./data/content` bind-mount. Three env vars: `LIBRETA_CONTENT_DIR` (meta/config only), `LIBRETA_REPOS_DIR`, `LIBRETA_SSH_KEYS_DIR`.
+- **Frontend — Admin page** (`/-/admin`): add/remove git sources (ID slug, label, remote URL, branch, sync interval, SSH key); add/remove SSH keys (paste PEM, see fingerprint). Sync errors shown per source.
+- **Frontend — sidebar**: stacked collapsible panels replace the Content/Watched tab bar. Each git source is a panel with a green/amber/grey sync-status dot and a manual sync button. Watched folders demoted to a collapsible section at the bottom.
+- **`SourcePageView` + `SourceEditorView`**: read/edit pages from any git source. Routes: `/source/:sourceId/:path*` and `/edit-source/:sourceId/:path*`.
+- **VS Code workspace**: `libreta (content)` folder entry removed — content no longer lives on the host filesystem.
+- **`DEPLOY.md`**: completely rewritten for the new model. No `git init data/content` step. Fresh deploy = `docker compose up -d`, then add a source in the UI.
+- **`ARCHITECTURE.md`**: updated system diagram, storage layer (write path, sync lifecycle), HTTP API table (new `/sources` and `/sources/keys` routes), frontend routes and component tree, deployment topology, and new key decisions D-09 and D-10.
+- **`ROADMAP.md`**: new M3.5 milestone added and marked complete.
+
+**Pre-flight**: backend ruff clean, mypy clean (26 files). Frontend vue-tsc clean, eslint 0 errors (6 pre-existing v-html warnings).
+
+**Decision**: local commit first, async push (D-10). Blocking the user's save on a remote git push would add seconds of latency and introduce transient failure modes. The local commit provides immediate durability; push is best-effort with observable error state.
 
 ### 2026-05-03 — M3 Search (FTS5 index, API, UI, CLI)
 
@@ -249,6 +273,8 @@ Significant architectural or product decisions that are worth remembering. Forma
 | 2026-05-01 | SQLite FTS5 for search; no separate search service | Adequate for 10k pages; no extra container; regenerable from filesystem. |
 | 2026-05-01 | "Libreta" as working name | Placeholder; rename via find-replace before first public release if desired. |
 | 2026-05-01 | Defer auth to M6 | Single-user-first per `PROJECT.md` P6. Multi-user is a large design problem that benefits from real usage before being designed. |
+| 2026-05-03 | Git sources replace fixed content bind-mount | Content already lived in a remote git repo; dynamic sources make the deploy model cleaner and remove manual `git init` steps. D-09 in ARCHITECTURE.md. |
+| 2026-05-03 | Local commit first, async push | Blocking the user save on SSH push adds latency and failure modes. Local clone provides durability; push is observable best-effort. D-10 in ARCHITECTURE.md. |
 
 ---
 

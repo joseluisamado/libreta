@@ -4,14 +4,14 @@ services:
     image: libreta-api:dev
     restart: unless-stopped
     environment:
-      LIBRETA_CONTENT_DIR: /content
+      # Meta-store: watched-folder config, sources.json, search index.
+      # Does NOT hold wiki content anymore — git sources do.
+      LIBRETA_CONTENT_DIR: /var/lib/libreta/meta
+      LIBRETA_REPOS_DIR: /var/lib/libreta/repos
+      LIBRETA_SSH_KEYS_DIR: /var/lib/libreta/ssh_keys
       LIBRETA_DRAWIO_URL: http://drawio:8080
     volumes:
-      - ./data/content:/content
-      # Mount host /Users so the watched-folders feature can access arbitrary
-      # directories on the host filesystem. If your watched folders live
-      # elsewhere, add additional bind mounts as needed.
-      - /home/user/Nuevo:/home/user/Nuevo
+      - libreta-data:/var/lib/libreta
     ports:
       - "8092:8080"
     depends_on:
@@ -44,4 +44,7 @@ services:
       - "8093:8080"
 
 volumes:
+  # Single named volume holds repos, ssh_keys, and meta.
+  # Back up this volume to back up all cloned repos and key material.
+  libreta-data:
   pnpm-store:

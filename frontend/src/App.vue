@@ -1,15 +1,17 @@
 <script setup lang="ts">
   import { onMounted, onBeforeUnmount, ref, watch } from 'vue'
   import { useRoute } from 'vue-router'
-  import { useTreeStore } from '@/stores/tree'
-  import PageTree from '@/components/PageTree.vue'
+  import { useSourcesStore } from '@/stores/sources'
+  import { useWatchedStore } from '@/stores/watched'
+  import SourceSidebarPanel from '@/components/SourceSidebarPanel.vue'
   import WatchedSidebarContent from '@/components/WatchedSidebarContent.vue'
   import logoUrl from '@/assets/logo.svg'
 
-  const tree = useTreeStore()
+  const sourcesStore = useSourcesStore()
+  const watchedStore = useWatchedStore()
   const route = useRoute()
   const drawerOpen = ref(false)
-  const sidebarTab = ref<'content' | 'watched'>('content')
+  const watchedExpanded = ref(false)
 
   // ----- Sidebar drag-to-resize --------------------------------------------
 
@@ -66,7 +68,10 @@
     document.removeEventListener('mouseup', onDragEnd)
   })
 
-  onMounted(() => tree.load())
+  onMounted(() => {
+    sourcesStore.loadSources()
+    watchedStore.loadFolders()
+  })
 
   // Auto-close drawer on navigation (mobile UX)
   watch(
@@ -128,67 +133,92 @@
         dragging ? 'select-none' : '',
       ]"
     >
+      <!-- Logo + nav links -->
       <RouterLink to="/" class="hover:underline flex items-center gap-2 mb-4">
         <img :src="logoUrl" alt="" class="w-7 h-7 hidden md:block" />
         <h1 class="text-lg font-semibold hidden md:block">Libreta</h1>
       </RouterLink>
-      <RouterLink
-        to="/search"
-        class="flex items-center gap-2 mb-3 px-2 py-1.5 rounded text-sm text-slate-600 hover:bg-slate-200 transition-colors"
-        :class="{ 'bg-slate-200 font-medium': $route.path === '/search' }"
-      >
-        <svg
-          class="w-4 h-4 shrink-0"
-          xmlns="http://www.w3.org/2000/svg"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          stroke-linecap="round"
-          stroke-linejoin="round"
+      <div class="flex gap-2 mb-3">
+        <RouterLink
+          to="/search"
+          class="flex-1 flex items-center gap-2 px-2 py-1.5 rounded text-sm text-slate-600 hover:bg-slate-200 transition-colors"
+          :class="{ 'bg-slate-200 font-medium': $route.path === '/search' }"
         >
-          <circle cx="11" cy="11" r="8" />
-          <line x1="21" y1="21" x2="16.65" y2="16.65" />
-        </svg>
-        Search
-      </RouterLink>
-
-      <!-- Tab bar -->
-      <div class="flex gap-1 mb-3">
-        <button
-          type="button"
-          class="flex-1 text-xs px-2 py-1 rounded transition-colors"
-          :class="
-            sidebarTab === 'content'
-              ? 'bg-slate-200 text-slate-800 font-medium'
-              : 'text-slate-500 hover:bg-slate-100'
-          "
-          @click="sidebarTab = 'content'"
+          <svg
+            class="w-4 h-4 shrink-0"
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <circle cx="11" cy="11" r="8" />
+            <line x1="21" y1="21" x2="16.65" y2="16.65" />
+          </svg>
+          Search
+        </RouterLink>
+        <RouterLink
+          to="/-/admin"
+          class="flex items-center gap-1.5 px-2 py-1.5 rounded text-sm text-slate-600 hover:bg-slate-200 transition-colors"
+          :class="{ 'bg-slate-200 font-medium': $route.path.startsWith('/-/admin') }"
+          title="Admin"
         >
-          Content
-        </button>
-        <button
-          type="button"
-          class="flex-1 text-xs px-2 py-1 rounded transition-colors"
-          :class="
-            sidebarTab === 'watched'
-              ? 'bg-slate-200 text-slate-800 font-medium'
-              : 'text-slate-500 hover:bg-slate-100'
-          "
-          @click="sidebarTab = 'watched'"
-        >
-          Watched
-        </button>
+          <svg
+            class="w-4 h-4 shrink-0"
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <circle cx="12" cy="12" r="3" />
+            <path
+              d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"
+            />
+          </svg>
+        </RouterLink>
       </div>
 
-      <template v-if="sidebarTab === 'content'">
-        <p v-if="tree.error" class="text-red-600 text-sm">{{ tree.error }}</p>
-        <PageTree :nodes="tree.nodes" />
-      </template>
-      <template v-else>
-        <WatchedSidebarContent />
-      </template>
-      <!-- Drag handle: only interactive on desktop (hidden on mobile) -->
+      <!-- Git source panels (one per source, stacked) -->
+      <div v-if="sourcesStore.sources.length" class="mb-2">
+        <SourceSidebarPanel
+          v-for="src in sourcesStore.sources"
+          :key="src.id"
+          :source="src"
+        />
+      </div>
+
+      <p v-if="sourcesStore.loaded && !sourcesStore.sources.length" class="text-xs text-slate-400 mb-3">
+        No git sources configured.
+        <RouterLink to="/-/admin" class="underline hover:text-blue-600">Add one</RouterLink>
+      </p>
+
+      <!-- Watched section (collapsible) -->
+      <div class="border-t border-slate-200 pt-2 mt-1">
+        <button
+          type="button"
+          class="flex items-center gap-1 w-full text-xs text-slate-500 hover:text-slate-700 mb-1"
+          @click="watchedExpanded = !watchedExpanded"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            class="w-3 h-3 transition-transform shrink-0"
+            :class="{ 'rotate-90': watchedExpanded }"
+            viewBox="0 0 12 12"
+            fill="currentColor"
+          >
+            <path d="M4 2 L8 6 L4 10 Z" />
+          </svg>
+          Watched folders
+        </button>
+        <WatchedSidebarContent v-if="watchedExpanded" />
+      </div>
+
+      <!-- Drag handle: only interactive on desktop -->
       <div
         class="hidden md:block absolute top-0 right-0 w-2 h-full cursor-col-resize hover:bg-blue-400/30 transition-colors -mr-1 z-10"
         @mousedown="onDragStart"

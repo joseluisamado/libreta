@@ -13,7 +13,7 @@
 services:
   api:
     volumes:
-      - ./data/content:/content
+      - libreta-data:/var/lib/libreta
       - ./backend/src:/app/src
     # PYTHONPATH puts the bind-mounted source ahead of the baked-in site-packages
     # copy, so edits on the host take effect on reload. The base Dockerfile

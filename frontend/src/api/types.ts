@@ -82,3 +82,45 @@ export interface WatchedFolderCreate {
   label: string
   path: string
 }
+
+// ---- Git sources -------------------------------------------------------
+
+export interface GitSource {
+  id: string
+  label: string
+  remote_url: string
+  branch: string
+  ssh_key_id: string | null
+  sync_interval_minutes: number
+  local_path: string
+  cloned: boolean
+  last_synced_at: string | null
+  last_sync_error: string | null
+}
+
+export interface GitSourceCreate {
+  id: string
+  label: string
+  remote_url: string
+  branch?: string
+  ssh_key_id?: string | null
+  sync_interval_minutes?: number
+}
+
+export interface GitSourceUpdate {
+  label?: string
+  branch?: string
+  ssh_key_id?: string | null
+  sync_interval_minutes?: number
+}
+
+export interface SshKey {
+  id: string
+  label: string
+  fingerprint: string
+}
+
+export interface SshKeyCreate {
+  label: string
+  private_key: string
+}

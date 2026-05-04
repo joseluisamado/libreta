@@ -93,6 +93,26 @@ A milestone-based plan, not a calendar. Each milestone is a coherent slice of va
 
 ---
 
+## M3.5 — Git sources & first remote deployment
+
+**Goal**: Replace the fixed `data/content` bind-mount with dynamically-configured git repositories. First real deployment to a remote server.
+
+- [x] `GitSource` config model: id, label, remote URL, branch, SSH key, sync interval
+- [x] SSH key management: store private keys in the Docker volume (mode 0600), fingerprint displayed in UI, never committed
+- [x] `storage/sources.py`: clone, fetch+fast-forward, push, page tree walk, read/write with local commit
+- [x] `services/sync.py`: background push worker (retry ×3 with exponential backoff), periodic pull loop (per-source configurable interval, checked every 60 s)
+- [x] `/api/v1/sources` REST API: full CRUD + manual sync trigger + SSH key management
+- [x] `docker-compose.yml` rewritten: `libreta-data` named volume replaces `data/content` bind-mount; `LIBRETA_REPOS_DIR`, `LIBRETA_SSH_KEYS_DIR` env vars
+- [x] Admin page (`/-/admin`): add/remove git sources, set SSH key per source, set sync interval; add/remove SSH keys; sync status table
+- [x] Sidebar refactor: stacked collapsible panels (one per git source, sync status dot + manual sync button) instead of Content/Watched tab bar; Watched demoted to a collapsible section
+- [x] `SourcePageView` + `SourceEditorView`: read/edit pages from any git source at `/source/:id/:path*`
+- [x] `DEPLOY.md` rewritten for the new model: no manual `git init data/content`, deploy → configure sources in UI → clone happens automatically
+- [x] Architecture docs (`ARCHITECTURE.md`) updated: system diagram, storage layer, HTTP API table, component tree, deployment topology, key decisions D-09/D-10
+
+**Exit criteria**: A fresh deploy on a clean server needs only `docker compose up -d` + adding a git source in the Admin UI. No manual filesystem initialisation. Sync errors are visible and actionable in the UI without SSH-ing into the server.
+
+---
+
 ## M4 — Diagrams.net integration
 
 **Goal**: First-class diagrams.net editing, end to end.
