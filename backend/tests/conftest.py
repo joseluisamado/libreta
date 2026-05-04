@@ -21,11 +21,11 @@ def content_dir(tmp_path: Path) -> Path:
         '---\ntitle: "Home"\n---\n\n# Home\n\nWelcome.\n',
         encoding="utf-8",
     )
-    (pages / "recipes").mkdir()
-    (pages / "recipes" / "index.md").write_text(
+    (pages / "recipes.md").write_text(
         '---\ntitle: "Recipes"\n---\n\n# Recipes\n',
         encoding="utf-8",
     )
+    (pages / "recipes").mkdir()
     (pages / "recipes" / "pizza-dough.md").write_text(
         '---\ntitle: "Pizza Dough"\ntags: [food, pizza]\n---\n\n# Pizza Dough\n\nFlour, water, salt, yeast.\n',
         encoding="utf-8",

@@ -180,7 +180,7 @@ async def get_source_asset(
         raise InvalidPathError(f"asset path must be relative and non-empty: {path!r}")
     parts = path.split("/")
     for p in parts:
-        if not p or p in {".", ".."} or p.startswith("."):
+        if not p or p in {".", ".."}:
             raise InvalidPathError(f"invalid asset segment {p!r} in {path!r}")
         if "\x00" in p:
             raise InvalidPathError("null byte in path")

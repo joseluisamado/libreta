@@ -133,43 +133,48 @@ def _walk_watched_tree_sync(watched_root: Path) -> list[PageNode]:
         except OSError:
             logger.warning("cannot list directory %s", dir_path)
             return nodes
-        seen_dirs: set[str] = set()
 
+        md_names: dict[str, Path] = {}
+        dir_names: dict[str, Path] = {}
         for entry in entries:
             if entry.name.startswith("."):
                 continue
             try:
                 if entry.is_dir():
-                    child_url = f"{url_prefix}/{entry.name}" if url_prefix else entry.name
-                    children = build(entry, child_url)
-                    nodes.append(
-                        PageNode(
-                            path=child_url,
-                            title=entry.name.replace("-", " ").replace("_", " ").title(),
-                            is_directory=True,
-                            children=children,
-                        )
-                    )
-                    seen_dirs.add(entry.name)
+                    dir_names[entry.name] = entry
                 elif entry.suffix == ".md":
-                    stem = entry.stem
-                    if stem in seen_dirs:
-                        continue
-                    child_url = f"{url_prefix}/{stem}" if url_prefix else stem
-                    title = _read_title_only(
-                        entry, stem.replace("-", " ").replace("_", " ").title()
-                    )
-                    nodes.append(
-                        PageNode(
-                            path=child_url,
-                            title=title,
-                            is_directory=False,
-                            children=[],
-                        )
-                    )
+                    md_names[entry.stem] = entry
             except OSError:
-                logger.warning("cannot access entry %s", entry, exc_info=True)
                 continue
+
+        all_names: set[str] = set()
+        all_names.update(md_names.keys())
+        all_names.update(dir_names.keys())
+
+        for name in sorted(all_names):
+            md_file = md_names.get(name)
+            sub_dir = dir_names.get(name)
+            child_url = f"{url_prefix}/{name}" if url_prefix else name
+            children = build(sub_dir, child_url) if sub_dir else []
+            if md_file:
+                title = _read_title_only(md_file, name.replace("-", " ").replace("_", " ").title())
+                nodes.append(
+                    PageNode(
+                        path=child_url,
+                        title=title,
+                        is_directory=bool(sub_dir),
+                        children=children,
+                    )
+                )
+            else:
+                nodes.append(
+                    PageNode(
+                        path=child_url,
+                        title=name.replace("-", " ").replace("_", " ").title(),
+                        is_directory=True,
+                        children=children,
+                    )
+                )
         return nodes
 
     return build(watched_root, "")
@@ -208,22 +213,6 @@ def _as_datetime(value: Any) -> datetime | None:
         return None
 
 
-def _resolve_md_file(dir_path: Path, name: str) -> Path:
-    """Return the actual .md file path for a given page name.
-
-    Prefers ``<name>.md``; falls back to ``<name>/index.md``.
-    Always returns a path even if neither exists — the caller checks existence.
-    """
-    direct = dir_path / f"{name}.md"
-    indexed = dir_path / name / "index.md"
-    if direct.exists():
-        return direct
-    if indexed.exists():
-        return indexed
-    # Default to direct path for writes
-    return direct
-
-
 def _read_watched_page_sync(watched_root: Path, raw_path: str) -> PageRead:
     """Read a page from a watched folder.
 
@@ -232,7 +221,6 @@ def _read_watched_page_sync(watched_root: Path, raw_path: str) -> PageRead:
     fallback_title = file.name.replace("-", " ").replace("_", " ").title()
 
     try:
-        # Try to find the actual .md file
         actual = file.with_suffix(".md") if not file.suffix else file
         if actual.exists():
             post = frontmatter.load(actual)
@@ -240,18 +228,6 @@ def _read_watched_page_sync(watched_root: Path, raw_path: str) -> PageRead:
                 path=raw_path,
                 meta=_parse_meta(post.metadata, fallback_title),
                 body=post.content,
-                is_index=actual.name == "index.md",
-            )
-
-        # Check for index.md inside a directory
-        dir_index = file / "index.md"
-        if dir_index.exists():
-            post = frontmatter.load(dir_index)
-            return PageRead(
-                path=raw_path,
-                meta=_parse_meta(post.metadata, fallback_title),
-                body=post.content,
-                is_index=True,
             )
 
         # Synthesise empty directory page
@@ -260,7 +236,6 @@ def _read_watched_page_sync(watched_root: Path, raw_path: str) -> PageRead:
                 path=raw_path,
                 meta=PageMeta(title=fallback_title),
                 body="",
-                is_index=True,
             )
 
         raise PageNotFoundError(raw_path)
@@ -277,17 +252,7 @@ def _write_watched_page_sync(watched_root: Path, raw_path: str, body: str) -> tu
     file = watched_root / raw_path
     fallback_title = file.name.replace("-", " ").replace("_", " ").title()
 
-    # Determine the actual file to write (prefer existing, default to .md sibling)
-    existing: Path | None = None
-    direct = file.with_suffix(".md") if not file.suffix else file
-    indexed = file / "index.md"
-    if direct.exists():
-        existing = direct
-    elif indexed.exists():
-        existing = indexed
-    else:
-        existing = direct
-
+    existing = file.with_suffix(".md") if not file.suffix else file
     existed = existing.exists()
 
     existing_meta: dict[str, Any] = {}
@@ -325,7 +290,6 @@ def _write_watched_page_sync(watched_root: Path, raw_path: str, body: str) -> tu
             tags=list(metadata.get("tags", [])),
         ),
         body=body,
-        is_index=existing.name == "index.md",
     )
     return result, verb
 

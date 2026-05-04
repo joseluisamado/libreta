@@ -147,7 +147,7 @@ async def put_page(
     background_tasks: BackgroundTasks,
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> PageRead:
-    page, verb = await write_page(settings.content_dir, path, body.body, prefer_index=body.is_index)
+    page, verb = await write_page(settings.content_dir, path, body.body)
     file_path = page_to_file(settings.content_dir, normalize_page_path(path))
     rel_path = str(file_path.relative_to(settings.content_dir))
     repo = open_repo(settings.content_dir)

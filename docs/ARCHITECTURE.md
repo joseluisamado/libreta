@@ -164,28 +164,36 @@ Each git source is cloned to `repos/<source-id>/`:
 repos/my-wiki/                    # git working tree for source "my-wiki"
 ├── .git/
 └── pages/
-    ├── index.md                  # the home page
-    ├── projects/
-    │   ├── index.md              # /projects (chapter intro)
+    ├── index.md                  # page at /index
+    ├── .index.md/                # sidecar: attachments for index.md
+    ├── projects.md               # page at /projects
+    ├── .projects.md/             # sidecar: attachments for projects.md
+    ├── projects/                 # sub-pages container
     │   ├── libreta.md            # /projects/libreta
-    │   └── libreta/
-    │       ├── notes.md          # /projects/libreta/notes
-    │       ├── architecture.png  # attachment local to notes.md / libreta.md
-    │       └── budget.xlsx
+    │   ├── .libreta.md/          # sidecar: attachments for libreta.md
+    │   │   ├── architecture.png
+    │   │   └── budget.xlsx
+    │   ├── libreta/              # sub-pages of /projects/libreta
+    │   │   ├── notes.md
+    │   │   └── .notes.md/
+    │   └── other.md
     └── recipes/
         ├── pizza-dough.md
-        └── pizza-dough.jpg       # photo for pizza-dough.md
+        └── .pizza-dough.md/      # sidecar: attachments for pizza-dough.md
+            └── pizza-dough.jpg
 ```
 
 A few rules:
 
 - A page at URL path `/foo/bar` lives at `pages/foo/bar.md`.
-- A page at URL path `/foo` lives at `pages/foo.md` _or_ `pages/foo/index.md` (the index file wins if both exist).
-- **Attachments live next to the page that uses them.** A page at `pages/recipes/pizza-dough.md` with `![](pizza-dough.jpg)` reads from `pages/recipes/pizza-dough.jpg`. Index pages own their whole directory: a page at `pages/projects/libreta/index.md` resolves `![](architecture.png)` to `pages/projects/libreta/architecture.png`.
+- Every ``.md`` file is a page. There is no special ``index.md`` concept — a page at ``pages/index.md`` has URL ``/index``.
+- ``foo.md`` and ``foo/`` can coexist as siblings: the ``.md`` file is the page, the directory holds its sub-pages.
+- **Attachments live in a hidden sidecar directory** named ``.<page-name>.md/`` next to the page. A page at ``pages/recipes/pizza-dough.md`` with ``![](pizza-dough.jpg)`` resolves to ``pages/recipes/.pizza-dough.md/pizza-dough.jpg``.
 - Asset paths in markdown are **relative** to the page (`![](photo.jpg)`, `[budget](budget.xlsx)`). Root-anchored URLs (`/assets/...`) are not used.
 - The `pages/` tree carries the entire wiki — both pages and their attachments. There is no separate `assets/` tree.
+- Sidecar directories start with ``.`` so they are hidden from file listings and tree walks.
 
-**Why page-local instead of a global dated `assets/` pool**: attachments stay with the content they belong to. Cloning a single subdirectory still has working images. Renaming or moving a page moves its attachments with it. Markdown references stay short. The trade-off is that an attachment used by two pages is duplicated; we accept that at solo-user scale.
+**Why sidecar directories**: a page owns its attachments unambiguously. Moving or renaming a page is a single unit: rename the ``.md`` file, its ``.<name>.md/`` sidecar, and optionally its ``<name>/`` sub-pages container. The trade-off is that an attachment used by two pages is duplicated; we accept that at solo-user scale.
 
 **Diagrams** (per the diagrams.net integration below) follow the same rule: a `.drawio.svg` lives next to the page that embeds it.
 

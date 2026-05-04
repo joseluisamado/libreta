@@ -155,24 +155,15 @@ function isAbsolute(url: string): boolean {
 export function resolveAssetUrl(
   src: string,
   pagePath: string,
-  isIndex: boolean,
   sourceId?: string,
 ): string {
   if (isAbsolute(src) || src.startsWith('#')) return src
-  // pagePath is the API path (e.g. "recipes/lasagna" or "devel/concepts/saml").
-  // Determine the directory the page is stored in:
-  //   - leaf page  (foo/bar.md):    drop last segment → "foo/"
-  //   - index page (foo/bar/index.md): keep all segments → "foo/bar/"
+  // References include the sidecar prefix (e.g. ".saml.md/photo.png").
+  // Resolve relative to the page's parent directory.
   const parts = pagePath.split('/').filter(Boolean)
-  // When is_index, the page lives at <dir>/index.md so images sit in <dir>/.
-  // The path may end in "index" (e.g. "devel/concepts/saml/index") or not
-  // (e.g. "devel/concepts/saml") — strip the trailing "index" either way.
-  const dirParts = isIndex
-    ? parts[parts.length - 1] === 'index' ? parts.slice(0, -1) : parts
-    : parts.slice(0, -1)
-  const dir = dirParts
+  const base = parts.slice(0, -1)  // parent directory
   const segments = src.split('/')
-  const out = [...dir]
+  const out = [...base]
   for (const s of segments) {
     if (s === '' || s === '.') continue
     if (s === '..') {
@@ -189,7 +180,6 @@ export function resolveAssetUrl(
 
 interface RenderEnv {
   pagePath?: string
-  isIndex?: boolean
   sourceId?: string
 }
 
@@ -268,7 +258,7 @@ function patchRenderer(): void {
       const attr = token.attrs?.[srcIdx]
       if (srcIdx >= 0 && attr) {
         const e = env as RenderEnv
-        attr[1] = resolveAssetUrl(attr[1], e.pagePath ?? '', e.isIndex ?? false, e.sourceId)
+        attr[1] = resolveAssetUrl(attr[1], e.pagePath ?? '', e.sourceId)
       }
     }
     return defaultImage(tokens, idx, options, env, self)
@@ -291,7 +281,7 @@ function patchRenderer(): void {
       if (hrefIdx >= 0 && attr) {
         if (looksLikeAssetHref(attr[1])) {
           const e = env as RenderEnv
-          attr[1] = resolveAssetUrl(attr[1], e.pagePath ?? '', e.isIndex ?? false, e.sourceId)
+          attr[1] = resolveAssetUrl(attr[1], e.pagePath ?? '', e.sourceId)
         } else if (isExternalUrl(attr[1])) {
           token.attrSet('target', '_blank')
           token.attrSet('rel', 'noopener noreferrer')
@@ -308,8 +298,7 @@ patchRenderer()
 export function renderMarkdown(
   source: string,
   pagePath = '',
-  isIndex = false,
   sourceId?: string,
 ): string {
-  return md.render(source, { pagePath, isIndex, sourceId })
+  return md.render(source, { pagePath, sourceId })
 }

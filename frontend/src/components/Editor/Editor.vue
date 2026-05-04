@@ -17,7 +17,6 @@
   const props = defineProps<{
     content: string
     path: string
-    isIndex?: boolean
   }>()
 
   const emit = defineEmits<{
@@ -33,7 +32,7 @@
   const PageScopedImage = Image.extend({
     renderHTML({ HTMLAttributes }) {
       const src = String(HTMLAttributes.src ?? '')
-      const display = resolveAssetUrl(src, props.path, props.isIndex ?? false)
+      const display = resolveAssetUrl(src, props.path)
       return ['img', mergeAttributes(this.options.HTMLAttributes, HTMLAttributes, { src: display })]
     },
   })

@@ -47,16 +47,14 @@ def _read_page_sync(content_dir: Path, raw_path: str) -> PageRead:
     fallback_title = page.parts[-1].replace("-", " ").replace("_", " ").title()
     if not file.exists():
         # Synthesise a directory page: if a directory with this path exists
-        # under pages/ but has no `<dir>.md` or `<dir>/index.md`, return an
-        # empty-body page so the frontend can still render breadcrumbs and
-        # the "In this folder" listing.
+        # under pages/ but has no `<dir>.md`, return an empty-body page so
+        # the frontend can still render breadcrumbs and a child listing.
         dir_path = content_dir / "pages" / Path(*page.parts)
         if dir_path.is_dir():
             return PageRead(
                 path=str(page),
                 meta=PageMeta(title=fallback_title),
                 body="",
-                is_index=True,
             )
         raise PageNotFoundError(raw_path)
     post = frontmatter.load(file)
@@ -64,7 +62,6 @@ def _read_page_sync(content_dir: Path, raw_path: str) -> PageRead:
         path=str(page),
         meta=_parse_meta(post.metadata, fallback_title),
         body=post.content,
-        is_index=file.name == "index.md",
     )
 
 
@@ -72,33 +69,13 @@ async def read_page(content_dir: Path, raw_path: str) -> PageRead:
     return await asyncio.to_thread(_read_page_sync, content_dir, raw_path)
 
 
-def _determine_write_file(
-    content_dir: Path, page: PurePosixPath, prefer_index: bool = False
-) -> tuple[Path, bool]:
-    """Return (target_file, existed_before).
-
-    Prefers ``<page>.md`` if it exists; otherwise falls back to ``<page>/index.md``
-    if the directory already exists; otherwise writes to ``<page>.md`` (or
-    ``<page>/index.md`` when *prefer_index* is True).
-    """
-    pages_root = content_dir / "pages"
-    direct = pages_root.joinpath(*page.parts).with_suffix(".md")
-    indexed = pages_root.joinpath(*page.parts) / "index.md"
-    if direct.exists():
-        return direct, True
-    if indexed.exists():
-        return indexed, True
-    if prefer_index:
-        return indexed, False
-    return direct, False
-
-
 def _write_page_sync(
-    content_dir: Path, raw_path: str, body: str, prefer_index: bool = False
+    content_dir: Path, raw_path: str, body: str
 ) -> tuple[PageRead, str]:
     page = normalize_page_path(raw_path)
-    file, existed = _determine_write_file(content_dir, page, prefer_index=prefer_index)
+    file = page_to_file(content_dir, page)
     fallback_title = page.parts[-1].replace("-", " ").replace("_", " ").title()
+    existed = file.exists()
 
     # Preserve frontmatter from the existing file if present
     existing_meta: dict[str, Any] = {}
@@ -169,15 +146,14 @@ def _write_page_sync(
             tags=list(metadata.get("tags", [])),
         ),
         body=body,
-        is_index=file.name == "index.md",
     )
     return result, verb
 
 
 async def write_page(
-    content_dir: Path, raw_path: str, body: str, prefer_index: bool = False
+    content_dir: Path, raw_path: str, body: str
 ) -> tuple[PageRead, str]:
-    return await asyncio.to_thread(_write_page_sync, content_dir, raw_path, body, prefer_index)
+    return await asyncio.to_thread(_write_page_sync, content_dir, raw_path, body)
 
 
 def _delete_page_sync(content_dir: Path, raw_path: str) -> str:
@@ -185,25 +161,17 @@ def _delete_page_sync(content_dir: Path, raw_path: str) -> str:
     file = page_to_file(content_dir, page)
 
     if file.exists():
-        # If this is a directory page backed by index.md, refuse to
-        # delete it while other files still live inside the folder.
-        if file.name == "index.md":
-            parent = file.parent
-            pages_root = content_dir / "pages"
-            siblings = [p for p in parent.iterdir() if p.name != "index.md"]
-            if parent != pages_root and siblings:
-                raise PageNotEmptyError(raw_path)
         rel_path = str(file.relative_to(content_dir))
         file.unlink()
-        # Clean up the parent directory when it became empty.
-        if file.name == "index.md":
-            parent = file.parent
-            if parent != pages_root and not any(parent.iterdir()):
-                parent.rmdir()
+        # Clean up the parent directory if it became empty.
+        parent = file.parent
+        pages_root = content_dir / "pages"
+        if parent != pages_root and not any(parent.iterdir()):
+            parent.rmdir()
         return rel_path
 
     # No .md file — check whether this is a bare directory (a folder with
-    # children but no index.md or <dir>.md).
+    # children but no .md file).
     dir_path = content_dir / "pages" / Path(*page.parts)
     if dir_path.is_dir():
         if any(dir_path.iterdir()):
@@ -226,20 +194,6 @@ def _move_page_sync(content_dir: Path, old_raw: str, new_raw: str) -> tuple[str,
         raise PageNotFoundError(old_raw)
 
     pages_root = content_dir / "pages"
-    is_dir_move = old_file.name == "index.md" and old_file.parent != pages_root
-
-    if is_dir_move:
-        target_dir = pages_root.joinpath(*new_page.parts)
-        if target_dir.exists():
-            raise PageAlreadyExistsError(new_raw)
-        target_dir.parent.mkdir(parents=True, exist_ok=True)
-        old_file.parent.rename(target_dir)
-        return (
-            str(old_file.parent.relative_to(content_dir)) + "/",
-            str(target_dir.relative_to(content_dir)) + "/",
-            True,
-        )
-
     target_file = pages_root.joinpath(*new_page.parts).with_suffix(".md")
     if target_file.exists():
         raise PageAlreadyExistsError(new_raw)
@@ -263,46 +217,52 @@ def _walk_tree_sync(content_dir: Path) -> list[PageNode]:
 
     def build(dir_path: Path, url_prefix: str) -> list[PageNode]:
         nodes: list[PageNode] = []
-        # collect entries; directories produce subtrees, .md files become leaves
-        entries = sorted(dir_path.iterdir(), key=lambda p: p.name.casefold())
-        index_md = dir_path / "index.md"
-        seen_dirs: set[str] = set()
+        try:
+            entries = sorted(dir_path.iterdir(), key=lambda p: (not p.is_dir(), p.name.casefold()))
+        except OSError:
+            return nodes
 
+        # Partition entries: dot-files are skipped, .md files become pages,
+        # directories provide children.
+        md_names: dict[str, Path] = {}
+        dir_names: dict[str, Path] = {}
         for entry in entries:
             if entry.name.startswith("."):
                 continue
             if entry.is_dir():
-                child_url = f"{url_prefix}/{entry.name}" if url_prefix else entry.name
-                children = build(entry, child_url)
-                nodes.append(
-                    PageNode(
-                        path=child_url,
-                        title=entry.name.replace("-", " ").replace("_", " ").title(),
-                        is_directory=True,
-                        children=children,
-                    )
-                )
-                seen_dirs.add(entry.name)
-            elif entry.suffix == ".md" and entry.name != "index.md":
-                stem = entry.stem
-                if stem in seen_dirs:
-                    # already represented by the directory node; skip the bare .md
-                    continue
-                child_url = f"{url_prefix}/{stem}" if url_prefix else stem
-                title = _read_title_only(entry, stem)
+                dir_names[entry.name] = entry
+            elif entry.suffix == ".md":
+                md_names[entry.stem] = entry
+
+        all_names: set[str] = set()
+        all_names.update(md_names.keys())
+        all_names.update(dir_names.keys())
+
+        for name in sorted(all_names):
+            md_file = md_names.get(name)
+            sub_dir = dir_names.get(name)
+            child_url = f"{url_prefix}/{name}" if url_prefix else name
+            children = build(sub_dir, child_url) if sub_dir else []
+            if md_file:
+                title = _read_title_only(md_file, name)
                 nodes.append(
                     PageNode(
                         path=child_url,
                         title=title,
-                        is_directory=False,
-                        children=[],
+                        is_directory=bool(sub_dir),
+                        children=children,
                     )
                 )
-        # if there is an index.md, expose it as the directory's own page (only at root depth)
-        # nested directories already carry their index via the `is_directory` flag
-        if url_prefix == "" and index_md.exists():
-            title = _read_title_only(index_md, "Home")
-            nodes.insert(0, PageNode(path="index", title=title, is_directory=False, children=[]))
+            else:
+                # Directory without a matching .md
+                nodes.append(
+                    PageNode(
+                        path=child_url,
+                        title=name.replace("-", " ").replace("_", " ").title(),
+                        is_directory=True,
+                        children=children,
+                    )
+                )
         return nodes
 
     return build(pages_root, "")

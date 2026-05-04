@@ -23,16 +23,6 @@ def normalize_page_path(raw: str) -> PurePosixPath:
 
 
 def page_to_file(content_dir: Path, page: PurePosixPath) -> Path:
-    """Resolve a normalized page path to its on-disk file.
-
-    Prefers `<page>.md`; falls back to `<page>/index.md`.
-    Returns the preferred path even if neither exists; the caller checks existence.
-    """
+    """Resolve a normalized page path to its on-disk ``<page>.md`` file."""
     pages_root = content_dir / "pages"
-    direct = pages_root.joinpath(*page.parts).with_suffix(".md")
-    indexed = pages_root.joinpath(*page.parts) / "index.md"
-    if direct.exists():
-        return direct
-    if indexed.exists():
-        return indexed
-    return direct
+    return pages_root.joinpath(*page.parts).with_suffix(".md")

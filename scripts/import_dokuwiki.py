@@ -9,15 +9,15 @@ Source layout (DokuWiki on disk):
 
 Target (Libreta), one namespace becomes one directory under pages/. Pages with
 attachments referenced via DokuWiki's media-namespace are promoted to
-``<page>/index.md`` and the referenced media files are copied alongside, so the
+``<page>.md`` and the referenced media files are copied into a sidecar ``.<page>.md/``, so the
 page is self-contained:
 
     pages/
-    ├── faang/big-o/index.md
-    ├── faang/big-o/recursive_runtimes.svg
-    ├── faang/big-o/Amortized_Analysis_Explained.pdf
-    └── hardware/ps3_backups/index.md
-        hardware/ps3_backups/20251127-182450.png
+    ├── faang/big-o.md
+    ├── faang/.big-o.md/recursive_runtimes.svg
+    ├── faang/.big-o.md/Amortized_Analysis_Explained.pdf
+    └── hardware/ps3_backups.md
+        hardware/.ps3_backups.md/20251127-182450.png
         ...
 
 Pages with no media attachments are written as plain ``<page>.md``.
@@ -460,13 +460,11 @@ def main() -> int:
             seen_basenames.add(base)
             media_files.append((candidate, base))
 
-        # Decide on dest layout: page-with-media → directory + index.md
-        if media_files:
-            dest_dir = dst.joinpath(*ns_parts, stem)
-            md_dest = dest_dir / "index.md"
-        else:
-            dest_dir = dst.joinpath(*ns_parts)
-            md_dest = dest_dir / f"{stem}.md"
+        # New model: every .md file stands alone.  Pages with media get a
+        # hidden sidecar directory (``.<stem>.md/``) for attachments.
+        page_dir = dst.joinpath(*ns_parts)
+        md_dest = page_dir / f"{stem}.md"
+        sidecar_dir = page_dir / f".{stem}.md"
 
         out = build_frontmatter(title, created, updated, ["imported"]) + md_body
         rel_md = md_dest.relative_to(dst)
@@ -477,7 +475,7 @@ def main() -> int:
             md_dest.write_text(out, encoding="utf-8")
 
         for src_file, base in media_files:
-            asset_dest = dest_dir / base
+            asset_dest = sidecar_dir / base
             print(f"      asset: {asset_dest.relative_to(dst)}")
             if not args.dry_run:
                 asset_dest.parent.mkdir(parents=True, exist_ok=True)

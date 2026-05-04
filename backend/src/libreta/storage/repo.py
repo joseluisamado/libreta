@@ -197,10 +197,8 @@ def _get_recent_changes_sync(
 
         # Filter to .md files under pages/, produce one entry per path
         for p in sorted(paths):
-            if p.startswith("pages/") and p.endswith(".md") and not p.endswith("/index.md"):
+            if p.startswith("pages/") and p.endswith(".md"):
                 page_path = p.removeprefix("pages/").removesuffix(".md")
-            elif p.startswith("pages/") and p.endswith("/index.md"):
-                page_path = p.removeprefix("pages/").removesuffix("/index.md")
             else:
                 continue
             changes.append(

@@ -14,7 +14,7 @@ def _validate_segments(raw: str) -> list[str]:
         raise InvalidPathError(f"asset path must be relative and non-empty: {raw!r}")
     parts = raw.split("/")
     for p in parts:
-        if not p or p in {".", ".."} or p.startswith("."):
+        if not p or p in {".", ".."}:
             raise InvalidPathError(f"invalid asset segment {p!r} in {raw!r}")
         if "\x00" in p:
             raise InvalidPathError("null byte in path")
@@ -64,23 +64,30 @@ def sanitize_filename(raw: str) -> str:
     return cleaned
 
 
-def page_directory(content_dir: Path, raw_path: str) -> Path:
-    """Return the directory that owns the page's attachments.
+def _sidecar_dir(content_dir: Path, page: PurePosixPath) -> Path:
+    """Return the sidecar directory for a page: ``<parent>/.<pagename>.md/``."""
+    md_file = page_to_file(content_dir, page)
+    sidecar_name = f".{md_file.name}"
+    return md_file.parent / sidecar_name
 
-    For an index page (``foo/index.md``) the directory is ``foo/``.
-    For a leaf page (``foo.md``) the directory is the parent folder.
-    Raises ``PageNotFoundError`` if the page does not yet exist on disk.
+
+def page_directory(content_dir: Path, raw_path: str) -> Path:
+    """Return the sidecar directory that owns the page's attachments.
+
+    Every page has a hidden sidecar directory (``.saml.md/`` for ``saml.md``)
+    where its attachments live.  For synthesised directory pages (a folder
+    with children but no ``.md`` file) the sidecar is derived from the
+    hypothetical ``<dirname>.md`` path.
     """
     page = normalize_page_path(raw_path)
     file = page_to_file(content_dir, page)
     if not file.exists():
-        # Allow attachments next to a synthesised directory page (a folder
-        # with children but no index.md) — use the directory itself.
+        # Allow attachments for a synthesised directory page
         dir_path = content_dir / "pages" / Path(*page.parts)
         if dir_path.is_dir():
-            return dir_path
+            return _sidecar_dir(content_dir, page)
         raise PageNotFoundError(raw_path)
-    return file.parent
+    return _sidecar_dir(content_dir, page)
 
 
 def _unique_filename(directory: Path, base_name: str) -> str:
@@ -138,8 +145,12 @@ def _store_asset_sync(
     directory = page_directory(content_dir, raw_page)
     name = sanitize_filename(raw_filename)
     sha = hashlib.sha256(data).hexdigest()
+    # Sidecar prefix for embedding in markdown: .<pagename>.md/
+    sidecar_prefix = f"{directory.name}/"
 
-    # Dedupe: if any existing file in this directory has identical bytes,
+    directory.mkdir(parents=True, exist_ok=True)
+
+    # Dedupe: if any existing file in this sidecar has identical bytes,
     # reuse that filename rather than writing a new copy.
     for existing in directory.iterdir():
         if not existing.is_file() or existing.suffix == ".md":
@@ -149,7 +160,7 @@ def _store_asset_sync(
         if hashlib.sha256(existing.read_bytes()).hexdigest() == sha:
             rel = str(existing.relative_to(content_dir))
             return UploadResult(
-                filename=existing.name,
+                filename=sidecar_prefix + existing.name,
                 size=len(data),
                 sha256=sha,
                 kind=_kind_for(content_type, existing.name),
@@ -162,7 +173,7 @@ def _store_asset_sync(
     target.write_bytes(data)
     rel = str(target.relative_to(content_dir))
     return UploadResult(
-        filename=final_name,
+        filename=sidecar_prefix + final_name,
         size=len(data),
         sha256=sha,
         kind=_kind_for(content_type, final_name),

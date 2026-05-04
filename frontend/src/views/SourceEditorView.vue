@@ -159,7 +159,6 @@
             :key="editorKey"
             :content="sourceText"
             :path="page.path"
-            :is-index="page.is_index"
             class="px-8 py-6"
             @update="onUpdate"
           />

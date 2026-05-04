@@ -12,6 +12,24 @@ Living document. Update as work progresses. Latest at the top.
 **Next milestone**: M4 — Diagrams.net integration
 **Next action**: Start M4 — `DrawioImage` Tiptap extension, postMessage protocol, toolbar button.
 
+---
+
+## 2026-05-04 — Sidecar attachment model
+
+**What changed**: Replaced the `index.md`-based directory model with a sidecar-directory model for attachments.
+
+**Before**: Pages could be `foo.md` (leaf) or `foo/index.md` (index). Attachments went in the parent directory for leaf pages, or the same directory for index pages. The `is_index` flag propagated through the entire stack.
+
+**After**: Every `.md` file is a standalone page. Attachments live in a hidden sidecar: `.<pagename>.md/`. A page at `saml.md` has its images in `.saml.md/`. `foo.md` and `foo/` coexist — the `.md` is the page, the directory holds sub-pages.
+
+**Why**: Unambiguous attachment ownership, compatible with existing flat repos, simpler data model (no `is_index` flag anywhere).
+
+**Migration**: `scripts/migrate_to_sidecars.py` converts old repos. Ran against the `libreta-data` source: 31 index→page promotions, 73 attachments moved.
+
+**Also**: Removed underscore-prefix hiding — `_plan materials/` and `_meta/`-style directories are now visible in the tree.
+
+**Files touched**: `models.py`, `paths.py`, `pages.py`, `assets.py`, `sources.py`, `watched.py`, `repo.py`, `api/pages.py`, `api/sources.py`, `api/assets.py`, `types.ts`, `markdown.ts`, `Editor.vue`, 5+ views, all test files, `ARCHITECTURE.md`, `import_dokuwiki.py`.
+
 ## At a glance
 
 | Milestone | Status |

@@ -35,35 +35,37 @@ def test_get_asset_rejects_markdown(client: TestClient) -> None:
 PNG = b"\x89PNG\r\n\x1a\nfake-png-bytes"
 
 
-def test_upload_asset_to_leaf_page_writes_next_to_md(client: TestClient, content_dir: Path) -> None:
+def test_upload_asset_to_page_writes_into_sidecar(client: TestClient, content_dir: Path) -> None:
     r = client.post(
         "/api/v1/pages/recipes/pizza-dough/assets",
         files={"file": ("photo.png", PNG, "image/png")},
     )
     assert r.status_code == 200, r.text
     body = r.json()
-    assert body["filename"] == "photo.png"
+    # filename now includes the sidecar prefix for direct embedding in markdown
+    assert body["filename"] == ".pizza-dough.md/photo.png"
     assert body["kind"] == "image"
     assert body["size"] == len(PNG)
     assert body["deduped"] is False
-    # File landed next to recipes/pizza-dough.md (i.e. directly under recipes/)
-    assert (content_dir / "pages" / "recipes" / "photo.png").read_bytes() == PNG
-    # Now servable
-    r2 = client.get("/api/v1/assets/pages/recipes/photo.png")
+    # File landed in the sidecar: pages/recipes/.pizza-dough.md/photo.png
+    assert (content_dir / "pages" / "recipes" / ".pizza-dough.md" / "photo.png").read_bytes() == PNG
+    # Servable through the sidecar path
+    r2 = client.get("/api/v1/assets/pages/recipes/.pizza-dough.md/photo.png")
     assert r2.status_code == 200
     assert r2.content == PNG
 
 
-def test_upload_asset_to_index_page_writes_into_directory(
+def test_upload_asset_to_canonical_page_uses_sidecar(
     client: TestClient, content_dir: Path
 ) -> None:
-    # "recipes" is backed by recipes/index.md → owning directory is recipes/
+    # "recipes" page is at pages/recipes.md → sidecar is pages/.recipes.md/
     r = client.post(
         "/api/v1/pages/recipes/assets",
         files={"file": ("hero.png", PNG, "image/png")},
     )
     assert r.status_code == 200
-    assert (content_dir / "pages" / "recipes" / "hero.png").read_bytes() == PNG
+    assert r.json()["filename"] == ".recipes.md/hero.png"
+    assert (content_dir / "pages" / ".recipes.md" / "hero.png").read_bytes() == PNG
 
 
 def test_upload_dedupes_identical_bytes(client: TestClient, content_dir: Path) -> None:
@@ -78,10 +80,9 @@ def test_upload_dedupes_identical_bytes(client: TestClient, content_dir: Path) -
     )
     assert r2.status_code == 200
     assert r2.json()["deduped"] is True
-    # The deduper returns the existing file's name
-    assert r2.json()["filename"] == "photo.png"
-    # Only one file landed
-    assert not (content_dir / "pages" / "recipes" / "photo-renamed.png").exists()
+    # The deduper returns the existing file's name with sidecar prefix
+    assert r2.json()["filename"] == ".pizza-dough.md/photo.png"
+    assert not (content_dir / "pages" / "recipes" / ".pizza-dough.md" / "photo-renamed.png").exists()
 
 
 def test_upload_collision_with_different_bytes_gets_suffix(
@@ -91,13 +92,13 @@ def test_upload_collision_with_different_bytes_gets_suffix(
         "/api/v1/pages/recipes/pizza-dough/assets",
         files={"file": ("photo.png", PNG, "image/png")},
     )
-    assert r1.json()["filename"] == "photo.png"
+    assert r1.json()["filename"] == ".pizza-dough.md/photo.png"
     r2 = client.post(
         "/api/v1/pages/recipes/pizza-dough/assets",
         files={"file": ("photo.png", PNG + b"more", "image/png")},
     )
     assert r2.status_code == 200
-    assert r2.json()["filename"] == "photo-2.png"
+    assert r2.json()["filename"] == ".pizza-dough.md/photo-2.png"
     assert r2.json()["deduped"] is False
 
 
@@ -131,11 +132,13 @@ def test_upload_sanitizes_unsafe_filename(client: TestClient, content_dir: Path)
         files={"file": ("../../weird name with spaces!.PNG", PNG, "image/png")},
     )
     assert r.status_code == 200
-    name = r.json()["filename"]
-    # Path components stripped, spaces & punctuation → "-", extension preserved
-    assert "/" not in name and ".." not in name and " " not in name
+    full = r.json()["filename"]
+    assert full.startswith(".pizza-dough.md/")
+    # The sidecar prefix contains a slash; the filename part must be safe
+    name = full.split("/", 1)[1]
+    assert ".." not in name and " " not in name
     assert name.endswith(".PNG")
-    assert (content_dir / "pages" / "recipes" / name).read_bytes() == PNG
+    assert (content_dir / "pages" / "recipes" / ".pizza-dough.md" / name).read_bytes() == PNG
 
 
 def test_upload_creates_commit(client: TestClient, content_dir: Path) -> None:
@@ -149,9 +152,8 @@ def test_upload_creates_commit(client: TestClient, content_dir: Path) -> None:
     )
     n_after = sum(1 for _ in repo.walk(repo.head.target))
     assert n_after == n_before + 1
-    # Commit message follows the verb convention
     head = repo[repo.head.target]
-    assert head.message.startswith("attach pages/recipes/photo.png")
+    assert head.message.startswith("attach pages/recipes/.pizza-dough.md/photo.png")
 
 
 def test_dedupe_does_not_create_extra_commit(client: TestClient, content_dir: Path) -> None:

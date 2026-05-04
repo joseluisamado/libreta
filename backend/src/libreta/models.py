@@ -63,16 +63,12 @@ class PageMeta(BaseModel):
 
 class PageWrite(BaseModel):
     body: str
-    is_index: bool = False
 
 
 class PageRead(BaseModel):
     path: str
     meta: PageMeta
     body: str
-    # True when the page is stored as ``<path>/index.md``. Lets the client
-    # resolve relative asset references against the right base directory.
-    is_index: bool = False
 
 
 class PageMove(BaseModel):

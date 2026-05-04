@@ -55,7 +55,7 @@ def test_full_reindex_cli(content_dir: Path) -> None:
     from libreta.storage.search import _full_reindex_sync, db_path
 
     n = _full_reindex_sync(content_dir)
-    assert n >= 3  # index.md + recipes/index.md + recipes/pizza-dough.md
+    assert n >= 3  # index.md + recipes.md + recipes/pizza-dough.md
     assert db_path(content_dir).exists()
 
 

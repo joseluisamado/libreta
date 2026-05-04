@@ -47,8 +47,7 @@
 
   const html = computed(() => {
     if (!page.value) return ''
-    // Watched pages don't have a meaningful asset base, so pass path + false for is_index
-    return renderMarkdown(page.value.body, page.value.path, page.value.is_index)
+    return renderMarkdown(page.value.body, page.value.path)
   })
 
   const highlightedSource = computed(() => {

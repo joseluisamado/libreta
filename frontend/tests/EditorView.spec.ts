@@ -23,7 +23,6 @@ function makePage(overrides: Partial<PageRead> = {}): PageRead {
       tags: [],
     },
     body: '# Test\n\nHello.',
-    is_index: false,
     ...overrides,
   }
 }

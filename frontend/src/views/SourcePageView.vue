@@ -47,7 +47,7 @@
 
   const html = computed(() => {
     if (!page.value) return ''
-    return renderMarkdown(page.value.body, page.value.path, page.value.is_index, sourceId.value)
+    return renderMarkdown(page.value.body, page.value.path, sourceId.value)
   })
 
   const highlightedSource = computed(() => {

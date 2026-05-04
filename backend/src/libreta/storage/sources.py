@@ -433,7 +433,7 @@ def _read_title_only(file: Path, fallback: str) -> str:
         return fallback
 
 
-def _walk_tree_sync(pages_root: Path, hide_underscored: bool = True) -> list[PageNode]:
+def _walk_tree_sync(pages_root: Path) -> list[PageNode]:
     if not pages_root.exists():
         return []
 
@@ -443,44 +443,48 @@ def _walk_tree_sync(pages_root: Path, hide_underscored: bool = True) -> list[Pag
             entries = sorted(dir_path.iterdir(), key=lambda p: (not p.is_dir(), p.name.casefold()))
         except OSError:
             return nodes
-        seen_dirs: set[str] = set()
 
+        md_names: dict[str, Path] = {}
+        dir_names: dict[str, Path] = {}
         for entry in entries:
             if entry.name.startswith("."):
                 continue
-            if hide_underscored and entry.name.startswith("_"):
-                continue
             try:
                 if entry.is_dir():
-                    child_url = f"{url_prefix}/{entry.name}" if url_prefix else entry.name
-                    children = build(entry, child_url)
-                    nodes.append(
-                        PageNode(
-                            path=child_url,
-                            title=entry.name.replace("-", " ").replace("_", " ").title(),
-                            is_directory=True,
-                            children=children,
-                        )
-                    )
-                    seen_dirs.add(entry.name)
+                    dir_names[entry.name] = entry
                 elif entry.suffix == ".md":
-                    stem = entry.stem
-                    if stem in seen_dirs:
-                        continue
-                    child_url = f"{url_prefix}/{stem}" if url_prefix else stem
-                    title = _read_title_only(
-                        entry, stem.replace("-", " ").replace("_", " ").title()
-                    )
-                    nodes.append(
-                        PageNode(
-                            path=child_url,
-                            title=title,
-                            is_directory=False,
-                            children=[],
-                        )
-                    )
+                    md_names[entry.stem] = entry
             except OSError:
                 continue
+
+        all_names: set[str] = set()
+        all_names.update(md_names.keys())
+        all_names.update(dir_names.keys())
+
+        for name in sorted(all_names):
+            md_file = md_names.get(name)
+            sub_dir = dir_names.get(name)
+            child_url = f"{url_prefix}/{name}" if url_prefix else name
+            children = build(sub_dir, child_url) if sub_dir else []
+            if md_file:
+                title = _read_title_only(md_file, name.replace("-", " ").replace("_", " ").title())
+                nodes.append(
+                    PageNode(
+                        path=child_url,
+                        title=title,
+                        is_directory=bool(sub_dir),
+                        children=children,
+                    )
+                )
+            else:
+                nodes.append(
+                    PageNode(
+                        path=child_url,
+                        title=name.replace("-", " ").replace("_", " ").title(),
+                        is_directory=True,
+                        children=children,
+                    )
+                )
         return nodes
 
     return build(pages_root, "")
@@ -501,7 +505,7 @@ def _pages_root(repos_dir: Path, source_id: str) -> Path:
 async def walk_source_tree(repos_dir: Path, source_id: str) -> list[PageNode]:
     local = _local_path(repos_dir, source_id)
     pages = local / "pages"
-    return await asyncio.to_thread(_walk_tree_sync, pages if pages.is_dir() else local, pages.is_dir())
+    return await asyncio.to_thread(_walk_tree_sync, pages if pages.is_dir() else local)
 
 
 # ---------------------------------------------------------------------------
@@ -555,17 +559,6 @@ def _read_page_sync(pages_root: Path, raw_path: str) -> PageRead:
             path=raw_path,
             meta=_parse_meta(post.metadata, fallback),
             body=post.content,
-            is_index=direct.name == "index.md",
-        )
-
-    dir_index = file / "index.md"
-    if dir_index.exists():
-        post = frontmatter.load(dir_index)
-        return PageRead(
-            path=raw_path,
-            meta=_parse_meta(post.metadata, fallback),
-            body=post.content,
-            is_index=True,
         )
 
     if file.is_dir():
@@ -573,7 +566,6 @@ def _read_page_sync(pages_root: Path, raw_path: str) -> PageRead:
             path=raw_path,
             meta=PageMeta(title=fallback),
             body="",
-            is_index=True,
         )
 
     raise PageNotFoundError(raw_path)
@@ -598,15 +590,7 @@ def _write_page_sync(
     file = pages_root / raw_path
     fallback = file.name.replace("-", " ").replace("_", " ").title()
 
-    direct = file.with_suffix(".md") if not file.suffix else file
-    indexed = file / "index.md"
-    if direct.exists():
-        existing = direct
-    elif indexed.exists():
-        existing = indexed
-    else:
-        existing = direct
-
+    existing = file.with_suffix(".md") if not file.suffix else file
     existed = existing.exists()
     existing_meta: dict[str, Any] = {}
     if existed:
@@ -644,7 +628,6 @@ def _write_page_sync(
             tags=list(metadata.get("tags", [])),
         ),
         body=body,
-        is_index=existing.name == "index.md",
     )
     return result, verb
 

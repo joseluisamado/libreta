@@ -94,7 +94,7 @@
     const prefix = path.value === 'index' ? '' : path.value
     const newPath = prefix ? `${prefix}/${slug}` : slug
     try {
-      await savePage(newPath, { body: `# ${name.trim()}\n\n`, is_index: true })
+      await savePage(newPath, { body: `# ${name.trim()}\n\n` })
       await tree.load()
       router.push(`/w/${newPath}`)
     } catch (e) {
@@ -133,7 +133,7 @@
   })
 
   const html = computed(() =>
-    page.value ? renderMarkdown(page.value.body, page.value.path, page.value.is_index) : '',
+    page.value ? renderMarkdown(page.value.body, page.value.path) : '',
   )
 
   const highlightedSource = computed(() => {
