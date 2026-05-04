@@ -7,7 +7,7 @@
 <template>
   <button
     type="button"
-    class="fixed top-3 right-3 z-20 bg-white/90 backdrop-blur border border-slate-200 rounded-md p-2 hover:bg-slate-50 shadow-sm"
+    class="fixed top-3 right-[24px] z-20 bg-white/90 backdrop-blur border border-slate-200 rounded-md p-2 hover:bg-slate-50 shadow-sm"
     :title="width === 'standard' ? 'Expand to full width' : 'Use standard width'"
     :aria-label="width === 'standard' ? 'Expand to full width' : 'Use standard width'"
     @click="toggle"

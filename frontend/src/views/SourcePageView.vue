@@ -170,7 +170,7 @@
   <button
     v-if="page"
     type="button"
-    class="fixed top-3 right-[56px] z-20 bg-white/90 backdrop-blur border border-slate-200 rounded-md p-2 hover:bg-slate-50 shadow-sm"
+    class="fixed top-3 right-[68px] z-20 bg-white/90 backdrop-blur border border-slate-200 rounded-md p-2 hover:bg-slate-50 shadow-sm"
     :title="mode === 'rendered' ? 'View markdown source' : 'View rendered page'"
     :aria-label="mode === 'rendered' ? 'View markdown source' : 'View rendered page'"
     @click="toggleViewMode"
@@ -207,7 +207,7 @@
   <RouterLink
     v-if="page"
     :to="`/edit-source/${sourceId}/${page.path}`"
-    class="fixed top-3 right-[100px] z-30 bg-white/90 backdrop-blur border border-slate-200 rounded-md p-2 hover:bg-slate-50 shadow-sm"
+    class="fixed top-3 right-[112px] z-30 bg-white/90 backdrop-blur border border-slate-200 rounded-md p-2 hover:bg-slate-50 shadow-sm"
     title="Edit this page"
     aria-label="Edit this page"
   >
