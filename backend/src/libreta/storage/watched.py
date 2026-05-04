@@ -21,7 +21,7 @@ from libreta.models import PageMeta, PageNode, PageRead
 
 logger = logging.getLogger(__name__)
 
-WATCHED_CONFIG_FILENAME = "_meta/watched.json"
+WATCHED_CONFIG_FILENAME = ".meta/watched.json"
 
 
 # ---------------------------------------------------------------------------

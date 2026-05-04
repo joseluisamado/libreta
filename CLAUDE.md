@@ -43,7 +43,7 @@ Breaking any of these is a regression, regardless of test coverage. Treat as if 
 
 `docs/PROJECT.md` P1. Never add a feature that stores user content only in SQLite, only in memory, or only in some other store. If a metadata bit needs to persist, it lives in:
 - frontmatter of the relevant page, OR
-- a sidecar file in the wiki repo (e.g., `_meta/foo.yaml`), OR
+- a sidecar file in the wiki repo (e.g., `.meta/foo.yaml`), OR
 - nowhere, and it gets recomputed on demand.
 
 The SQLite index is **never** authoritative. Anything in it must be regenerable from the filesystem by a single CLI command.

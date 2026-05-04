@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     # Private SSH key files. Never committed to any repo.
     ssh_keys_dir: Path = Field(default=Path("/var/lib/libreta/ssh_keys"))
 
-    # Sources config file, relative to content_dir (reuses the _meta convention).
-    sources_config: str = "_meta/sources.json"
+    # Sources config file, relative to content_dir (reuses the .meta convention).
+    sources_config: str = ".meta/sources.json"
 
     drawio_url: str = "http://drawio:8080"

@@ -7,7 +7,7 @@
   const props = defineProps<{ source: GitSource }>()
 
   const store = useSourcesStore()
-  const expanded = ref(false)
+  const expanded = ref(true)
   const syncing = ref(false)
   const syncMessage = ref<string | null>(null)
 

@@ -95,7 +95,9 @@ def migrate(root: Path, dry_run: bool = False) -> int:
 
     # ── Phase 1: promote index.md → ../<dirname>.md & move attachments ──
     # Process deepest first so nested index.md are handled before their parents
-    for index_file in sorted(pages_root.rglob("index.md"), key=lambda p: len(p.parts), reverse=True):
+    for index_file in sorted(
+        pages_root.rglob("index.md"), key=lambda p: len(p.parts), reverse=True
+    ):
         parent = index_file.parent
         if parent == pages_root:
             # Top-level index.md stays as a regular page
@@ -123,13 +125,17 @@ def migrate(root: Path, dry_run: bool = False) -> int:
             if candidate.name in refs:
                 sidecar.mkdir(parents=True, exist_ok=True)
                 dest = sidecar / candidate.name
-                print(f"  attach: {relative(candidate, pages_root)} → {relative(dest, pages_root)}")
+                print(
+                    f"  attach: {relative(candidate, pages_root)} → {relative(dest, pages_root)}"
+                )
                 if not dry_run:
                     shutil.move(str(candidate), str(dest))
                 moved_attachments += 1
 
         # Promote index.md → target
-        print(f"  promote: {relative(index_file, pages_root)} → {relative(target, pages_root)}")
+        print(
+            f"  promote: {relative(index_file, pages_root)} → {relative(target, pages_root)}"
+        )
         if not dry_run:
             target.write_text(body, encoding="utf-8")
             index_file.unlink()
@@ -157,7 +163,9 @@ def migrate(root: Path, dry_run: bool = False) -> int:
             if candidate.name in refs:
                 sidecar.mkdir(parents=True, exist_ok=True)
                 dest = sidecar / candidate.name
-                print(f"  attach: {relative(candidate, pages_root)} → {relative(dest, pages_root)}")
+                print(
+                    f"  attach: {relative(candidate, pages_root)} → {relative(dest, pages_root)}"
+                )
                 if not dry_run:
                     shutil.move(str(candidate), str(dest))
                 moved_attachments += 1
@@ -171,7 +179,8 @@ def migrate(root: Path, dry_run: bool = False) -> int:
 
         # Count other .md files in this directory
         other_mds = [
-            p for p in md_dir.iterdir()
+            p
+            for p in md_dir.iterdir()
             if p.suffix == ".md" and p.is_file() and p != md_file
         ]
 
@@ -186,7 +195,9 @@ def migrate(root: Path, dry_run: bool = False) -> int:
                 # Sole .md file owns all orphans
                 sidecar.mkdir(parents=True, exist_ok=True)
                 dest = sidecar / candidate.name
-                print(f"  orphan: {relative(candidate, pages_root)} → {relative(dest, pages_root)}")
+                print(
+                    f"  orphan: {relative(candidate, pages_root)} → {relative(dest, pages_root)}"
+                )
                 if not dry_run:
                     shutil.move(str(candidate), str(dest))
                 moved_attachments += 1
@@ -197,8 +208,12 @@ def migrate(root: Path, dry_run: bool = False) -> int:
     # ── Phase 4: remove empty directories ─────────────────────────────────
     # First pass: remove leftover .index.md directories (empty sidecars from
     # Phase 1 that ended up inside the old directory after a previous run).
-    for dir_path in sorted(pages_root.rglob(".index.md"), key=lambda p: len(p.parts), reverse=True):
-        if dir_path.is_dir() and not any(p for p in dir_path.iterdir() if not p.name.startswith(".")):
+    for dir_path in sorted(
+        pages_root.rglob(".index.md"), key=lambda p: len(p.parts), reverse=True
+    ):
+        if dir_path.is_dir() and not any(
+            p for p in dir_path.iterdir() if not p.name.startswith(".")
+        ):
             for f in dir_path.iterdir():
                 f.unlink()
             print(f"  rmdir (artifact): {relative(dir_path, pages_root)}")
@@ -207,7 +222,9 @@ def migrate(root: Path, dry_run: bool = False) -> int:
             removed_dirs += 1
 
     # Second pass: remove non-hidden empty directories.
-    for dir_path in sorted(pages_root.rglob("*"), key=lambda p: len(p.parts), reverse=True):
+    for dir_path in sorted(
+        pages_root.rglob("*"), key=lambda p: len(p.parts), reverse=True
+    ):
         if not dir_path.is_dir():
             continue
         if dir_path.name.startswith("."):
@@ -224,16 +241,24 @@ def migrate(root: Path, dry_run: bool = False) -> int:
             pass
 
     # ── Summary ───────────────────────────────────────────────────────────
-    print(f"\nDone: {promotions} index→page promotions, {moved_attachments} attachments moved, {removed_dirs} directories removed")
+    print(
+        f"\nDone: {promotions} index→page promotions, {moved_attachments} attachments moved, {removed_dirs} directories removed"
+    )
     if dry_run:
         print("  (no changes were made — re-run without --dry-run to apply)")
     return 0
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Migrate Libreta content to sidecar model")
-    parser.add_argument("repo_root", type=Path, help="Path to the repo root (or pages/ parent)")
-    parser.add_argument("--dry-run", action="store_true", help="Show what would change without applying")
+    parser = argparse.ArgumentParser(
+        description="Migrate Libreta content to sidecar model"
+    )
+    parser.add_argument(
+        "repo_root", type=Path, help="Path to the repo root (or pages/ parent)"
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Show what would change without applying"
+    )
     args = parser.parse_args()
     return migrate(args.repo_root, dry_run=args.dry_run)
 

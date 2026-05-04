@@ -335,7 +335,7 @@ def test_config_persisted_to_disk(
         "/api/v1/watch/folders",
         json={"label": "mywiki", "path": str(watched_fixture)},
     )
-    config_path = content_dir / "_meta" / "watched.json"
+    config_path = content_dir / ".meta" / "watched.json"
     assert config_path.exists()
     data = json.loads(config_path.read_text(encoding="utf-8"))
     assert len(data) == 1

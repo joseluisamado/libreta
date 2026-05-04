@@ -71,7 +71,9 @@ def _resolve_relative(rest: str, page_namespace: tuple[str, ...]) -> tuple[str, 
     return tuple(base + [p for p in parts if p])
 
 
-def _resolve_media_id(media_id: str, page_namespace: tuple[str, ...]) -> tuple[str, ...]:
+def _resolve_media_id(
+    media_id: str, page_namespace: tuple[str, ...]
+) -> tuple[str, ...]:
     """Resolve a DokuWiki media id (colon-separated) into namespace parts."""
     media_id = media_id.strip()
     if media_id.startswith("."):
@@ -133,8 +135,10 @@ class Converter:
             tag = match.group(1)  # 'code' or 'file'
             lang = (match.group(2) or "").strip()
             body = match.group(3)
-            fence = f"```{lang}\n{body.rstrip()}\n```" if tag == "code" else (
-                f"```\n{body.rstrip()}\n```"
+            fence = (
+                f"```{lang}\n{body.rstrip()}\n```"
+                if tag == "code"
+                else (f"```\n{body.rstrip()}\n```")
             )
             placeholders.append(fence)
             return f"\x00BLOCK{len(placeholders) - 1}\x00"
@@ -161,7 +165,9 @@ class Converter:
             level = max(1, 7 - len(equals))
             return f"{'#' * level} {title}"
 
-        text = re.sub(r"^(={2,6})\s*(.+?)\s*\1\s*$", heading_sub, text, flags=re.MULTILINE)
+        text = re.sub(
+            r"^(={2,6})\s*(.+?)\s*\1\s*$", heading_sub, text, flags=re.MULTILINE
+        )
 
         # 4. Lists. DokuWiki uses 2-space indents:
         #       "  * item"   →   "- item"
@@ -339,7 +345,9 @@ class Converter:
 # ---------- Importer ----------
 
 
-def parse_changes(meta_dir: Path, ns_parts: tuple[str, ...]) -> tuple[datetime | None, datetime | None]:
+def parse_changes(
+    meta_dir: Path, ns_parts: tuple[str, ...]
+) -> tuple[datetime | None, datetime | None]:
     """Return (created, updated) from the .changes file for a page."""
     if not ns_parts:
         return None, None
@@ -389,7 +397,9 @@ def build_frontmatter(
     return "\n".join(lines) + "\n"
 
 
-def iter_pages(pages_dir: Path, skip_ns: set[str], skip_top: set[str]) -> Iterable[Path]:
+def iter_pages(
+    pages_dir: Path, skip_ns: set[str], skip_top: set[str]
+) -> Iterable[Path]:
     for path in sorted(pages_dir.rglob("*.txt")):
         rel = path.relative_to(pages_dir)
         parts = rel.parts
@@ -402,13 +412,25 @@ def iter_pages(pages_dir: Path, skip_ns: set[str], skip_top: set[str]) -> Iterab
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--source", type=Path, default=DEFAULT_SOURCE,
-                        help="DokuWiki data dir (default: %(default)s)")
-    parser.add_argument("--dest", type=Path, default=DEFAULT_DEST,
-                        help="Libreta pages dir (default: %(default)s)")
+    parser.add_argument(
+        "--source",
+        type=Path,
+        default=DEFAULT_SOURCE,
+        help="DokuWiki data dir (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--dest",
+        type=Path,
+        default=DEFAULT_DEST,
+        help="Libreta pages dir (default: %(default)s)",
+    )
     parser.add_argument("--dry-run", action="store_true")
-    parser.add_argument("--skip-namespace", action="append", default=[],
-                        help="Additional top-level namespace to skip")
+    parser.add_argument(
+        "--skip-namespace",
+        action="append",
+        default=[],
+        help="Additional top-level namespace to skip",
+    )
     args = parser.parse_args()
 
     src: Path = args.source.resolve()
@@ -452,7 +474,10 @@ def main() -> int:
         for ns in conv.media_used:
             candidate = media_dir.joinpath(*ns)
             if not candidate.exists():
-                print(f"  warn: missing media {':'.join(ns)} referenced by {rel}", file=sys.stderr)
+                print(
+                    f"  warn: missing media {':'.join(ns)} referenced by {rel}",
+                    file=sys.stderr,
+                )
                 continue
             base = candidate.name
             if base in seen_basenames:

@@ -4,7 +4,7 @@ Each git source is a remote git repository that Libreta clones to a local
 working tree under <repos_dir>/<source_id>/.  Libreta commits writes into the
 local clone and pushes asynchronously.
 
-Config is persisted in <content_dir>/_meta/sources.json so it lives alongside
+Config is persisted in <content_dir>/.meta/sources.json so it lives alongside
 the watched-folder config and respects R2 (filesystem is the source of truth).
 """
 
@@ -14,6 +14,8 @@ import asyncio
 import contextlib
 import json
 import logging
+import os
+import threading
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -44,6 +46,9 @@ logger = logging.getLogger(__name__)
 # Per-source asyncio write locks.  Keyed by source id.
 _locks: dict[str, asyncio.Lock] = {}
 
+# Protects the load-modify-save cycle on sources.json.
+_config_lock = threading.Lock()
+
 
 def _get_lock(source_id: str) -> asyncio.Lock:
     if source_id not in _locks:
@@ -57,7 +62,7 @@ def _get_lock(source_id: str) -> asyncio.Lock:
 
 
 def _config_path(content_dir: Path) -> Path:
-    return content_dir / "_meta" / "sources.json"
+    return content_dir / ".meta" / "sources.json"
 
 
 def load_sources_sync(content_dir: Path) -> list[dict[str, Any]]:
@@ -80,10 +85,12 @@ async def load_sources(content_dir: Path) -> list[dict[str, Any]]:
 def save_sources_sync(content_dir: Path, sources: list[dict[str, Any]]) -> None:
     path = _config_path(content_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(
         json.dumps(sources, indent=2, ensure_ascii=False, default=str) + "\n",
         encoding="utf-8",
     )
+    os.replace(tmp, path)  # atomic rename — readers never see a partial file
 
 
 async def save_sources(content_dir: Path, sources: list[dict[str, Any]]) -> None:
@@ -140,23 +147,24 @@ def add_source_sync(
     repos_dir: Path,
     body: GitSourceCreate,
 ) -> GitSourceResponse:
-    sources = load_sources_sync(content_dir)
-    if any(s["id"] == body.id for s in sources):
-        raise GitSourceAlreadyExistsError(f"source id {body.id!r} already exists")
-    entry: dict[str, Any] = {
-        "id": body.id,
-        "label": body.label,
-        "remote_url": body.remote_url,
-        "branch": body.branch,
-        "ssh_key_id": body.ssh_key_id,
-        "http_username": body.http_username,
-        "http_password": body.http_password,
-        "sync_interval_minutes": body.sync_interval_minutes,
-        "last_synced_at": None,
-        "last_sync_error": None,
-    }
-    sources.append(entry)
-    save_sources_sync(content_dir, sources)
+    with _config_lock:
+        sources = load_sources_sync(content_dir)
+        if any(s["id"] == body.id for s in sources):
+            raise GitSourceAlreadyExistsError(f"source id {body.id!r} already exists")
+        entry: dict[str, Any] = {
+            "id": body.id,
+            "label": body.label,
+            "remote_url": body.remote_url,
+            "branch": body.branch,
+            "ssh_key_id": body.ssh_key_id,
+            "http_username": body.http_username,
+            "http_password": body.http_password,
+            "sync_interval_minutes": body.sync_interval_minutes,
+            "last_synced_at": None,
+            "last_sync_error": None,
+        }
+        sources.append(entry)
+        save_sources_sync(content_dir, sources)
     return _entry_to_response(entry, repos_dir)
 
 
@@ -174,25 +182,26 @@ def update_source_sync(
     source_id: str,
     body: GitSourceUpdate,
 ) -> GitSourceResponse:
-    sources = load_sources_sync(content_dir)
-    idx = next((i for i, s in enumerate(sources) if s["id"] == source_id), None)
-    if idx is None:
-        raise GitSourceNotFoundError(source_id)
-    entry = sources[idx]
-    if body.label is not None:
-        entry["label"] = body.label
-    if body.branch is not None:
-        entry["branch"] = body.branch
-    if body.ssh_key_id is not None:
-        entry["ssh_key_id"] = body.ssh_key_id
-    if body.http_username is not None:
-        entry["http_username"] = body.http_username
-    if body.http_password is not None:
-        entry["http_password"] = body.http_password
-    if body.sync_interval_minutes is not None:
-        entry["sync_interval_minutes"] = body.sync_interval_minutes
-    sources[idx] = entry
-    save_sources_sync(content_dir, sources)
+    with _config_lock:
+        sources = load_sources_sync(content_dir)
+        idx = next((i for i, s in enumerate(sources) if s["id"] == source_id), None)
+        if idx is None:
+            raise GitSourceNotFoundError(source_id)
+        entry = sources[idx]
+        if body.label is not None:
+            entry["label"] = body.label
+        if body.branch is not None:
+            entry["branch"] = body.branch
+        if body.ssh_key_id is not None:
+            entry["ssh_key_id"] = body.ssh_key_id
+        if body.http_username is not None:
+            entry["http_username"] = body.http_username
+        if body.http_password is not None:
+            entry["http_password"] = body.http_password
+        if body.sync_interval_minutes is not None:
+            entry["sync_interval_minutes"] = body.sync_interval_minutes
+        sources[idx] = entry
+        save_sources_sync(content_dir, sources)
     return _entry_to_response(entry, repos_dir)
 
 
@@ -206,10 +215,11 @@ async def update_source(
 
 
 def remove_source_sync(content_dir: Path, source_id: str) -> None:
-    sources = load_sources_sync(content_dir)
-    if not any(s["id"] == source_id for s in sources):
-        raise GitSourceNotFoundError(source_id)
-    save_sources_sync(content_dir, [s for s in sources if s["id"] != source_id])
+    with _config_lock:
+        sources = load_sources_sync(content_dir)
+        if not any(s["id"] == source_id for s in sources):
+            raise GitSourceNotFoundError(source_id)
+        save_sources_sync(content_dir, [s for s in sources if s["id"] != source_id])
     _locks.pop(source_id, None)
 
 
@@ -222,12 +232,13 @@ def record_sync_result_sync(
     source_id: str,
     error: str | None,
 ) -> None:
-    sources = load_sources_sync(content_dir)
-    for s in sources:
-        if s["id"] == source_id:
-            s["last_synced_at"] = datetime.now(UTC).isoformat()
-            s["last_sync_error"] = error
-    save_sources_sync(content_dir, sources)
+    with _config_lock:
+        sources = load_sources_sync(content_dir)
+        for s in sources:
+            if s["id"] == source_id:
+                s["last_synced_at"] = datetime.now(UTC).isoformat()
+                s["last_sync_error"] = error
+        save_sources_sync(content_dir, sources)
 
 
 async def record_sync_result(
@@ -313,6 +324,7 @@ def fetch_and_ff_sync(
             pygit2.enums.FileStatus.INDEX_NEW
             | pygit2.enums.FileStatus.INDEX_MODIFIED
             | pygit2.enums.FileStatus.INDEX_DELETED
+            | pygit2.enums.FileStatus.WT_NEW
             | pygit2.enums.FileStatus.WT_MODIFIED
             | pygit2.enums.FileStatus.WT_DELETED
         )
@@ -363,6 +375,43 @@ async def fetch_and_ff(
     await asyncio.to_thread(fetch_and_ff_sync, repos_dir, ssh_keys_dir, entry)
 
 
+def _auto_commit_sync(repo: pygit2.Repository) -> bool:
+    """Stage every uncommitted change and commit.  Returns True if a commit was made."""
+    status = repo.status()
+    if not status:
+        return False
+
+    index = repo.index
+    index.read()
+    staged = False
+    for path, flags in status.items():
+        if flags & (
+            pygit2.enums.FileStatus.WT_NEW
+            | pygit2.enums.FileStatus.WT_MODIFIED
+            | pygit2.enums.FileStatus.INDEX_NEW
+            | pygit2.enums.FileStatus.INDEX_MODIFIED
+        ):
+            index.add(path)
+            staged = True
+        elif flags & (pygit2.enums.FileStatus.WT_DELETED | pygit2.enums.FileStatus.INDEX_DELETED):
+            index.remove(path)
+            staged = True
+
+    if not staged:
+        return False
+
+    index.write()
+    tree = index.write_tree()
+    try:
+        parents = [repo.head.target]
+    except (pygit2.GitError, KeyError):
+        parents = []
+    sig = pygit2.Signature("Libreta", "libreta@localhost")
+    repo.create_commit("HEAD", sig, sig, "sync: auto-commit pending changes", tree, parents)
+    logger.info("auto-commit: staged %d paths", len(status))
+    return True
+
+
 def push_sync(
     repos_dir: Path,
     ssh_keys_dir: Path,
@@ -379,8 +428,10 @@ def push_sync(
         logger.warning("source %s: push requested but not cloned yet", source_id)
         return
 
-    callbacks = make_callbacks(ssh_keys_dir, key_id, http_username, http_password)
     repo = _open_repo(local)
+    _auto_commit_sync(repo)
+
+    callbacks = make_callbacks(ssh_keys_dir, key_id, http_username, http_password)
     remote = repo.remotes["origin"]
     refspec = f"refs/heads/{branch}:refs/heads/{branch}"
     remote.push([refspec], callbacks=callbacks)

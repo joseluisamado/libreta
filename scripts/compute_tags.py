@@ -29,7 +29,6 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "backend" / "src"))
 
 from libreta.tagging import (  # noqa: E402
-    MAX_TAGS,
     MIN_TAGS,
     build_corpus_df,
     good_term,
@@ -76,7 +75,10 @@ def main() -> int:
         try:
             post = frontmatter.load(f)
         except Exception as e:  # noqa: BLE001
-            print(f"  warn: failed to parse {f.relative_to(pages_dir)}: {e}", file=sys.stderr)
+            print(
+                f"  warn: failed to parse {f.relative_to(pages_dir)}: {e}",
+                file=sys.stderr,
+            )
             continue
 
         existing = post.metadata.get("tags") or []
