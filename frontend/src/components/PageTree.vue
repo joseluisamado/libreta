@@ -6,14 +6,24 @@
   // ``rootNamespace`` (the top-level path segment, e.g. "devel" or "hardware").
   // It's set by the parent on the second-and-deeper recursions so the colored
   // border rail is consistent across all nested levels of one namespace.
+  //
+  // openState is owned by the root instance and passed down to children so
+  // localStorage is only read/written once per tree, not once per recursive level.
   const props = defineProps<{
     nodes: PageNode[]
     rootNamespace?: string | null
     linkPrefix?: string
     storageKey?: string
+    openState?: Record<string, boolean>
+    onToggle?: (path: string) => void
   }>()
 
   // ----- Open/closed state ---------------------------------------------------
+  // Only the root instance (no openState prop) owns the state and persists it.
+  // Children receive openState + onToggle from the root.
+  //
+  // We store only *open* paths. Default is closed. Closing a folder removes its
+  // key rather than setting it to false, keeping the stored object small.
 
   const STORAGE_KEY = props.storageKey ?? 'libreta:tree-open'
 
@@ -28,26 +38,52 @@
     }
   }
 
-  const openState = ref<Record<string, boolean>>(loadState())
+  const isRoot = props.openState === undefined
+  const ownState = isRoot ? ref<Record<string, boolean>>(loadState()) : null
 
-  watch(
-    openState,
-    (s) => {
-      try {
-        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(s))
-      } catch {
-        /* ignore quota / private mode */
-      }
-    },
-    { deep: true },
-  )
+  if (isRoot && ownState) {
+    watch(
+      ownState,
+      (s) => {
+        try {
+          window.localStorage.setItem(STORAGE_KEY, JSON.stringify(s))
+        } catch {
+          /* ignore quota / private mode */
+        }
+      },
+      { deep: true },
+    )
+  }
+
+  function getState(): Record<string, boolean> {
+    return props.openState ?? ownState?.value ?? {}
+  }
 
   function isOpen(path: string): boolean {
-    return openState.value[path] !== false
+    return getState()[path] !== false
   }
 
   function toggle(path: string): void {
-    openState.value = { ...openState.value, [path]: !isOpen(path) }
+    if (props.onToggle) {
+      props.onToggle(path)
+      return
+    }
+    if (!ownState) return
+    const next = { ...ownState.value }
+    if (isOpen(path)) {
+      next[path] = false  // record the closure
+    } else {
+      delete next[path]   // back to default-open; remove the entry
+    }
+    ownState.value = next
+  }
+
+  function childOpenState(): Record<string, boolean> {
+    return props.openState ?? ownState?.value ?? {}
+  }
+
+  function childOnToggle(): (path: string) => void {
+    return props.onToggle ?? toggle
   }
 
   // ----- Namespace palette ---------------------------------------------------
@@ -135,6 +171,8 @@
         :root-namespace="childRootNamespace(node)"
         :link-prefix="linkPrefix"
         :storage-key="storageKey"
+        :open-state="childOpenState()"
+        :on-toggle="childOnToggle()"
         class="ml-3 border-l-2 pl-2"
         :class="railClass(node)"
       />

@@ -22,8 +22,19 @@ const BASE = '/api/v1'
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const r = await fetch(`${BASE}${path}`, init)
   if (!r.ok) {
-    const body = (await r.json().catch(() => ({}))) as { detail?: string }
-    throw new Error(body.detail ?? `HTTP ${r.status}`)
+    const body = (await r.json().catch(() => ({}))) as { detail?: unknown }
+    const detail = body.detail
+    let message: string
+    if (Array.isArray(detail)) {
+      // Pydantic validation errors: [{loc, msg, ...}, ...]
+      message = detail.map((e: { msg?: string; loc?: unknown[] }) => {
+        const field = Array.isArray(e.loc) ? e.loc.slice(1).join('.') : ''
+        return field ? `${field}: ${e.msg ?? ''}` : (e.msg ?? '')
+      }).join('; ')
+    } else {
+      message = typeof detail === 'string' ? detail : `HTTP ${r.status}`
+    }
+    throw new Error(message)
   }
   return (await r.json()) as T
 }

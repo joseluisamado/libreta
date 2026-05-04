@@ -13,7 +13,9 @@
     remote_url: '',
     branch: 'main',
     ssh_key_id: null,
-    sync_interval_minutes: 15,
+    http_username: null,
+    http_password: null,
+    sync_interval_minutes: 5,
   })
   const sourceError = ref<string | null>(null)
   const sourceAdding = ref(false)
@@ -23,6 +25,10 @@
     const { id, label, remote_url } = sourceForm.value
     if (!id || !label || !remote_url) {
       sourceError.value = 'ID, label and remote URL are required.'
+      return
+    }
+    if (!/^[a-z0-9][a-z0-9_-]*$/.test(id)) {
+      sourceError.value = 'ID must be lowercase letters, numbers, hyphens, or underscores (no spaces).'
       return
     }
     sourceAdding.value = true
@@ -38,7 +44,9 @@
         remote_url: '',
         branch: 'main',
         ssh_key_id: null,
-        sync_interval_minutes: 15,
+        http_username: null,
+        http_password: null,
+        sync_interval_minutes: 5,
       }
     } catch (e) {
       sourceError.value = e instanceof Error ? e.message : String(e)
@@ -121,8 +129,10 @@
               v-model.trim="sourceForm.id"
               type="text"
               placeholder="my-wiki"
+              pattern="^[a-z0-9][a-z0-9_-]*$"
               class="w-full border border-slate-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
             />
+            <p class="text-xs text-slate-400 mt-0.5">Lowercase letters, numbers, hyphens, underscores only.</p>
           </div>
           <div>
             <label class="block text-xs text-slate-500 mb-1">Label</label>
@@ -138,9 +148,10 @@
             <input
               v-model.trim="sourceForm.remote_url"
               type="text"
-              placeholder="git@github.com:you/wiki.git"
+              placeholder="ssh://git@git.example.com:3333/my-org/libreta-data.git"
               class="w-full border border-slate-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
             />
+            <p class="text-xs text-slate-400 mt-0.5">For SSH on a non-standard port use <code class="font-mono">ssh://git@host:PORT/path.git</code></p>
           </div>
           <div>
             <label class="block text-xs text-slate-500 mb-1">Branch</label>
@@ -166,12 +177,35 @@
             <select
               v-model="sourceForm.ssh_key_id"
               class="w-full border border-slate-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white"
+              :disabled="!!(sourceForm.http_username || sourceForm.http_password)"
             >
-              <option :value="null">— none (public repo / SSH agent) —</option>
+              <option :value="null">— none —</option>
               <option v-for="k in store.sshKeys" :key="k.id" :value="k.id">
                 {{ k.label }} ({{ k.fingerprint }})
               </option>
             </select>
+          </div>
+          <div>
+            <label class="block text-xs text-slate-500 mb-1">HTTP username (optional)</label>
+            <input
+              v-model.trim="sourceForm.http_username"
+              type="text"
+              placeholder="git or token username"
+              class="w-full border border-slate-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+              :disabled="!!sourceForm.ssh_key_id"
+              @input="sourceForm.ssh_key_id = null"
+            />
+          </div>
+          <div>
+            <label class="block text-xs text-slate-500 mb-1">HTTP password / token (optional)</label>
+            <input
+              v-model="sourceForm.http_password"
+              type="password"
+              placeholder="password or access token"
+              class="w-full border border-slate-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+              :disabled="!!sourceForm.ssh_key_id"
+              @input="sourceForm.ssh_key_id = null"
+            />
           </div>
         </div>
         <button

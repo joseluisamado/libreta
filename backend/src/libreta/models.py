@@ -15,13 +15,17 @@ class GitSourceCreate(BaseModel):
     remote_url: str = Field(min_length=1)
     branch: str = Field(default="main", min_length=1, max_length=128)
     ssh_key_id: str | None = None
-    sync_interval_minutes: int = Field(default=15, ge=1, le=1440)
+    http_username: str | None = None
+    http_password: str | None = None
+    sync_interval_minutes: int = Field(default=5, ge=1, le=1440)
 
 
 class GitSourceUpdate(BaseModel):
     label: str | None = Field(default=None, min_length=1, max_length=128)
     branch: str | None = Field(default=None, min_length=1, max_length=128)
     ssh_key_id: str | None = None
+    http_username: str | None = None
+    http_password: str | None = None
     sync_interval_minutes: int | None = Field(default=None, ge=1, le=1440)
 
 
@@ -31,6 +35,7 @@ class GitSourceResponse(BaseModel):
     remote_url: str
     branch: str
     ssh_key_id: str | None
+    http_username: str | None
     sync_interval_minutes: int
     local_path: str
     cloned: bool

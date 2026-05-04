@@ -123,31 +123,69 @@ def load_private_key_sync(keys_dir: Path, key_id: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-def make_callbacks(keys_dir: Path, key_id: str | None) -> pygit2.RemoteCallbacks:
-    """Return a RemoteCallbacks that authenticates with the given SSH key."""
+def make_callbacks(
+    keys_dir: Path,
+    key_id: str | None,
+    http_username: str | None = None,
+    http_password: str | None = None,
+) -> pygit2.RemoteCallbacks:
+    """Return a RemoteCallbacks for SSH key or HTTP basic auth."""
+    if http_username and http_password:
+        userpass = pygit2.UserPass(http_username, http_password)
+
+        class _HttpCallbacks(pygit2.RemoteCallbacks):
+            def credentials(
+                self,
+                url: str,
+                username_from_url: str | None,
+                allowed_types: int,
+            ) -> pygit2.UserPass:
+                return userpass
+
+            def certificate_check(
+                self,
+                certificate: object,
+                valid: bool,
+                host: bytes | str,
+            ) -> bool:
+                return True
+
+        return _HttpCallbacks()
+
     if key_id is None:
         return pygit2.RemoteCallbacks()
 
     private_key_pem = load_private_key_sync(keys_dir, key_id)
-    # Derive public key — pygit2 KeypairFromMemory can accept empty pubkey
-    # and libssh2 will derive it from the private key for RSA/Ed25519.
-    keypair = pygit2.KeypairFromMemory(
-        username="git",
-        pubkey="",
-        privkey=private_key_pem,
-        passphrase="",
-    )
 
-    class _Callbacks(pygit2.RemoteCallbacks):
+    import stat as _stat
+    import tempfile
+
+    # Write key to a temp file; pygit2.Keypair requires a file path.
+    # delete=False because the file must outlive this function scope.
+    tmp_fd, tmp_path = tempfile.mkstemp(suffix=".key")
+    with os.fdopen(tmp_fd, "w") as f:
+        f.write(private_key_pem)
+    os.chmod(tmp_path, _stat.S_IRUSR | _stat.S_IWUSR)
+    keypair = pygit2.Keypair("git", None, tmp_path, "")
+
+    class _SshCallbacks(pygit2.RemoteCallbacks):
         def credentials(
             self,
             url: str,
             username_from_url: str | None,
             allowed_types: int,
-        ) -> pygit2.KeypairFromMemory:
+        ) -> pygit2.Keypair:
             return keypair
 
-    return _Callbacks()
+        def certificate_check(
+            self,
+            certificate: object,
+            valid: bool,
+            host: bytes | str,
+        ) -> bool:
+            return True
+
+    return _SshCallbacks()
 
 
 # ---------------------------------------------------------------------------

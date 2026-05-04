@@ -91,6 +91,7 @@ export interface GitSource {
   remote_url: string
   branch: string
   ssh_key_id: string | null
+  http_username: string | null
   sync_interval_minutes: number
   local_path: string
   cloned: boolean
@@ -104,6 +105,8 @@ export interface GitSourceCreate {
   remote_url: string
   branch?: string
   ssh_key_id?: string | null
+  http_username?: string | null
+  http_password?: string | null
   sync_interval_minutes?: number
 }
 
@@ -111,6 +114,8 @@ export interface GitSourceUpdate {
   label?: string
   branch?: string
   ssh_key_id?: string | null
+  http_username?: string | null
+  http_password?: string | null
   sync_interval_minutes?: number
 }
 

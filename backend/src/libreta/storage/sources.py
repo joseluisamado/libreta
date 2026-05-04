@@ -113,6 +113,7 @@ def _entry_to_response(entry: dict[str, Any], repos_dir: Path) -> GitSourceRespo
         remote_url=entry["remote_url"],
         branch=entry.get("branch", "main"),
         ssh_key_id=entry.get("ssh_key_id"),
+        http_username=entry.get("http_username"),
         sync_interval_minutes=entry.get("sync_interval_minutes", 15),
         local_path=str(local),
         cloned=cloned,
@@ -148,6 +149,8 @@ def add_source_sync(
         "remote_url": body.remote_url,
         "branch": body.branch,
         "ssh_key_id": body.ssh_key_id,
+        "http_username": body.http_username,
+        "http_password": body.http_password,
         "sync_interval_minutes": body.sync_interval_minutes,
         "last_synced_at": None,
         "last_sync_error": None,
@@ -182,6 +185,10 @@ def update_source_sync(
         entry["branch"] = body.branch
     if body.ssh_key_id is not None:
         entry["ssh_key_id"] = body.ssh_key_id
+    if body.http_username is not None:
+        entry["http_username"] = body.http_username
+    if body.http_password is not None:
+        entry["http_password"] = body.http_password
     if body.sync_interval_minutes is not None:
         entry["sync_interval_minutes"] = body.sync_interval_minutes
     sources[idx] = entry
@@ -249,12 +256,14 @@ def clone_source_sync(
     remote_url: str = entry["remote_url"]
     branch: str = entry.get("branch", "main")
     key_id: str | None = entry.get("ssh_key_id")
+    http_username: str | None = entry.get("http_username")
+    http_password: str | None = entry.get("http_password")
     local = _local_path(repos_dir, source_id)
 
     if (local / ".git").exists():
         return  # already cloned
 
-    callbacks = make_callbacks(ssh_keys_dir, key_id)
+    callbacks = make_callbacks(ssh_keys_dir, key_id, http_username, http_password)
     try:
         local.mkdir(parents=True, exist_ok=True)
         pygit2.clone_repository(
@@ -285,13 +294,15 @@ def fetch_and_ff_sync(
     source_id: str = entry["id"]
     branch: str = entry.get("branch", "main")
     key_id: str | None = entry.get("ssh_key_id")
+    http_username: str | None = entry.get("http_username")
+    http_password: str | None = entry.get("http_password")
     local = _local_path(repos_dir, source_id)
 
     if not (local / ".git").exists():
         clone_source_sync(repos_dir, ssh_keys_dir, entry)
         return
 
-    callbacks = make_callbacks(ssh_keys_dir, key_id)
+    callbacks = make_callbacks(ssh_keys_dir, key_id, http_username, http_password)
     repo = _open_repo(local)
 
     # Check for uncommitted changes
@@ -360,13 +371,15 @@ def push_sync(
     source_id: str = entry["id"]
     branch: str = entry.get("branch", "main")
     key_id: str | None = entry.get("ssh_key_id")
+    http_username: str | None = entry.get("http_username")
+    http_password: str | None = entry.get("http_password")
     local = _local_path(repos_dir, source_id)
 
     if not (local / ".git").exists():
         logger.warning("source %s: push requested but not cloned yet", source_id)
         return
 
-    callbacks = make_callbacks(ssh_keys_dir, key_id)
+    callbacks = make_callbacks(ssh_keys_dir, key_id, http_username, http_password)
     repo = _open_repo(local)
     remote = repo.remotes["origin"]
     refspec = f"refs/heads/{branch}:refs/heads/{branch}"
