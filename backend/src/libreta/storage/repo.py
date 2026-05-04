@@ -222,39 +222,65 @@ async def get_recent_changes(
     return await asyncio.to_thread(_get_recent_changes_sync, repo, limit)
 
 
-def _affected_paths_for_commit(
-    repo: pygit2.Repository, commit: pygit2.Commit, rel_path: str
-) -> bool:
-    """Return True if *rel_path* was touched in *commit*."""
-    if commit.parents:
-        parent = commit.parents[0]
-        diff = parent.tree.diff_to_tree(commit.tree, context_lines=0)
-        for patch in diff:
-            if patch is None:
-                continue
-            if patch.delta.old_file.path == rel_path:
-                return True
-            if patch.delta.new_file.path == rel_path:
-                return True
-    else:
-        # Root commit — check if the file exists in the tree.
-        try:
-            commit.tree[rel_path]
-            return True
-        except KeyError:
-            return False
-    return False
+def _legacy_index_paths(rel_path: str) -> list[str]:
+    """Return alternative ``index.md`` paths that may hold the same page.
+
+    ``pages/foo/bar.md``  →  ``pages/foo/bar/index.md``
+    ``pages/foo.md``       →  ``pages/foo/index.md``
+    """
+    if not rel_path.startswith("pages/") or not rel_path.endswith(".md"):
+        return []
+    stem = rel_path.removesuffix(".md")
+    return [f"{stem}/index.md"]
 
 
 def _get_file_history_sync(repo: pygit2.Repository, rel_path: str) -> list[HistoryEntry]:
+    """Walk commits touching *rel_path*, following renames transitively."""
     try:
         head = repo.head
     except (pygit2.GitError, KeyError):
         return []
 
+    # Maintain a set of paths that identify the same logical file across
+    # renames.  Seed with the current path and the pre-sidecar index.md form.
+    candidates: set[str] = {rel_path}
+    for lp in _legacy_index_paths(rel_path):
+        candidates.add(lp)
+
     entries: list[HistoryEntry] = []
     for commit in repo.walk(head.target, pygit2.enums.SortMode.TIME):
-        if _affected_paths_for_commit(repo, commit, rel_path):
+        matched = False
+
+        if commit.parents:
+            parent = commit.parents[0]
+            diff = parent.tree.diff_to_tree(commit.tree)
+            diff.find_similar()  # detect renames (delete+add → rename)
+            for patch in diff:
+                if patch is None:
+                    continue
+                old_p = patch.delta.old_file.path
+                new_p = patch.delta.new_file.path
+
+                if old_p in candidates or new_p in candidates:
+                    matched = True
+                    # Follow renames: if a candidate was renamed *from* an
+                    # older path, add the old name to candidates so we keep
+                    # seeing older commits.
+                    if new_p in candidates and old_p != new_p:
+                        candidates.add(old_p)
+                        for lp in _legacy_index_paths(old_p):
+                            candidates.add(lp)
+        else:
+            # Root commit — check if any candidate exists in the tree.
+            for c in list(candidates):
+                try:
+                    commit.tree[c]
+                    matched = True
+                    break
+                except KeyError:
+                    pass
+
+        if matched:
             entries.append(
                 HistoryEntry(
                     sha=str(commit.id)[:7],
@@ -288,10 +314,18 @@ def _resolve_commit(repo: pygit2.Repository, sha: str) -> pygit2.Commit:
 
 
 def _blob_text_at(commit: pygit2.Commit, rel_path: str) -> str | None:
-    """Return file contents at *rel_path* in *commit*, or None if absent."""
-    try:
-        entry = commit.tree[rel_path]
-    except KeyError:
+    """Return file contents at *rel_path* in *commit*, or None if absent.
+
+    Tries the current path and legacy ``index.md`` forms.
+    """
+    to_try = [rel_path] + _legacy_index_paths(rel_path)
+    for p in to_try:
+        try:
+            entry = commit.tree[p]
+            break
+        except KeyError:
+            continue
+    else:
         return None
     blob = entry.peel(pygit2.Blob)
     if not isinstance(blob, pygit2.Blob):
