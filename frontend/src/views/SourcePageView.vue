@@ -148,11 +148,13 @@
     }
   }
 
-  const bodyHasMatchingH1 = computed(() => {
+  // Render the frontmatter title as <h1> only when the body has no H1 of
+  // its own. If the markdown begins with `# Heading`, that *is* the page
+  // title — surfacing meta.title above it would just duplicate the header.
+  const bodyHasH1 = computed(() => {
     if (!page.value) return false
     const firstLine = page.value.body.trimStart().split('\n', 1)[0] ?? ''
-    if (!firstLine.startsWith('# ')) return false
-    return firstLine.slice(2).trim() === page.value.meta.title
+    return firstLine.startsWith('# ')
   })
 
   const html = computed(() => {
@@ -240,7 +242,7 @@
       >
         <Breadcrumbs :path="page.path" :source-id="sourceId" />
       </header>
-      <h1 v-if="!bodyHasMatchingH1" class="text-3xl font-bold">{{ page.meta.title }}</h1>
+      <h1 v-if="!bodyHasH1" class="text-3xl font-bold">{{ page.meta.title }}</h1>
       <div v-if="mode === 'rendered' && page.body" ref="contentEl" class="prose" v-html="html" />
       <pre
         v-else-if="mode === 'source'"
