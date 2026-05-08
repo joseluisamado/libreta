@@ -73,37 +73,78 @@
     watchedStore.loadFolders()
   })
 
-  // Periodic refresh of the sources list. The `pending_count` field changes
+  // Adaptive poll for the sources list. The `pending_count` field changes
   // independently of any user action — the background push worker drains it
-  // every few seconds, and external git activity (other clients) can move
-  // it too. Polling /sources is cheap (one small JSON response) and is the
-  // simplest way to keep the amber/green dot honest without a websocket.
-  // Pause when the tab is hidden so we don't burn API calls in background
-  // tabs.
+  // ~1 s after each commit, and external git activity (other clients) can
+  // move it too. We use two cadences so the dot feels live during a push
+  // without hammering the API at rest:
+  //
+  //   - Any source has pending commits → poll every 3 s. Catches the
+  //     post-push transition to 0 within ~3 s of the worker finishing.
+  //   - All sources are clean         → poll every 30 s. Catches external
+  //     pushes from other clients, drift, etc., without burning API calls.
+  //
+  // Tab-hidden visits don't fire (re-checked inside the tick). Tab refocus
+  // forces an immediate refresh so the dot doesn't lag a poll interval.
+  const FAST_POLL_MS = 3000
+  const SLOW_POLL_MS = 30000
   let pollHandle: number | null = null
-  function startPoll(): void {
-    if (pollHandle !== null) return
-    pollHandle = window.setInterval(() => {
-      if (document.visibilityState !== 'visible') return
-      sourcesStore.loadSources()
-    }, 15000)
+  let currentInterval = SLOW_POLL_MS
+
+  function shouldPollFast(): boolean {
+    return sourcesStore.sources.some((s) => s.pending_count > 0)
   }
+
+  function scheduleNextPoll(): void {
+    if (pollHandle !== null) {
+      window.clearTimeout(pollHandle)
+    }
+    currentInterval = shouldPollFast() ? FAST_POLL_MS : SLOW_POLL_MS
+    pollHandle = window.setTimeout(async () => {
+      if (document.visibilityState === 'visible') {
+        await sourcesStore.loadSources()
+      }
+      scheduleNextPoll()
+    }, currentInterval)
+  }
+
+  function startPoll(): void {
+    if (pollHandle === null) scheduleNextPoll()
+  }
+
   function stopPoll(): void {
     if (pollHandle !== null) {
-      window.clearInterval(pollHandle)
+      window.clearTimeout(pollHandle)
       pollHandle = null
     }
   }
   onMounted(() => {
     startPoll()
-    document.addEventListener('visibilitychange', () => {
+    document.addEventListener('visibilitychange', async () => {
       if (document.visibilityState === 'visible') {
         // Refresh immediately on tab refocus so the dot doesn't lag a poll
-        // interval after the user comes back.
-        sourcesStore.loadSources()
+        // interval after the user comes back, and reschedule the next tick
+        // since the cadence may need to flip (e.g. visited a stale tab,
+        // pending count is now > 0).
+        await sourcesStore.loadSources()
+        scheduleNextPoll()
       }
     })
   })
+
+  // When something other than the poll itself triggers a sources refresh
+  // (post-save, manual sync, tab refocus), the appropriate cadence may
+  // have flipped — e.g. a save just bumped a clean source to pending=1.
+  // Re-evaluate after every store update.
+  watch(
+    () => sourcesStore.sources.map((s) => s.pending_count).join(','),
+    (now, prev) => {
+      if (now === prev) return
+      const wantFast = shouldPollFast()
+      const inFast = currentInterval === FAST_POLL_MS
+      if (wantFast !== inFast) scheduleNextPoll()
+    },
+  )
   onBeforeUnmount(stopPoll)
 
   // Auto-close drawer on navigation (mobile UX)

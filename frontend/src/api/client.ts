@@ -246,7 +246,16 @@ export function deleteSshKey(keyId: string): Promise<void> {
 // ---- Git sources API ----------------------------------------------------
 
 export function getSources(): Promise<GitSource[]> {
-  return request<GitSource[]>('/sources')
+  // The sidebar polls this endpoint to keep the per-source pending-count
+  // dot honest. Some browsers (notably Safari) return a 200 from the
+  // back/forward cache or the disk cache for plain GETs that look
+  // idempotent; that makes the dot stick on a stale value even though
+  // the backend has long since moved on. A timestamp cache-buster plus
+  // `Cache-Control: no-store` defeats both layers.
+  const t = Date.now()
+  return request<GitSource[]>(`/sources?_t=${t}`, {
+    headers: { 'Cache-Control': 'no-store' },
+  })
 }
 
 export function addSource(data: GitSourceCreate): Promise<GitSource> {

@@ -54,7 +54,11 @@ export const useSourcesStore = defineStore('sources', {
     async loadSources(): Promise<void> {
       this.error = null
       try {
-        this.sources = await getSources()
+        const fresh = await getSources()
+        // Always assign a brand-new array so Vue treats the reference as
+        // changed even if the new payload happens to be deep-equal to the
+        // current one (e.g. only the pending_count field flipped).
+        this.sources = fresh.map((s) => ({ ...s }))
         this.loaded = true
       } catch (e) {
         this.error = e instanceof Error ? e.message : String(e)

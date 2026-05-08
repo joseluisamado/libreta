@@ -252,7 +252,7 @@ Concrete numbers in one place so callers don't have to read the source:
 | Push retry on failure | 5 s, then 10 s, then 20 s | Exponential backoff. After three failed attempts the error is recorded in `sources.json` and shown in the Admin UI / sidebar. |
 | Periodic pull check | Every 60 s (loop tick) | Each source is then pulled if `now >= last_synced_at + sync_interval_minutes`. |
 | Per-source pull interval | `sync_interval_minutes`, default **15 min** | Configurable per source in the Admin UI. |
-| Frontend `/sources` poll | 15 s | Drives the sidebar's status dot and `↑N` indicator. Paused while the tab is hidden; refreshed immediately on tab refocus and after every successful page save. |
+| Frontend `/sources` poll | 3 s when any source is pending, else 30 s | Drives the sidebar's status dot and `↑N` indicator. Adaptive: tightens during a push window so the indicator drains within ~3 s of the worker finishing, and relaxes at rest so we don't hammer the API. Paused while the tab is hidden; forced immediately on tab refocus and after every successful page save. |
 
 ### Pending-changes indicator
 
