@@ -242,6 +242,28 @@ A **background push worker** (asyncio task) drains a queue of pending pushes. Ev
 
 A **periodic sync loop** (asyncio task) checks every 60 seconds which sources are due for a pull (based on their `sync_interval_minutes`). It runs a `fetch` + `fast-forward` for each due source. If the working tree has local changes that would conflict, the sync is skipped with a warning.
 
+### Cadence summary
+
+Concrete numbers in one place so callers don't have to read the source:
+
+| Event | Cadence | Notes |
+| --- | --- | --- |
+| Push after local commit | Immediate | `enqueue_push(source_id)` runs synchronously after every page or asset commit. The worker dequeues and pushes within ~1 s in the happy path. |
+| Push retry on failure | 5 s, then 10 s, then 20 s | Exponential backoff. After three failed attempts the error is recorded in `sources.json` and shown in the Admin UI / sidebar. |
+| Periodic pull check | Every 60 s (loop tick) | Each source is then pulled if `now >= last_synced_at + sync_interval_minutes`. |
+| Per-source pull interval | `sync_interval_minutes`, default **15 min** | Configurable per source in the Admin UI. |
+| Frontend `/sources` poll | 15 s | Drives the sidebar's status dot and `↑N` indicator. Paused while the tab is hidden; refreshed immediately on tab refocus and after every successful page save. |
+
+### Pending-changes indicator
+
+`GitSourceResponse.pending_count` reports how many local commits are ahead of `origin/<branch>` (computed via `pygit2.Repository.ahead_behind` on every `/sources` GET — cheap, no caching). The frontend uses this to color the per-source status dot:
+
+- **green** — clean, no local changes ahead.
+- **amber** — `pending_count > 0`. The sidebar also renders a `↑N` button next to the source label that opens a small popover listing the changed pages, grouped by page path with the underlying commits underneath.
+- **red** — last push attempt failed (`last_sync_error` is set).
+
+The popover is backed by `GET /api/v1/sources/{id}/pending`, which returns each pending commit's sha, message, author, timestamp, and the `.md` page paths it touched.
+
 ### Write path (per-page save)
 
 1. Validate the incoming markdown (parses cleanly, frontmatter valid).
@@ -327,6 +349,7 @@ Diagrams travel through the **same** asset routes — a `.drawio.svg` is just an
 | PUT    | `/sources/{id}`                        | Update label, branch, SSH key, or sync interval                   |
 | DELETE | `/sources/{id}`                        | Remove source from config (local clone not deleted)               |
 | POST   | `/sources/{id}/sync`                   | Trigger an immediate fetch+fast-forward for a source              |
+| GET    | `/sources/{id}/pending`                | List local commits ahead of `origin/<branch>` (each with sha, message, author, timestamp, and the `.md` paths it touched). Drives the sidebar's `↑N` popover. |
 | GET    | `/sources/{id}/tree`                   | Page tree for a specific source                                   |
 | GET    | `/sources/{id}/pages/{path:path}`      | Read a page from a source                                         |
 | PUT    | `/sources/{id}/pages/{path:path}`      | Write a page (commits locally + enqueues push)                    |

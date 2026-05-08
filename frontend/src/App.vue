@@ -73,6 +73,39 @@
     watchedStore.loadFolders()
   })
 
+  // Periodic refresh of the sources list. The `pending_count` field changes
+  // independently of any user action — the background push worker drains it
+  // every few seconds, and external git activity (other clients) can move
+  // it too. Polling /sources is cheap (one small JSON response) and is the
+  // simplest way to keep the amber/green dot honest without a websocket.
+  // Pause when the tab is hidden so we don't burn API calls in background
+  // tabs.
+  let pollHandle: number | null = null
+  function startPoll(): void {
+    if (pollHandle !== null) return
+    pollHandle = window.setInterval(() => {
+      if (document.visibilityState !== 'visible') return
+      sourcesStore.loadSources()
+    }, 15000)
+  }
+  function stopPoll(): void {
+    if (pollHandle !== null) {
+      window.clearInterval(pollHandle)
+      pollHandle = null
+    }
+  }
+  onMounted(() => {
+    startPoll()
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        // Refresh immediately on tab refocus so the dot doesn't lag a poll
+        // interval after the user comes back.
+        sourcesStore.loadSources()
+      }
+    })
+  })
+  onBeforeUnmount(stopPoll)
+
   // Auto-close drawer on navigation (mobile UX)
   watch(
     () => route.fullPath,

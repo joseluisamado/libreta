@@ -76,6 +76,10 @@
     editorRef.value?.openInsertDiagram()
   }
 
+  function onDiagramSaved(): void {
+    isDirty.value = true
+  }
+
   async function save(): Promise<void> {
     saving.value = true
     saveError.value = null
@@ -83,6 +87,14 @@
       const md = mode.value === 'source' ? sourceText.value : editorRef.value?.getMarkdown()
       if (md === undefined) {
         throw new Error('Editor is not ready')
+      }
+      // no-op save: the body hasn't changed (e.g. only a diagram
+      // was re-saved, which committed itself via the asset endpoint).
+      // Skip the page write so we don't pile on an empty markdown commit.
+      if (page.value && md === page.value.body) {
+        isDirty.value = false
+        router.push(readPagePath.value)
+        return
       }
       await savePage(path.value, { body: md })
       router.push(readPagePath.value)
@@ -177,6 +189,7 @@
             :content="sourceText"
             :path="page.path"
             @update="onUpdate"
+            @diagram-saved="onDiagramSaved"
             class="px-8 py-6"
           />
         </template>

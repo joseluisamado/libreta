@@ -19,6 +19,7 @@ from libreta.models import (
     PageNode,
     PageRead,
     PageWrite,
+    PendingCommit,
     SshKeyCreate,
     SshKeyResponse,
 )
@@ -164,6 +165,27 @@ async def trigger_sync(
 # ---------------------------------------------------------------------------
 # Page tree + read/write for a source
 # ---------------------------------------------------------------------------
+
+
+@router.get("/{source_id}/pending", response_model=list[PendingCommit])
+async def get_pending(
+    source_id: str,
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> list[PendingCommit]:
+    """List local commits not yet pushed to origin for *source_id*.
+
+    Each entry includes the changed page paths so the UI can show a
+    "modified pages" list without needing a second round-trip per commit.
+    """
+    sources = await src_store.load_sources(settings.content_dir)
+    entry = next((s for s in sources if s["id"] == source_id), None)
+    if entry is None:
+        from libreta.errors import GitSourceNotFoundError
+
+        raise GitSourceNotFoundError(source_id)
+    branch = entry.get("branch", "main")
+    raw = await src_store.list_pending(settings.repos_dir, source_id, branch)
+    return [PendingCommit(**r) for r in raw]
 
 
 @router.get("/{source_id}/tree", response_model=list[PageNode])

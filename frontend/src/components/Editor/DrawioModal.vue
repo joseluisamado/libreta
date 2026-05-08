@@ -98,10 +98,10 @@
 
 <template>
   <div
-    class="fixed inset-0 z-50 flex items-stretch justify-center bg-black/40 p-4"
+    class="fixed inset-0 z-50 flex items-stretch justify-center bg-black/40 p-2"
     @click="onBackdropClick"
   >
-    <div class="relative flex h-full w-full max-w-7xl flex-col rounded-lg bg-white shadow-xl">
+    <div class="relative flex h-full w-full flex-col rounded-lg bg-white shadow-xl">
       <div class="flex items-center justify-between border-b border-slate-200 px-3 py-2">
         <span class="text-sm font-medium text-slate-700">Edit diagram</span>
         <button

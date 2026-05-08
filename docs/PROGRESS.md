@@ -14,6 +14,20 @@ Living document. Update as work progresses. Latest at the top.
 
 ---
 
+## 2026-05-08 — Pending-changes indicator (M4 follow-up)
+
+**What changed**: The sidebar now shows when local commits haven't been pushed to the remote yet. Each git source's status dot turns amber on `pending_count > 0`; an `↑N` button next to the source label opens a popover listing the changed pages (grouped by path with the underlying commits underneath).
+
+**How it works**:
+- **Backend**: `GitSourceResponse` gained a `pending_count` field, computed via `pygit2.Repository.ahead_behind(HEAD, refs/remotes/origin/<branch>)` on each `/sources` GET. New `GET /api/v1/sources/{id}/pending` returns the detailed commit list (sha, message, author, timestamp, changed `.md` paths) — used by the popover only, so the per-list overhead stays minimal.
+- **Frontend**: `App.vue` polls `/sources` every 15 s while the tab is visible, refreshes immediately on tab refocus, and the editor calls `loadSources()` after each successful save so the `↑N` reflects the new commit without waiting for the next tick. New `PendingChangesPopover.vue` component rendered inline beneath the source label when expanded.
+
+**Docs**: ARCHITECTURE.md gained a "Cadence summary" table (push: immediate; push retry: 5/10/20s; periodic pull check: 60s; per-source pull: 15min default; frontend poll: 15s) plus a "Pending-changes indicator" subsection. The git-sources API table now lists the new `/pending` endpoint.
+
+**Pre-flight**: backend mypy clean, pytest 95/95. Frontend vue-tsc clean, vitest 65/65.
+
+---
+
 ## 2026-05-08 — M4: Diagrams.net integration
 
 **What changed**: Diagrams.net editing is wired end-to-end. New diagrams come in through the toolbar's "Insert diagram" button; existing `.drawio.svg` images are reopened by double-clicking them in the editor. Diagrams travel with the content repo as a single `.drawio.svg` file per diagram, stored page-locally next to images.

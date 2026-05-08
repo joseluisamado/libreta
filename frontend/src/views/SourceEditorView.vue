@@ -6,6 +6,9 @@
   import { useViewMode } from '@/composables/useViewMode'
   import Editor from '@/components/Editor/Editor.vue'
   import EditorToolbar from '@/components/Editor/EditorToolbar.vue'
+  import { useSourcesStore } from '@/stores/sources'
+
+  const sourcesStore = useSourcesStore()
 
   const route = useRoute()
   const router = useRouter()
@@ -69,6 +72,10 @@
     editorRef.value?.openInsertDiagram()
   }
 
+  function onDiagramSaved(): void {
+    isDirty.value = true
+  }
+
   async function save(): Promise<void> {
     saving.value = true
     saveError.value = null
@@ -77,7 +84,21 @@
       if (md === undefined) {
         throw new Error('Editor is not ready')
       }
+      // no-op save: the body hasn't changed (e.g. only a diagram
+      // was re-saved, which committed itself via the asset endpoint).
+      // Skip the page write so we don't pile on an empty markdown commit.
+      if (page.value && md === page.value.body) {
+        isDirty.value = false
+        // The diagram-save path committed an asset; refresh the sources
+        // list so the sidebar's pending count reflects that new commit.
+        void sourcesStore.loadSources()
+        router.push(readPagePath.value)
+        return
+      }
       await saveSourcePage(sourceId.value, path.value, { body: md })
+      // Refresh the sources list so the sidebar's pending count picks up
+      // the new commit immediately rather than waiting for the next poll.
+      void sourcesStore.loadSources()
       router.push(readPagePath.value)
     } catch (e) {
       saveError.value = e instanceof Error ? e.message : String(e)
@@ -170,6 +191,7 @@
             :source-id="sourceId"
             class="px-8 py-6"
             @update="onUpdate"
+            @diagram-saved="onDiagramSaved"
           />
         </template>
         <textarea

@@ -97,6 +97,19 @@ export interface GitSource {
   cloned: boolean
   last_synced_at: string | null
   last_sync_error: string | null
+  // Number of local commits ahead of origin/<branch>. The sidebar dot turns
+  // amber when this is > 0; clicking the source's "↑N" link fetches the
+  // detailed PendingCommit list.
+  pending_count: number
+}
+
+export interface PendingCommit {
+  sha: string
+  message: string
+  author: string
+  timestamp: string
+  // .md page paths (no .md suffix) touched by the commit.
+  paths: string[]
 }
 
 export interface GitSourceCreate {

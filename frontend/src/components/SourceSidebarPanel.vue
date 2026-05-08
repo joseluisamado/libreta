@@ -1,8 +1,10 @@
 <script setup lang="ts">
-  import { ref, watch } from 'vue'
+  import { computed, ref, watch } from 'vue'
   import { useSourcesStore } from '@/stores/sources'
   import PageTree from '@/components/PageTree.vue'
-  import type { GitSource, PageNode } from '@/api/types'
+  import PendingChangesPopover from '@/components/PendingChangesPopover.vue'
+  import type { GitSource, PageNode, PendingCommit } from '@/api/types'
+  import { getPendingCommits } from '@/api/client'
 
   const props = defineProps<{ source: GitSource }>()
 
@@ -105,15 +107,43 @@
 
   function statusDot(src: GitSource): string {
     if (!src.cloned) return 'bg-slate-300'
-    if (src.last_sync_error) return 'bg-amber-400'
+    if (src.last_sync_error) return 'bg-red-500'
+    if (src.pending_count > 0) return 'bg-amber-400'
     return 'bg-emerald-400'
   }
 
   function statusTitle(src: GitSource): string {
     if (!src.cloned) return 'Not cloned yet'
     if (src.last_sync_error) return `Sync error: ${src.last_sync_error}`
+    if (src.pending_count > 0) {
+      return `${src.pending_count} local commit(s) not yet pushed`
+    }
     if (src.last_synced_at) return `Last synced: ${new Date(src.last_synced_at).toLocaleString()}`
     return 'Never synced'
+  }
+
+  // Pending-changes popover
+  const pendingOpen = ref(false)
+  const pendingCommits = ref<PendingCommit[]>([])
+  const pendingLoading = ref(false)
+  const pendingError = ref<string | null>(null)
+  const hasPending = computed(() => props.source.pending_count > 0)
+
+  async function togglePendingPopover(): Promise<void> {
+    if (pendingOpen.value) {
+      pendingOpen.value = false
+      return
+    }
+    pendingOpen.value = true
+    pendingLoading.value = true
+    pendingError.value = null
+    try {
+      pendingCommits.value = await getPendingCommits(props.source.id)
+    } catch (e) {
+      pendingError.value = e instanceof Error ? e.message : String(e)
+    } finally {
+      pendingLoading.value = false
+    }
   }
 </script>
 
@@ -151,6 +181,17 @@
         @click="expanded = !expanded"
       >
         {{ source.label }}
+      </button>
+
+      <!-- Pending-changes link: only shown when local is ahead of remote. -->
+      <button
+        v-if="hasPending"
+        type="button"
+        class="shrink-0 text-[11px] font-medium px-1.5 py-0.5 rounded text-amber-700 bg-amber-100 hover:bg-amber-200 whitespace-nowrap"
+        :title="`${source.pending_count} unpushed commit(s) — click to view`"
+        @click.prevent="togglePendingPopover"
+      >
+        ↑{{ source.pending_count }}
       </button>
 
       <!-- Inline sync status -->
@@ -194,6 +235,16 @@
         </svg>
       </button>
     </div>
+
+    <!-- Pending-changes popover -->
+    <PendingChangesPopover
+      v-if="pendingOpen"
+      :source-id="source.id"
+      :commits="pendingCommits"
+      :loading="pendingLoading"
+      :error="pendingError"
+      @close="pendingOpen = false"
+    />
 
     <!-- Tree -->
     <PageTree

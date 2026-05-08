@@ -32,6 +32,7 @@
 
   const emit = defineEmits<{
     update: [markdown: string]
+    'diagram-saved': []
   }>()
 
   const hasBeenSet = ref(false)
@@ -101,10 +102,14 @@
     ],
     content: props.content,
     editorProps: {
-      handleDoubleClickOn: (_view, _pos, node): boolean => {
+      handleDoubleClickOn: (_view, _pos, node, _nodePos, event): boolean => {
         if (node.type.name !== 'image') return false
         const src = String((node.attrs as { src?: unknown }).src ?? '')
         if (!isDrawioSrc(src)) return false
+        // Stop the browser's native double-click word/element selection so
+        // the rendered SVG doesn't keep a highlight after the modal closes.
+        event.preventDefault()
+        window.getSelection()?.removeAllRanges()
         void openExistingDiagram(src)
         return true
       },
@@ -421,6 +426,11 @@
 
       if (editingSrc) {
         bustImgCache(editingSrc)
+        // The markdown didn't change (the file's bytes were replaced in
+        // place at the same path), so onUpdate won't fire and the parent's
+        // dirty flag won't flip on its own. Tell the parent explicitly so
+        // the Save button activates.
+        emit('diagram-saved')
       } else if (href) {
         // Don't call focus() here: Tiptap's focus dispatches a selection
         // transaction which fans out to onUpdate → parent → props.content →
@@ -450,6 +460,9 @@
 
   function onDiagramCancel(): void {
     drawioOpen.value = false
+    // Clear any DOM selection that may have been left over from the
+    // double-click that opened the editor.
+    window.getSelection()?.removeAllRanges()
   }
 
   function getMarkdown(): string {

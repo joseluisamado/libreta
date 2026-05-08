@@ -106,6 +106,28 @@ def _local_path(repos_dir: Path, source_id: str) -> Path:
     return repos_dir / source_id
 
 
+def _pending_count_sync(local: Path, branch: str) -> int:
+    """How many local commits are ahead of ``origin/<branch>``.
+
+    Returns 0 when not cloned, when the remote-tracking ref is missing, or
+    when local matches remote. Errors are swallowed (treated as 0) — this is
+    a best-effort UI hint, not a correctness gate.
+    """
+    if not (local / ".git").exists():
+        return 0
+    try:
+        repo = _open_repo(local)
+        head = repo.head.target
+        remote_ref = f"refs/remotes/origin/{branch}"
+        if remote_ref not in repo.references:
+            return 0
+        remote_oid = repo.references[remote_ref].target
+        ahead, _behind = repo.ahead_behind(head, remote_oid)
+    except (pygit2.GitError, KeyError, ValueError):
+        return 0
+    return int(ahead)
+
+
 def _entry_to_response(entry: dict[str, Any], repos_dir: Path) -> GitSourceResponse:
     local = _local_path(repos_dir, entry["id"])
     cloned = (local / ".git").exists()
@@ -114,11 +136,12 @@ def _entry_to_response(entry: dict[str, Any], repos_dir: Path) -> GitSourceRespo
     if raw_ts:
         with contextlib.suppress(ValueError):
             last_sync = datetime.fromisoformat(str(raw_ts))
+    branch = entry.get("branch", "main")
     return GitSourceResponse(
         id=entry["id"],
         label=entry["label"],
         remote_url=entry["remote_url"],
-        branch=entry.get("branch", "main"),
+        branch=branch,
         ssh_key_id=entry.get("ssh_key_id"),
         http_username=entry.get("http_username"),
         sync_interval_minutes=entry.get("sync_interval_minutes", 15),
@@ -126,6 +149,7 @@ def _entry_to_response(entry: dict[str, Any], repos_dir: Path) -> GitSourceRespo
         cloned=cloned,
         last_synced_at=last_sync,
         last_sync_error=entry.get("last_sync_error"),
+        pending_count=_pending_count_sync(local, branch),
     )
 
 
@@ -444,6 +468,70 @@ async def push_source(
     entry: dict[str, Any],
 ) -> None:
     await asyncio.to_thread(push_sync, repos_dir, ssh_keys_dir, entry)
+
+
+# ---------------------------------------------------------------------------
+# "Pending push" inspection
+# ---------------------------------------------------------------------------
+
+
+def _changed_md_paths(commit: pygit2.Commit, parent: pygit2.Commit | None) -> list[str]:
+    """Return the .md page paths touched by *commit* relative to *parent*.
+
+    For a root commit (no parent), every file in the tree counts as added.
+    Non-markdown changes (assets, .gitkeep, etc.) are filtered — the popup
+    shows "changed pages," not raw file paths.
+    """
+    diff = (
+        commit.tree.diff_to_tree(parent.tree, swap=True)
+        if parent is not None
+        else commit.tree.diff_to_tree(swap=True)
+    )
+    out: set[str] = set()
+    for delta in diff.deltas:
+        for path in (delta.new_file.path, delta.old_file.path):
+            if path and path.endswith(".md"):
+                # Pages live as `<path>.md`; the wiki addresses them without
+                # the .md suffix and without any leading directory wrapping.
+                out.add(path[:-3])
+    return sorted(out)
+
+
+def list_pending_sync(repos_dir: Path, source_id: str, branch: str) -> list[dict[str, Any]]:
+    local = _local_path(repos_dir, source_id)
+    if not (local / ".git").exists():
+        return []
+    try:
+        repo = _open_repo(local)
+    except pygit2.GitError:
+        return []
+    head = repo.head.target
+    remote_ref = f"refs/remotes/origin/{branch}"
+    stop_at: str | None = None
+    if remote_ref in repo.references:
+        stop_at = str(repo.references[remote_ref].target)
+
+    out: list[dict[str, Any]] = []
+    for commit in repo.walk(head, pygit2.enums.SortMode.TOPOLOGICAL):
+        if stop_at is not None and str(commit.id) == stop_at:
+            break
+        parent = commit.parents[0] if commit.parents else None
+        out.append(
+            {
+                "sha": str(commit.id)[:7],
+                "message": commit.message.splitlines()[0] if commit.message else "",
+                "author": commit.author.name,
+                "timestamp": datetime.fromtimestamp(commit.commit_time, tz=UTC),
+                "paths": _changed_md_paths(commit, parent),
+            }
+        )
+    return out
+
+
+async def list_pending(
+    repos_dir: Path, source_id: str, branch: str
+) -> list[dict[str, Any]]:
+    return await asyncio.to_thread(list_pending_sync, repos_dir, source_id, branch)
 
 
 # ---------------------------------------------------------------------------

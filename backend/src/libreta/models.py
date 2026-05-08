@@ -41,6 +41,20 @@ class GitSourceResponse(BaseModel):
     cloned: bool
     last_synced_at: datetime | None
     last_sync_error: str | None
+    # Number of local commits ahead of origin/<branch>. Populated by the
+    # backend on every list/get; the SPA flips the source's status dot to
+    # amber when this is > 0.
+    pending_count: int = 0
+
+
+class PendingCommit(BaseModel):
+    sha: str
+    message: str
+    author: str
+    timestamp: datetime
+    # `.md` page paths (no `.md` suffix) touched by the commit. Empty when
+    # the commit only changed non-page files (assets, .gitkeep, etc.).
+    paths: list[str]
 
 
 class SshKeyCreate(BaseModel):

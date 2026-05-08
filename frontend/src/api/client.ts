@@ -9,6 +9,7 @@ import type {
   PageNode,
   PageRead,
   PageWrite,
+  PendingCommit,
   RecentChange,
   SearchResult,
   SshKey,
@@ -270,6 +271,10 @@ export function deleteSource(id: string): Promise<void> {
 
 export function triggerSync(id: string): Promise<GitSource> {
   return request<GitSource>(`/sources/${id}/sync`, { method: 'POST' })
+}
+
+export function getPendingCommits(id: string): Promise<PendingCommit[]> {
+  return request<PendingCommit[]>(`/sources/${id}/pending`)
 }
 
 export function getSourceTree(id: string): Promise<PageNode[]> {
