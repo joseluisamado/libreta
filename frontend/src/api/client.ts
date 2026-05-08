@@ -118,6 +118,53 @@ export async function uploadSourceAsset(
   return (await r.json()) as AssetUploadResponse
 }
 
+export async function upsertAsset(
+  pagePath: string,
+  filename: string,
+  data: Blob,
+  contentType: string,
+): Promise<AssetUploadResponse> {
+  const fd = new FormData()
+  fd.append('file', new File([data], filename, { type: contentType }), filename)
+  const r = await fetch(`${BASE}/pages/${enc(pagePath)}/assets/${encodeURIComponent(filename)}`, {
+    method: 'PUT',
+    body: fd,
+  })
+  if (!r.ok) {
+    const body = (await r.json().catch(() => ({}))) as { detail?: string }
+    throw new Error(body.detail ?? `HTTP ${r.status}`)
+  }
+  return (await r.json()) as AssetUploadResponse
+}
+
+export async function upsertSourceAsset(
+  sourceId: string,
+  pagePath: string,
+  filename: string,
+  data: Blob,
+  contentType: string,
+): Promise<AssetUploadResponse> {
+  const fd = new FormData()
+  fd.append('file', new File([data], filename, { type: contentType }), filename)
+  const r = await fetch(
+    `${BASE}/sources/${sourceId}/pages/${enc(pagePath)}/assets/${encodeURIComponent(filename)}`,
+    { method: 'PUT', body: fd },
+  )
+  if (!r.ok) {
+    const body = (await r.json().catch(() => ({}))) as { detail?: string }
+    throw new Error(body.detail ?? `HTTP ${r.status}`)
+  }
+  return (await r.json()) as AssetUploadResponse
+}
+
+export interface ClientConfig {
+  drawio_url: string
+}
+
+export function getClientConfig(): Promise<ClientConfig> {
+  return request<ClientConfig>('/config')
+}
+
 export function searchPages(q: string, limit = 20): Promise<SearchResult[]> {
   const qs = new URLSearchParams({ q, limit: String(limit) }).toString()
   return request<SearchResult[]>(`/search?${qs}`)

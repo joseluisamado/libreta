@@ -180,7 +180,9 @@ def _walk_watched_tree_sync(
             else:
                 children = build(sub_dir, child_url, depth + 1) if sub_dir else []
                 if md_file:
-                    title = _read_title_only(md_file, name.replace("-", " ").replace("_", " ").title())
+                    title = _read_title_only(
+                        md_file, name.replace("-", " ").replace("_", " ").title()
+                    )
                     nodes.append(
                         PageNode(
                             path=child_url,

@@ -21,4 +21,8 @@ class Settings(BaseSettings):
     # Sources config file, relative to content_dir (reuses the .meta convention).
     sources_config: str = ".meta/sources.json"
 
-    drawio_url: str = "http://drawio:8080"
+    # Browser-facing URL for the drawio embed iframe. Must resolve in the
+    # *user's browser*, not the api container — the iframe is loaded by the
+    # SPA, not proxied through the api. Default matches the published host
+    # port in docker-compose.yml.
+    drawio_url: str = "http://localhost:8093"

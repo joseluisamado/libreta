@@ -8,9 +8,30 @@ Living document. Update as work progresses. Latest at the top.
 
 ## Status
 
-**Current milestone**: M3.5 — complete ✅
-**Next milestone**: M4 — Diagrams.net integration
-**Next action**: Start M4 — `DrawioImage` Tiptap extension, postMessage protocol, toolbar button.
+**Current milestone**: M4 — Diagrams.net integration ✅
+**Next milestone**: M5 — v1.0 release
+**Next action**: Manual end-to-end smoke test of the diagram editor in the browser, then start M5 (production compose example with Caddy + TLS, backup/restore docs).
+
+---
+
+## 2026-05-08 — M4: Diagrams.net integration
+
+**What changed**: Diagrams.net editing is wired end-to-end. New diagrams come in through the toolbar's "Insert diagram" button; existing `.drawio.svg` images are reopened by double-clicking them in the editor. Diagrams travel with the content repo as a single `.drawio.svg` file per diagram, stored page-locally next to images.
+
+**How it works**:
+- **Backend**: new `GET /api/v1/config` returns `{drawio_url}` so the SPA learns where the iframe lives without baking it into the bundle. New `PUT /api/v1/pages/{path}/assets/{filename}` (and the source variant) replaces the bytes of an existing sidecar asset in place — used by the diagram editor on re-save so the markdown's image reference doesn't need to change. Backed by a new `replace_asset` storage helper that mirrors `store_asset` but skips the auto-uniquify step.
+- **Frontend — modal**: `DrawioModal.vue` mounts an iframe at `<drawio_url>/?embed=1&proto=json&spin=1&saveAndExit=1&ui=atlas`, implements the documented postMessage protocol (`init` → `load`, `save` → `export xmlsvg`, `export` → resolve SVG data URI, `exit` → close).
+- **Frontend — editor**: `PageScopedImage` flags any `src` matching `/\.drawio\.svg$/i` with `data-drawio-src` and a "double-click to edit" tooltip. `editorProps.handleDoubleClickOn` intercepts double-clicks on these nodes and reopens the modal with the existing XML extracted from the SVG's `content="…"` attribute. New diagrams get a generated `diagram-YYYYMMDD-HHMMSS.drawio.svg` filename via `POST /assets`; re-saves go to `PUT /assets/{filename}` so the document keeps the same `![](…)` reference.
+- **View mode**: no changes needed — `.drawio.svg` is just an SVG, and `markdown.ts`'s existing image rule routes the relative ref through `/api/v1/assets/...`. Browsers render it inline; double-click affordance is editor-only.
+- **R5/offline**: drawio container is the existing `jgraph/drawio:latest` already in `docker-compose.yml`; default URL `http://drawio:8080` keeps everything on the internal network. `LIBRETA_DRAWIO_URL` env var lets a deploy point at the public embed if they explicitly want to (documented opt-out).
+
+**Docs**: ARCHITECTURE.md "Assets" table updated to reflect the unified asset routes (the previously-speculative `/diagrams` endpoint is gone — diagrams use the same routes as any other asset). New "Client config" section. "Diagrams.net integration → Edit flow" rewritten to match the actual postMessage exchange.
+
+**Hardening during smoke-testing**: live testing surfaced a "Applying a mismatched transaction" RangeError from ProseMirror when inserting a saved diagram. Root cause: `editor.commands.focus()` synchronously dispatched a selection transaction whose `onUpdate` re-emitted to the parent, which re-bound `props.content`, which entered the watcher's `setContent` — racing with the `insertContent` transaction still being applied. Fix: drop the explicit `focus()`, gate `onUpdate` and the `props.content` watcher with an `internalUpdateInFlight` flag during the insertContent + post-tick window, and emit a single coalesced `update` after the doc settles. The `LIBRETA_DRAWIO_URL` default also moved from the container-internal `http://drawio:8080` to the host-facing `http://localhost:8093` since the iframe is loaded by the user's browser, not proxied through the api.
+
+**`libreta gc` (bonus)**: shipped the orphan-asset CLI tool that was on the "anytime" backlog. Diagram saves can leave files on disk if the editor's insert step fails, so a cleanup affordance was overdue. `libreta gc --source <id>` lists; `--delete` removes and commits one batch per page. New module `storage/gc.py` plus 8 unit tests.
+
+**Pre-flight**: backend mypy clean (27 files), pytest 95/95 (8 new gc tests). Frontend vue-tsc clean, vitest 65/65, eslint 0 errors (6 pre-existing v-html warnings).
 
 ---
 

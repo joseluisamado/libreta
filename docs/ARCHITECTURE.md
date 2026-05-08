@@ -305,17 +305,18 @@ All routes prefixed with `/api/v1`. JSON throughout. OpenAPI at `/api/v1/docs`.
 
 | Method | Path                              | Description                                                                                                                                                                                          |
 | ------ | --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| POST   | `/pages/{path:path}/assets`       | Upload an attachment (multipart `file`). Writes to the owning page's directory and commits. Returns `{ filename, size, sha256, kind }` — `filename` is the relative ref to embed in markdown. |
-| GET    | `/assets/{path:path}`             | Serve asset file (path is into the content tree, e.g. `pages/recipes/pizza-dough.jpg`).                                                                                                              |
-| DELETE | `/assets/{path:path}`             | Remove asset (deferred; not in M3 scope).                                                                                                                                                            |
+| POST   | `/pages/{path:path}/assets`              | Upload an attachment (multipart `file`). Auto-uniquifies the filename inside the owning page's sidecar dir and commits. Returns `{ filename, size, sha256, kind }` — `filename` is the relative ref to embed in markdown. |
+| PUT    | `/pages/{path:path}/assets/{filename}`   | Replace the bytes of an existing sidecar asset (used by the diagram editor when re-saving an `.drawio.svg`). Same response shape; `deduped: true` when content unchanged.                                                |
+| GET    | `/assets/{path:path}`                    | Serve asset file (path is into the content tree, e.g. `pages/recipes/pizza-dough.jpg`).                                                                                                                                  |
+| DELETE | `/assets/{path:path}`                    | Remove asset (deferred; not in M3 scope).                                                                                                                                                                                |
 
-### Diagrams
+Diagrams travel through the **same** asset routes — a `.drawio.svg` is just an SVG file with embedded mxfile XML. POST creates, PUT-by-filename overwrites. There is no separate `/diagrams` endpoint.
 
-| Method | Path                              | Description                                                                                                                                            |
-| ------ | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| POST   | `/pages/{path:path}/diagrams`     | Save a new diagram (multipart `.drawio.svg`) into the owning page's directory. Returns `{ filename, size }`.                                          |
-| PUT    | `/pages/{path:path}/diagrams/{filename}` | Update an existing diagram in the page's directory.                                                                                          |
-| GET    | `/assets/{path:path}`             | Fetch diagram (same route as ordinary assets — `.drawio.svg` is just an SVG file).                                                                    |
+### Client config
+
+| Method | Path        | Description                                                                                  |
+| ------ | ----------- | -------------------------------------------------------------------------------------------- |
+| GET    | `/config`   | Returns runtime configuration the SPA needs at boot. Currently `{ drawio_url }`.             |
 
 ### Git Sources
 
@@ -452,16 +453,17 @@ The editor recognizes the `.drawio.svg` suffix and switches the rendered image i
 
 ### Edit flow
 
-1. User clicks an existing diagram or "Insert Diagram" in the toolbar.
-2. The editor opens a modal containing an iframe pointing to `http://drawio:8080/?embed=1&proto=json&spin=1&saveAndExit=1`.
-3. The drawio iframe sends `init` via postMessage; we reply with `load` carrying the existing XML (or empty string for new diagrams).
-4. User edits, clicks Save.
-5. Drawio replies with `save` — payload is the SVG with embedded XML.
-6. We POST the SVG to `/api/v1/pages/{owning-page}/diagrams` (or PUT to the same path with the existing filename if updating).
-7. The api commits the asset into the page's directory and returns the relative filename.
-8. The editor inserts/updates the image node referencing the new filename (relative ref).
+1. User clicks "Insert diagram" in the toolbar (new) or **double-clicks** an existing `.drawio.svg` image (edit).
+2. The SPA opens a modal containing an iframe pointing to `<drawio_url>/?embed=1&proto=json&spin=1&saveAndExit=1&ui=atlas`. The `drawio_url` is read from `GET /api/v1/config` at editor mount time, so the host is configurable per deploy.
+3. The drawio iframe sends `init` via `postMessage`; the SPA replies with `{action:'load', xml}` — `xml` is empty for a new diagram or the mxfile string extracted from the existing SVG's `content="…"` attribute.
+4. User edits and presses Save. Drawio sends `{event:'save'}`; the SPA responds with `{action:'export', format:'xmlsvg'}` to request an SVG that embeds the editable XML.
+5. Drawio replies with `{event:'export', data:<dataURI>}`; the SPA decodes the base64 SVG payload.
+6. The SPA writes the SVG via the existing asset routes:
+   - **New diagram** → `POST /api/v1/pages/{path}/assets` (or the source variant) with a generated `diagram-YYYYMMDD-HHMMSS.drawio.svg` filename. The backend auto-uniquifies, commits, and returns the relative filename.
+   - **Re-save** → `PUT /api/v1/pages/{path}/assets/{filename}` (or the source variant) — replaces the existing file's bytes in place, keeping the same path embedded in the markdown so the document doesn't need rewriting.
+7. The editor inserts a new image node (new diagram) or refreshes the cached image (re-save).
 
-The drawio container is configured for offline operation — no external resources fetched.
+The drawio container runs `jgraph/drawio:latest` and publishes its embed UI on a host port (8093 by default). Because the iframe is loaded by the user's browser — not proxied through the api container — `LIBRETA_DRAWIO_URL` must be a **browser-reachable** URL (e.g. `http://localhost:8093` for local dev, or `https://draw.example.com` behind a reverse proxy in production). Pointing it at `https://embed.diagrams.net` is supported but disables offline operation (R5) and is documented as opt-in only.
 
 ### Why not Mermaid only?
 

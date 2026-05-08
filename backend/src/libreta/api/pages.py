@@ -14,7 +14,7 @@ from libreta.models import (
     PageWrite,
     RecentChange,
 )
-from libreta.storage.assets import store_asset
+from libreta.storage.assets import replace_asset, store_asset
 from libreta.storage.pages import (
     delete_page as delete_page_storage,
     move_page as move_page_storage,
@@ -109,6 +109,34 @@ async def upload_asset(
     if not result.deduped:
         repo = open_repo(settings.content_dir)
         await commit_page(repo, result.rel_path, "attach")
+    return AssetUploadResponse(
+        filename=result.filename,
+        size=result.size,
+        sha256=result.sha256,
+        kind=result.kind,
+        deduped=result.deduped,
+    )
+
+
+# NOTE: /{path:path}/assets/{filename} (PUT) must come before /{path:path}.
+# Used by the diagram editor: a re-saved diagram replaces the bytes of an
+# existing sidecar file rather than creating a new one with a uniquified name.
+@router.put("/{path:path}/assets/{filename}", response_model=AssetUploadResponse)
+async def upsert_asset(
+    path: str,
+    filename: str,
+    file: UploadFile,
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> AssetUploadResponse:
+    data = await file.read()
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="file too large")
+    if not data:
+        raise HTTPException(status_code=400, detail="empty upload")
+    result = await replace_asset(settings.content_dir, path, filename, data, file.content_type)
+    if not result.deduped:
+        repo = open_repo(settings.content_dir)
+        await commit_page(repo, result.rel_path, "update")
     return AssetUploadResponse(
         filename=result.filename,
         size=result.size,

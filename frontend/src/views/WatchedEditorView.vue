@@ -65,6 +65,10 @@
     void files
   }
 
+  function onInsertDiagram(): void {
+    editorRef.value?.openInsertDiagram()
+  }
+
   async function save(): Promise<void> {
     saving.value = true
     saveError.value = null
@@ -153,7 +157,11 @@
       </p>
       <template v-else-if="page">
         <template v-if="mode === 'rendered'">
-          <EditorToolbar :editor="editorRef?.editor ?? null" @upload-files="onUploadFiles" />
+          <EditorToolbar
+            :editor="editorRef?.editor ?? null"
+            @upload-files="onUploadFiles"
+            @insert-diagram="onInsertDiagram"
+          />
           <Editor
             ref="editorRef"
             :key="editorKey"

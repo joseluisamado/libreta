@@ -128,6 +128,10 @@ class HealthResponse(BaseModel):
     status: str
 
 
+class ClientConfig(BaseModel):
+    drawio_url: str
+
+
 class InfoResponse(BaseModel):
     name: str
     version: str

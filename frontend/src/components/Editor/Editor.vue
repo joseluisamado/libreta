@@ -1,5 +1,5 @@
 <script setup lang="ts">
-  import { watch, ref, computed, onBeforeUnmount, onMounted } from 'vue'
+  import { watch, ref, computed, nextTick, onBeforeUnmount, onMounted } from 'vue'
   import { useEditor, EditorContent } from '@tiptap/vue-3'
   import StarterKit from '@tiptap/starter-kit'
   import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight'
@@ -12,10 +12,17 @@
   import { mergeAttributes } from '@tiptap/core'
   import { Markdown } from 'tiptap-markdown'
   import 'highlight.js/styles/github.css'
-  import { uploadAsset, uploadSourceAsset } from '@/api/client'
+  import {
+    getClientConfig,
+    uploadAsset,
+    uploadSourceAsset,
+    upsertAsset,
+    upsertSourceAsset,
+  } from '@/api/client'
   import { resolveAssetUrl } from '@/markdown'
   import type { Editor as TiptapEditor } from '@tiptap/core'
   import { getMarkdownFromStorage } from '@/markdownStorage'
+  import DrawioModal from './DrawioModal.vue'
 
   const props = defineProps<{
     content: string
@@ -28,16 +35,31 @@
   }>()
 
   const hasBeenSet = ref(false)
+  // True while the editor is mutating its own doc programmatically (e.g.
+  // inserting a saved diagram). The props.content watcher and onUpdate must
+  // not fire while this is set — the parent re-binds props.content in
+  // response to onUpdate, which would re-enter the editor with a stale
+  // setContent and produce "Applying a mismatched transaction".
+  const internalUpdateInFlight = ref(false)
 
   // The Image extension stores the raw filename in `src` (`![](photo.jpg)` →
   // src="photo.jpg") so markdown round-trips byte-identically. For the editor
   // preview only, we rewrite to the asset API URL so the browser actually
   // loads the bytes.
+  function isDrawioSrc(src: string): boolean {
+    return /\.drawio\.svg(?:[?#]|$)/i.test(src)
+  }
+
   const PageScopedImage = Image.extend({
     renderHTML({ HTMLAttributes }) {
       const src = String(HTMLAttributes.src ?? '')
       const display = resolveAssetUrl(src, props.path, props.sourceId)
-      return ['img', mergeAttributes(this.options.HTMLAttributes, HTMLAttributes, { src: display })]
+      const extra: Record<string, string> = { src: display }
+      if (isDrawioSrc(src)) {
+        extra['data-drawio-src'] = src
+        extra['title'] = 'Double-click to edit diagram'
+      }
+      return ['img', mergeAttributes(this.options.HTMLAttributes, HTMLAttributes, extra)]
     },
   })
 
@@ -79,6 +101,13 @@
     ],
     content: props.content,
     editorProps: {
+      handleDoubleClickOn: (_view, _pos, node): boolean => {
+        if (node.type.name !== 'image') return false
+        const src = String((node.attrs as { src?: unknown }).src ?? '')
+        if (!isDrawioSrc(src)) return false
+        void openExistingDiagram(src)
+        return true
+      },
       handlePaste: (_view, event): boolean => {
         const items = Array.from(event.clipboardData?.items ?? [])
         const files = items
@@ -94,6 +123,11 @@
     onUpdate: () => {
       if (!hasBeenSet.value) return
       if (!editor.value || editor.value.isDestroyed) return
+      // Suppress while we're applying a diagram-save mutation. The parent's
+      // update handler re-binds props.content, which lands back in our
+      // props.content watcher and dispatches setContent — racing with the
+      // insertContent transaction we're still in the middle of applying.
+      if (internalUpdateInFlight.value) return
       const md = getMarkdownFromStorage(editor.value)
       if (md) {
         emit('update', md)
@@ -101,11 +135,18 @@
     },
   })
 
-  // Watch for page navigation: load new content without marking dirty
+  // Watch for page navigation: load new content without marking dirty.
+  // Skip when the incoming content matches the editor's current markdown —
+  // the parent re-emits `props.content` after every onUpdate; calling
+  // setContent on an already-equal doc jumps the caret to the start and can
+  // race with in-flight transactions.
   watch(
     () => props.content,
     (newContent) => {
       if (!editor.value || editor.value.isDestroyed) return
+      if (internalUpdateInFlight.value) return
+      const current = getMarkdownFromStorage(editor.value)
+      if (current === newContent) return
       hasBeenSet.value = false
       editor.value.commands.setContent(newContent)
       // Mark as set after a tick so that onUpdate does not fire for the initial load
@@ -245,6 +286,172 @@
     }
   }
 
+  // ── diagrams.net integration ──────────────────────────────────────────
+  const drawioUrl = ref<string | null>(null)
+  const drawioOpen = ref(false)
+  const drawioInitialXml = ref<string>('')
+  // The src as it appears in markdown (e.g. ".page.md/diagram.drawio.svg").
+  // null when inserting a new diagram.
+  const drawioEditingSrc = ref<string | null>(null)
+
+  void getClientConfig()
+    .then((cfg) => {
+      drawioUrl.value = cfg.drawio_url
+    })
+    .catch(() => {
+      drawioUrl.value = null
+    })
+
+  function newDiagramFilename(): string {
+    const ts = new Date()
+    const pad = (n: number): string => String(n).padStart(2, '0')
+    const stamp =
+      `${ts.getFullYear()}${pad(ts.getMonth() + 1)}${pad(ts.getDate())}` +
+      `-${pad(ts.getHours())}${pad(ts.getMinutes())}${pad(ts.getSeconds())}`
+    return `diagram-${stamp}.drawio.svg`
+  }
+
+  function basenameFromSrc(src: string): string {
+    const clean = src.split('?')[0]?.split('#')[0] ?? src
+    const parts = clean.split('/')
+    return parts[parts.length - 1] ?? clean
+  }
+
+  function extractEditableXml(svgText: string): string {
+    // drawio's xmlsvg export stores the editable graph in the root <svg>'s
+    // `content` attribute (mxfile XML). If that's missing, drawio can still
+    // open the SVG and recover something, so falling back to '' is safe.
+    const m = svgText.match(/<svg[^>]*\scontent="([^"]*)"/i)
+    if (!m || !m[1]) return ''
+    const decoded = m[1]
+      .replace(/&quot;/g, '"')
+      .replace(/&apos;/g, "'")
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&amp;/g, '&')
+    return decoded
+  }
+
+  function openInsertDiagram(): void {
+    if (!drawioUrl.value) {
+      uploadError.value = 'Diagram editor URL not configured'
+      return
+    }
+    drawioEditingSrc.value = null
+    drawioInitialXml.value = ''
+    drawioOpen.value = true
+  }
+
+  async function openExistingDiagram(markdownSrc: string): Promise<void> {
+    if (!drawioUrl.value) return
+    const url = resolveAssetUrl(markdownSrc, props.path, props.sourceId)
+    try {
+      const r = await fetch(url)
+      if (!r.ok) throw new Error(`HTTP ${r.status}`)
+      const svg = await r.text()
+      drawioInitialXml.value = extractEditableXml(svg)
+      drawioEditingSrc.value = markdownSrc
+      drawioOpen.value = true
+    } catch (e) {
+      uploadError.value = `Could not load diagram: ${e instanceof Error ? e.message : String(e)}`
+    }
+  }
+
+  function bustImgCache(markdownSrc: string): void {
+    // The doc's image src is unchanged (we replaced the file bytes in place),
+    // so ProseMirror won't re-render the <img>. Tell the browser to refetch
+    // by appending a cache-busting query to the rendered <img>'s src — the
+    // canonical src on the prosemirror node is left alone so the markdown
+    // round-trip stays byte-identical.
+    const root = editorRoot.value
+    if (!root) return
+    const resolved = resolveAssetUrl(markdownSrc, props.path, props.sourceId)
+    const imgs = root.querySelectorAll<HTMLImageElement>('img')
+    imgs.forEach((img) => {
+      // Compare the path part — `img.src` is absolute, `resolved` may be
+      // relative depending on the dev/prod base URL.
+      try {
+        const a = new URL(img.src, window.location.origin)
+        const b = new URL(resolved, window.location.origin)
+        if (a.pathname === b.pathname) {
+          img.src = `${b.pathname}?v=${Date.now()}`
+        }
+      } catch {
+        // ignore malformed URLs
+      }
+    })
+  }
+
+  async function onDiagramSave(svg: string): Promise<void> {
+    uploadError.value = null
+    const blob = new Blob([svg], { type: 'image/svg+xml' })
+    const editingSrc = drawioEditingSrc.value
+    try {
+      // Upload first, while the modal is still open. This avoids racing the
+      // doc mutation against focus restoration and Vue's modal teardown.
+      let href: string | null = null
+      if (editingSrc) {
+        const filename = basenameFromSrc(editingSrc)
+        if (props.sourceId) {
+          await upsertSourceAsset(props.sourceId, props.path, filename, blob, 'image/svg+xml')
+        } else {
+          await upsertAsset(props.path, filename, blob, 'image/svg+xml')
+        }
+      } else {
+        const filename = newDiagramFilename()
+        const file = new File([blob], filename, { type: 'image/svg+xml' })
+        const result = props.sourceId
+          ? await uploadSourceAsset(props.sourceId, props.path, file)
+          : await uploadAsset(props.path, file)
+        href = result.filename.split('/').map(encodeURIComponent).join('/')
+      }
+
+      // Close the modal and let Vue tear it down + return focus to the
+      // editor before we mutate the prosemirror doc. nextTick + a follow-up
+      // microtask flush makes sure the focus-induced selection transaction
+      // has been dispatched before our own runs — otherwise our tx's `before`
+      // doc doesn't match `state.doc` and ProseMirror throws "mismatched
+      // transaction".
+      drawioOpen.value = false
+      await nextTick()
+      await Promise.resolve()
+
+      const ed = editor.value
+      if (!ed || ed.isDestroyed) return
+
+      if (editingSrc) {
+        bustImgCache(editingSrc)
+      } else if (href) {
+        // Don't call focus() here: Tiptap's focus dispatches a selection
+        // transaction which fans out to onUpdate → parent → props.content →
+        // our watcher. That re-entry races with insertContent and trips
+        // "mismatched transaction". The user's pointer is on the page; the
+        // diagram inserts at the cursor and they keep typing if they want.
+        internalUpdateInFlight.value = true
+        try {
+          ed.commands.insertContent({
+            type: 'image',
+            attrs: { src: href, alt: 'diagram' },
+          })
+        } finally {
+          // Emit a single, post-tick update so the parent learns about the
+          // new doc state once, after all transactions have settled.
+          await nextTick()
+          internalUpdateInFlight.value = false
+          const md = getMarkdownFromStorage(ed)
+          if (md) emit('update', md)
+        }
+      }
+    } catch (e) {
+      drawioOpen.value = false
+      uploadError.value = e instanceof Error ? e.message : String(e)
+    }
+  }
+
+  function onDiagramCancel(): void {
+    drawioOpen.value = false
+  }
+
   function getMarkdown(): string {
     if (!editor.value || editor.value.isDestroyed) return props.content
     return getMarkdownFromStorage(editor.value) || props.content
@@ -252,7 +459,12 @@
 
   const editorInstance = computed(() => editor.value ?? null)
 
-  defineExpose({ getMarkdown, editor: editorInstance, uploadAndInsert })
+  defineExpose({
+    getMarkdown,
+    editor: editorInstance,
+    uploadAndInsert,
+    openInsertDiagram,
+  })
 </script>
 
 <template>
@@ -278,6 +490,13 @@
       Upload failed: {{ uploadError }}
     </p>
     <EditorContent :editor="editor" />
+    <DrawioModal
+      v-if="drawioOpen && drawioUrl"
+      :drawio-url="drawioUrl"
+      :initial-xml="drawioInitialXml"
+      @save="onDiagramSave"
+      @cancel="onDiagramCancel"
+    />
   </div>
 </template>
 

@@ -24,7 +24,7 @@ from libreta.models import (
 )
 from libreta.services.sync import enqueue_push
 from libreta.storage import sources as src_store, ssh as ssh_store
-from libreta.storage.assets import store_asset
+from libreta.storage.assets import replace_asset, store_asset
 from libreta.storage.repo import _delete_commit_sync, _move_commit_sync, commit_page, open_repo
 from libreta.storage.sources import _commit_sync
 
@@ -172,9 +172,7 @@ async def get_source_tree(
     settings: Annotated[Settings, Depends(get_settings)],
     depth: int = 2,
 ) -> list[PageNode]:
-    return await src_store.walk_source_tree(
-        settings.repos_dir, source_id, max_depth=depth
-    )
+    return await src_store.walk_source_tree(settings.repos_dir, source_id, max_depth=depth)
 
 
 @router.get("/{source_id}/children/{path:path}", response_model=list[PageNode])
@@ -183,9 +181,7 @@ async def get_source_children(
     path: str,
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> list[PageNode]:
-    return await src_store.walk_source_children(
-        settings.repos_dir, source_id, path
-    )
+    return await src_store.walk_source_children(settings.repos_dir, source_id, path)
 
 
 @router.get("/{source_id}/pages/{path:path}", response_model=PageRead)
@@ -245,6 +241,39 @@ async def upload_source_asset(
     if not result.deduped:
         repo = open_repo(local)
         await commit_page(repo, result.rel_path, "attach")
+        background.add_task(enqueue_push, source_id)
+    return AssetUploadResponse(
+        filename=result.filename,
+        size=result.size,
+        sha256=result.sha256,
+        kind=result.kind,
+        deduped=result.deduped,
+    )
+
+
+@router.put(
+    "/{source_id}/pages/{path:path}/assets/{filename}",
+    response_model=AssetUploadResponse,
+)
+async def upsert_source_asset(
+    source_id: str,
+    path: str,
+    filename: str,
+    file: UploadFile,
+    background: BackgroundTasks,
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> AssetUploadResponse:
+    """Replace the bytes of an existing sidecar asset (used by diagram saves)."""
+    data = await file.read()
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="file too large")
+    if not data:
+        raise HTTPException(status_code=400, detail="empty upload")
+    local = (settings.repos_dir / source_id).resolve()
+    result = await replace_asset(local, path, filename, data, file.content_type)
+    if not result.deduped:
+        repo = open_repo(local)
+        await commit_page(repo, result.rel_path, "update")
         background.add_task(enqueue_push, source_id)
     return AssetUploadResponse(
         filename=result.filename,

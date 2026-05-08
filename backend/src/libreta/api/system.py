@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends
 from libreta import __version__
 from libreta.config import Settings
 from libreta.deps import get_settings
-from libreta.models import HealthResponse, InfoResponse
+from libreta.models import ClientConfig, HealthResponse, InfoResponse
 
 router = APIRouter()
 
@@ -19,6 +19,11 @@ async def healthz() -> HealthResponse:
 async def readyz(settings: Annotated[Settings, Depends(get_settings)]) -> HealthResponse:
     ready = settings.content_dir.exists()
     return HealthResponse(status="ready" if ready else "not-ready")
+
+
+@router.get("/config", response_model=ClientConfig)
+async def client_config(settings: Annotated[Settings, Depends(get_settings)]) -> ClientConfig:
+    return ClientConfig(drawio_url=settings.drawio_url)
 
 
 @router.get("/info", response_model=InfoResponse)

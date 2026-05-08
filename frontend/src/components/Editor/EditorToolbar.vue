@@ -8,6 +8,7 @@
 
   const emit = defineEmits<{
     'upload-files': [files: File[]]
+    'insert-diagram': []
   }>()
 
   const imageInput = ref<HTMLInputElement | null>(null)
@@ -282,6 +283,33 @@
       @change="onImagePicked"
     />
     <input ref="fileInput" type="file" multiple class="hidden" @change="onFilePicked" />
+
+    <button
+      type="button"
+      class="p-1.5 rounded hover:bg-slate-100 text-slate-600"
+      title="Insert diagram"
+      @click="emit('insert-diagram')"
+    >
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        class="w-4 h-4"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      >
+        <rect x="3" y="3" width="7" height="7" rx="1" />
+        <rect x="14" y="3" width="7" height="7" rx="1" />
+        <rect x="3" y="14" width="7" height="7" rx="1" />
+        <rect x="14" y="14" width="7" height="7" rx="1" />
+        <line x1="10" y1="6.5" x2="14" y2="6.5" />
+        <line x1="6.5" y1="10" x2="6.5" y2="14" />
+        <line x1="17.5" y1="10" x2="17.5" y2="14" />
+        <line x1="10" y1="17.5" x2="14" y2="17.5" />
+      </svg>
+    </button>
 
     <!-- Separator -->
     <span class="w-px h-5 bg-slate-200 mx-1" />

@@ -195,3 +195,60 @@ async def store_asset(
     return await asyncio.to_thread(
         _store_asset_sync, content_dir, raw_page, raw_filename, data, content_type
     )
+
+
+def _replace_asset_sync(
+    content_dir: Path,
+    raw_page: str,
+    raw_filename: str,
+    data: bytes,
+    content_type: str | None,
+) -> UploadResult:
+    """Overwrite (or create) the file at ``<page-sidecar>/<raw_filename>``.
+
+    Unlike ``store_asset`` this does not auto-uniquify the name — the caller is
+    explicitly targeting an existing or chosen filename. Used by the diagram
+    save flow, where a re-saved diagram must replace the bytes of the file
+    whose name is already embedded in the markdown.
+    """
+    directory = page_directory(content_dir, raw_page)
+    name = sanitize_filename(raw_filename)
+    sha = hashlib.sha256(data).hexdigest()
+    sidecar_prefix = f"{directory.name}/"
+
+    directory.mkdir(parents=True, exist_ok=True)
+    target = directory / name
+
+    if target.is_file() and target.read_bytes() == data:
+        rel = str(target.relative_to(content_dir))
+        return UploadResult(
+            filename=sidecar_prefix + name,
+            size=len(data),
+            sha256=sha,
+            kind=_kind_for(content_type, name),
+            rel_path=rel,
+            deduped=True,
+        )
+
+    target.write_bytes(data)
+    rel = str(target.relative_to(content_dir))
+    return UploadResult(
+        filename=sidecar_prefix + name,
+        size=len(data),
+        sha256=sha,
+        kind=_kind_for(content_type, name),
+        rel_path=rel,
+        deduped=False,
+    )
+
+
+async def replace_asset(
+    content_dir: Path,
+    raw_page: str,
+    raw_filename: str,
+    data: bytes,
+    content_type: str | None,
+) -> UploadResult:
+    return await asyncio.to_thread(
+        _replace_asset_sync, content_dir, raw_page, raw_filename, data, content_type
+    )

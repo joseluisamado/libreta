@@ -368,9 +368,7 @@ def deep_fixture(tmp_path: Path) -> Path:
     return root
 
 
-def test_watched_tree_depth_limit(
-    client_with_watchers: TestClient, deep_fixture: Path
-) -> None:
+def test_watched_tree_depth_limit(client_with_watchers: TestClient, deep_fixture: Path) -> None:
     """depth=1 returns root + immediate children; deeper dirs are stubs."""
     client_with_watchers.post(
         "/api/v1/watch/folders",
@@ -403,9 +401,7 @@ def test_watched_tree_depth_limit(
     assert readme["has_more"] is False
 
 
-def test_watched_children_endpoint(
-    client_with_watchers: TestClient, deep_fixture: Path
-) -> None:
+def test_watched_children_endpoint(client_with_watchers: TestClient, deep_fixture: Path) -> None:
     """GET .../children/{path} returns one level of immediate children."""
     client_with_watchers.post(
         "/api/v1/watch/folders",

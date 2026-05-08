@@ -117,15 +117,15 @@ A milestone-based plan, not a calendar. Each milestone is a coherent slice of va
 
 **Goal**: First-class diagrams.net editing, end to end.
 
-- [ ] `jgraph/drawio` container in the Compose stack
-- [ ] Custom `DrawioImage` Tiptap extension (per `ARCHITECTURE.md` "Diagrams.net integration")
-- [ ] "Insert diagram" toolbar button → opens drawio in a modal
-- [ ] postMessage protocol implemented for load/save/exit
-- [ ] Saved diagrams stored as `.drawio.svg` under `assets/diagrams/YYYY/MM/`
-- [ ] Editing an existing diagram (double-click → reopens with current content)
-- [ ] Diagrams render in markdown view as plain images (because they are SVGs)
-- [ ] Diagrams export with the wiki: cloning the content repo elsewhere preserves all editable diagrams
-- [ ] Documentation: how to point Libreta at the public diagrams.net instead of self-hosted (for users who prefer it)
+- [x] `jgraph/drawio` container in the Compose stack
+- [x] Drawio image handling baked into the existing image extension (detects `.drawio.svg`); separate `DrawioImage` extension wasn't necessary
+- [x] "Insert diagram" toolbar button → opens drawio in a modal
+- [x] postMessage protocol implemented for load/save/exit
+- [x] Saved diagrams stored as `.drawio.svg` page-locally (alongside images, per the M3 asset layout — supersedes the original `assets/diagrams/YYYY/MM/` plan)
+- [x] Editing an existing diagram (double-click → reopens with current content)
+- [x] Diagrams render in markdown view as plain images (because they are SVGs)
+- [x] Diagrams export with the wiki: cloning the content repo elsewhere preserves all editable diagrams
+- [x] Documentation: how to point Libreta at the public diagrams.net instead of self-hosted (`LIBRETA_DRAWIO_URL` env var, documented in ARCHITECTURE)
 
 **Exit criteria**: All v1 features from `PROJECT.md` "Goals → Must have (v1.0)" and "Functional requirements" are implemented. Libreta is a viable BookStack/Wiki.js alternative for solo users.
 
@@ -185,9 +185,9 @@ The hardest item, deliberately last. Not real-time CRDT collab — just optimist
 
 A typed extension API for client-side editor extensions and server-side render hooks. **Not a plugin marketplace.** Just a stable surface for power users to add features without forking.
 
-### `libreta gc` — orphan asset cleanup (small, anytime)
+### `libreta gc` — orphan asset cleanup ✅ (2026-05-08)
 
-Not a milestone-sized chunk; tracked here so it isn't forgotten. CLI command (and eventually a UI affordance) that lists asset files in `pages/` whose filenames are not referenced by any sibling `.md` file in the same directory. Optionally deletes them with a commit per page. Follows the policy in `ARCHITECTURE.md` "Asset handling": removing on save is too aggressive; explicit garbage collection is the right model.
+Shipped as part of M4 cleanup. CLI subcommand that lists (and optionally deletes + commits) sidecar assets that no page references. Default is dry-run; `--delete` performs one commit per page covering all orphans. Targets a git source (`--source <id>`), an arbitrary repo (`--repo <path>`), or `LIBRETA_CONTENT_DIR`. UI affordance still TODO.
 
 ### Visual mermaid editor (small, anytime)
 
