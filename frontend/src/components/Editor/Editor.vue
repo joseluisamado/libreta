@@ -164,7 +164,11 @@
 
   function setCodeBlockLang(lang: string): void {
     if (!editor.value || editor.value.isDestroyed) return
-    editor.value.chain().focus().updateAttributes('codeBlock', { language: lang || null }).run()
+    editor.value
+      .chain()
+      .focus()
+      .updateAttributes('codeBlock', { language: lang || null })
+      .run()
   }
 
   const editorRoot = ref<HTMLDivElement | null>(null)

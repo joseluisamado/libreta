@@ -133,9 +133,7 @@
     return firstLine.slice(2).trim() === page.value.meta.title
   })
 
-  const html = computed(() =>
-    page.value ? renderMarkdown(page.value.body, page.value.path) : '',
-  )
+  const html = computed(() => (page.value ? renderMarkdown(page.value.body, page.value.path) : ''))
 
   watch(html, async () => {
     await nextTick()

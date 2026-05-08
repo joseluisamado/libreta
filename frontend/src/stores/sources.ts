@@ -11,7 +11,14 @@ import {
   addSshKey,
   deleteSshKey,
 } from '@/api/client'
-import type { GitSource, GitSourceCreate, GitSourceUpdate, PageNode, SshKey, SshKeyCreate } from '@/api/types'
+import type {
+  GitSource,
+  GitSourceCreate,
+  GitSourceUpdate,
+  PageNode,
+  SshKey,
+  SshKeyCreate,
+} from '@/api/types'
 
 function mergeChildren(nodes: PageNode[], parentPath: string, children: PageNode[]): boolean {
   for (const n of nodes) {

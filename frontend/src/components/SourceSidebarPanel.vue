@@ -33,6 +33,29 @@
     }
   }
 
+  function readOpenPaths(storageKey: string): string[] {
+    try {
+      const raw = window.localStorage.getItem(storageKey)
+      if (!raw) return []
+      const parsed = JSON.parse(raw) as Record<string, boolean>
+      if (typeof parsed !== 'object' || !parsed) return []
+      return Object.entries(parsed)
+        .filter(([, open]) => open !== false)
+        .map(([path]) => path)
+    } catch {
+      return []
+    }
+  }
+
+  function collectFolderPaths(nodes: PageNode[], out: Set<string>): void {
+    for (const n of nodes) {
+      if (n.children.length || n.has_more) {
+        out.add(n.path)
+        if (n.children.length) collectFolderPaths(n.children, out)
+      }
+    }
+  }
+
   async function handleSync(): Promise<void> {
     syncing.value = true
     syncMessage.value = null
@@ -42,6 +65,30 @@
       await store.loadSources()
       if (expanded.value) {
         await store.loadTree(props.source.id)
+        // The tree endpoint is shallow (depth=2). Folders the user had
+        // expanded beyond that depth, or whose contents changed in the sync,
+        // would otherwise show stale data until manually re-toggled — the
+        // open-state is persisted in localStorage so no expand event fires.
+        // Refetch children for every currently-open folder so new files added
+        // upstream actually appear.
+        const openPathSet = new Set(readOpenPaths(`libreta:tree-source-${props.source.id}`))
+        // Walk from shallow to deep: fetching a parent's children may reveal
+        // grandchild folders that the user also had open, which then need
+        // their own refetch. Sort by path depth so parents resolve first.
+        const fetched = new Set<string>()
+        let pass = 0
+        while (pass++ < 10) {
+          const tree = store.trees[props.source.id]
+          if (!tree) break
+          const folders = new Set<string>()
+          collectFolderPaths(tree, folders)
+          const todo = [...openPathSet]
+            .filter((p) => folders.has(p) && !fetched.has(p))
+            .sort((a, b) => a.split('/').length - b.split('/').length)
+          if (todo.length === 0) break
+          for (const p of todo) fetched.add(p)
+          await Promise.all(todo.map((p) => store.loadTreeChildren(props.source.id, p)))
+        }
       }
       if (props.source.last_sync_error) {
         syncMessage.value = 'Sync failed'
@@ -50,7 +97,9 @@
       }
     } finally {
       syncing.value = false
-      setTimeout(() => { syncMessage.value = null }, 3000)
+      setTimeout(() => {
+        syncMessage.value = null
+      }, 3000)
     }
   }
 

@@ -32,10 +32,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     let message: string
     if (Array.isArray(detail)) {
       // Pydantic validation errors: [{loc, msg, ...}, ...]
-      message = detail.map((e: { msg?: string; loc?: unknown[] }) => {
-        const field = Array.isArray(e.loc) ? e.loc.slice(1).join('.') : ''
-        return field ? `${field}: ${e.msg ?? ''}` : (e.msg ?? '')
-      }).join('; ')
+      message = detail
+        .map((e: { msg?: string; loc?: unknown[] }) => {
+          const field = Array.isArray(e.loc) ? e.loc.slice(1).join('.') : ''
+          return field ? `${field}: ${e.msg ?? ''}` : (e.msg ?? '')
+        })
+        .join('; ')
     } else {
       message = typeof detail === 'string' ? detail : `HTTP ${r.status}`
     }

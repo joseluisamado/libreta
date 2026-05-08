@@ -159,16 +159,12 @@ function isAbsolute(url: string): boolean {
   return /^([a-z][a-z0-9+.-]*:)?\/\//i.test(url) || url.startsWith('/') || url.startsWith('data:')
 }
 
-export function resolveAssetUrl(
-  src: string,
-  pagePath: string,
-  sourceId?: string,
-): string {
+export function resolveAssetUrl(src: string, pagePath: string, sourceId?: string): string {
   if (isAbsolute(src) || src.startsWith('#')) return src
   // References include the sidecar prefix (e.g. ".saml.md/photo.png").
   // Resolve relative to the page's parent directory.
   const parts = pagePath.split('/').filter(Boolean)
-  const base = parts.slice(0, -1)  // parent directory
+  const base = parts.slice(0, -1) // parent directory
   const segments = src.split('/')
   const out = [...base]
   for (const s of segments) {
@@ -315,11 +311,7 @@ function patchRenderer(): void {
 
 patchRenderer()
 
-export function renderMarkdown(
-  source: string,
-  pagePath = '',
-  sourceId?: string,
-): string {
+export function renderMarkdown(source: string, pagePath = '', sourceId?: string): string {
   return md.render(source, { pagePath, sourceId })
 }
 

@@ -30,7 +30,8 @@
       return
     }
     if (!/^[a-z0-9][a-z0-9_-]*$/.test(id)) {
-      sourceError.value = 'ID must be lowercase letters, numbers, hyphens, or underscores (no spaces).'
+      sourceError.value =
+        'ID must be lowercase letters, numbers, hyphens, or underscores (no spaces).'
       return
     }
     sourceAdding.value = true
@@ -168,7 +169,9 @@
               pattern="^[a-z0-9][a-z0-9_-]*$"
               class="w-full border border-slate-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
             />
-            <p class="text-xs text-slate-400 mt-0.5">Lowercase letters, numbers, hyphens, underscores only.</p>
+            <p class="text-xs text-slate-400 mt-0.5">
+              Lowercase letters, numbers, hyphens, underscores only.
+            </p>
           </div>
           <div>
             <label class="block text-xs text-slate-500 mb-1">Label</label>
@@ -187,7 +190,10 @@
               placeholder="ssh://git@git.example.com:3333/my-org/libreta-data.git"
               class="w-full border border-slate-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
             />
-            <p class="text-xs text-slate-400 mt-0.5">For SSH on a non-standard port use <code class="font-mono">ssh://git@host:PORT/path.git</code></p>
+            <p class="text-xs text-slate-400 mt-0.5">
+              For SSH on a non-standard port use
+              <code class="font-mono">ssh://git@host:PORT/path.git</code>
+            </p>
           </div>
           <div>
             <label class="block text-xs text-slate-500 mb-1">Branch</label>
@@ -233,7 +239,9 @@
             />
           </div>
           <div>
-            <label class="block text-xs text-slate-500 mb-1">HTTP password / token (optional)</label>
+            <label class="block text-xs text-slate-500 mb-1"
+              >HTTP password / token (optional)</label
+            >
             <input
               v-model="sourceForm.http_password"
               type="password"
@@ -268,18 +276,19 @@
               <p class="text-xs text-slate-400 mt-0.5">
                 branch: {{ src.branch }} &bull; sync every {{ src.sync_interval_minutes }} min
               </p>
-              <p class="text-xs mt-1" :class="src.last_sync_error ? 'text-amber-600' : 'text-emerald-600'">
-                <template v-if="src.last_sync_error">
-                  Error: {{ src.last_sync_error }}
-                </template>
+              <p
+                class="text-xs mt-1"
+                :class="src.last_sync_error ? 'text-amber-600' : 'text-emerald-600'"
+              >
+                <template v-if="src.last_sync_error"> Error: {{ src.last_sync_error }} </template>
                 <template v-else-if="src.last_synced_at">
                   Synced: {{ new Date(src.last_synced_at).toLocaleString() }}
                 </template>
-                <template v-else>
-                  Not synced yet
-                </template>
+                <template v-else> Not synced yet </template>
               </p>
-              <p v-if="!src.cloned" class="text-xs text-slate-400 mt-0.5 italic">Cloning in progress…</p>
+              <p v-if="!src.cloned" class="text-xs text-slate-400 mt-0.5 italic">
+                Cloning in progress…
+              </p>
             </div>
             <div class="flex gap-2 shrink-0 ml-4">
               <button
@@ -329,7 +338,9 @@
               placeholder="My Notes"
               class="w-full border border-slate-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
             />
-            <p class="text-xs text-slate-400 mt-0.5">Letters, numbers, hyphens, underscores only.</p>
+            <p class="text-xs text-slate-400 mt-0.5">
+              Letters, numbers, hyphens, underscores only.
+            </p>
           </div>
           <div class="col-span-2">
             <label class="block text-xs text-slate-500 mb-1">Path</label>
@@ -360,7 +371,9 @@
         >
           <div>
             <p class="font-medium text-sm">{{ f.label }}</p>
-            <p class="text-xs text-slate-400 mt-0.5 truncate max-w-lg" :title="f.path">{{ f.path }}</p>
+            <p class="text-xs text-slate-400 mt-0.5 truncate max-w-lg" :title="f.path">
+              {{ f.path }}
+            </p>
           </div>
           <button
             type="button"

@@ -188,9 +188,11 @@
         <button
           type="button"
           class="flex-1 text-xs font-medium px-2 py-1.5 rounded-t transition-colors"
-          :class="sidebarTab === 'repos'
-            ? 'text-blue-700 border-b-2 border-blue-600 bg-white'
-            : 'text-slate-500 hover:text-slate-700'"
+          :class="
+            sidebarTab === 'repos'
+              ? 'text-blue-700 border-b-2 border-blue-600 bg-white'
+              : 'text-slate-500 hover:text-slate-700'
+          "
           @click="sidebarTab = 'repos'"
         >
           Repos
@@ -198,9 +200,11 @@
         <button
           type="button"
           class="flex-1 text-xs font-medium px-2 py-1.5 rounded-t transition-colors"
-          :class="sidebarTab === 'watched'
-            ? 'text-blue-700 border-b-2 border-blue-600 bg-white'
-            : 'text-slate-500 hover:text-slate-700'"
+          :class="
+            sidebarTab === 'watched'
+              ? 'text-blue-700 border-b-2 border-blue-600 bg-white'
+              : 'text-slate-500 hover:text-slate-700'
+          "
           @click="sidebarTab = 'watched'"
         >
           Watched
@@ -209,14 +213,13 @@
 
       <!-- Git source panels (one per source, stacked) -->
       <div v-if="sidebarTab === 'repos' && sourcesStore.sources.length" class="mb-2">
-        <SourceSidebarPanel
-          v-for="src in sourcesStore.sources"
-          :key="src.id"
-          :source="src"
-        />
+        <SourceSidebarPanel v-for="src in sourcesStore.sources" :key="src.id" :source="src" />
       </div>
 
-      <p v-if="sidebarTab === 'repos' && sourcesStore.loaded && !sourcesStore.sources.length" class="text-xs text-slate-400 mb-3">
+      <p
+        v-if="sidebarTab === 'repos' && sourcesStore.loaded && !sourcesStore.sources.length"
+        class="text-xs text-slate-400 mb-3"
+      >
         No git sources configured.
         <RouterLink to="/-/admin" class="underline hover:text-blue-600">Add one</RouterLink>
       </p>

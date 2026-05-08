@@ -2,12 +2,9 @@
   import { ref } from 'vue'
   import type { Editor } from '@tiptap/core'
 
-
   const props = defineProps<{
     editor: Editor | null
   }>()
-
-
 
   const emit = defineEmits<{
     'upload-files': [files: File[]]

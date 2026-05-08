@@ -96,7 +96,7 @@
     if (currentlyOpen) {
       next[path] = false
     } else {
-      next[path] = true  // force open (important after lazy load)
+      next[path] = true // force open (important after lazy load)
     }
     ownState.value = next
   }
@@ -107,7 +107,9 @@
 
   function childOnToggle(): (path: string, node?: PageNode) => void {
     const fn = props.onToggle ?? toggle
-    return (p: string, n?: PageNode) => { fn(p, n) }
+    return (p: string, n?: PageNode) => {
+      fn(p, n)
+    }
   }
 
   function childLoadingPaths(): Set<string> | undefined {
@@ -183,14 +185,20 @@
           >
             <path d="M4 2 L8 6 L4 10 Z" />
           </svg>
-          <svg
-            v-else
-            class="w-3 h-3 animate-spin"
-            viewBox="0 0 24 24"
-            fill="none"
-          >
-            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
-            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+          <svg v-else class="w-3 h-3 animate-spin" viewBox="0 0 24 24" fill="none">
+            <circle
+              class="opacity-25"
+              cx="12"
+              cy="12"
+              r="10"
+              stroke="currentColor"
+              stroke-width="4"
+            />
+            <path
+              class="opacity-75"
+              fill="currentColor"
+              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+            />
           </svg>
         </button>
         <span v-else class="shrink-0 w-4 h-4" aria-hidden="true" />

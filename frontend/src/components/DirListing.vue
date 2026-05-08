@@ -1,30 +1,30 @@
 <script setup lang="ts">
-import type { PageNode } from '@/api/types'
+  import type { PageNode } from '@/api/types'
 
-defineProps<{
-  children: PageNode[]
-  basePath: string
-  getChildUrl: (childPath: string) => string
-}>()
+  defineProps<{
+    children: PageNode[]
+    basePath: string
+    getChildUrl: (childPath: string) => string
+  }>()
 
-const emit = defineEmits<{
-  createPage: [name: string]
-  createFolder: [name: string]
-  rename: [childPath: string]
-  delete: [childPath: string]
-}>()
+  const emit = defineEmits<{
+    createPage: [name: string]
+    createFolder: [name: string]
+    rename: [childPath: string]
+    delete: [childPath: string]
+  }>()
 
-function onCreatePage(): void {
-  const name = window.prompt('Page name:')
-  if (!name || !name.trim()) return
-  emit('createPage', name.trim())
-}
+  function onCreatePage(): void {
+    const name = window.prompt('Page name:')
+    if (!name || !name.trim()) return
+    emit('createPage', name.trim())
+  }
 
-function onCreateFolder(): void {
-  const name = window.prompt('Folder name:')
-  if (!name || !name.trim()) return
-  emit('createFolder', name.trim())
-}
+  function onCreateFolder(): void {
+    const name = window.prompt('Folder name:')
+    if (!name || !name.trim()) return
+    emit('createFolder', name.trim())
+  }
 </script>
 
 <template>
@@ -50,11 +50,7 @@ function onCreateFolder(): void {
     </div>
 
     <ul v-if="children.length" class="text-sm space-y-1">
-      <li
-        v-for="child in children"
-        :key="child.path"
-        class="flex items-center gap-1 group"
-      >
+      <li v-for="child in children" :key="child.path" class="flex items-center gap-1 group">
         <RouterLink
           :to="getChildUrl(child.path)"
           class="flex items-center flex-1 min-w-0 text-slate-700 hover:text-blue-600 hover:underline"
