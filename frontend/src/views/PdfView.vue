@@ -104,6 +104,13 @@
   const queued: number[] = []
   const activeTasks: Map<number, { cancel: () => void }> = new Map()
   const activeScales: Map<number, number> = new Map() // scale of in-flight render
+  // Pages that currently have a text layer in the DOM (subset of renderedPages).
+  const textLayerPages: Set<number> = new Set()
+
+  // Tracks which pages are currently beyond the render margin. Updated by the
+  // IntersectionObserver so eviction can skip getBoundingClientRect calls.
+  const lastKnownOffscreen: Set<number> = new Set()
+
   let evictThrottleTimer: number | null = null
 
   function clearAll(): void {
@@ -127,6 +134,8 @@
     renderedPages.clear()
     renderingPages.clear()
     renderOrder.length = 0
+    textLayerPages.clear()
+    lastKnownOffscreen.clear()
     if (containerEl.value) containerEl.value.innerHTML = ''
   }
 
@@ -304,13 +313,7 @@
         const ph = document.createElement('div')
         ph.dataset.pageNumber = String(i)
         ph.className =
-          'block mx-auto mb-4 shadow-sm border border-slate-200 bg-white relative overflow-hidden'
-
-        const label = document.createElement('div')
-        label.className =
-          'absolute top-2 right-2 text-[10px] text-slate-400 bg-white/70 px-1.5 py-0.5 rounded'
-        label.textContent = `${i} / ${doc.numPages}`
-        ph.appendChild(label)
+          'block mx-auto mb-4 shadow-sm border border-slate-200 bg-white relative overflow-hidden contain-content'
 
         container.appendChild(ph)
         placeholders.push(ph)
@@ -320,6 +323,21 @@
       applyLayoutVisibility()
       loading.value = false
 
+      // Defer outline loading — don't block initial render.
+      void (async () => {
+        try {
+          const raw = await doc.getOutline()
+          if (myToken !== renderToken || !raw) return
+          const rawAny = raw as any
+          const items: any[] = Array.isArray(rawAny) ? rawAny : rawAny.items
+          if (items?.length) {
+            outline.value = await buildOutline(doc, items)
+          }
+        } catch (e) {
+          console.warn('failed to load PDF outline', e)
+        }
+      })()
+
       // Set up intersection-based rendering and current-page tracking.
       observer = new IntersectionObserver(
         (entries) => {
@@ -327,8 +345,10 @@
             const n = Number((entry.target as HTMLElement).dataset.pageNumber)
             if (!n) continue
             if (entry.isIntersecting) {
+              lastKnownOffscreen.delete(n)
               void renderPageOnce(n)
             } else {
+              lastKnownOffscreen.add(n)
               // Page just left the prefetch zone — drop any queued render
               // request so we don't waste cycles on something the user
               // scrolled past.
@@ -352,20 +372,6 @@
       // resolution updates that page's placeholder; the layout reflows
       // page-by-page rather than blocking the whole list.
       void refineIntrinsicSizes(doc, myToken)
-
-      // Outline (best-effort; many PDFs lack one). Run page-index resolution
-      // in parallel within each level so deep outlines don't take seconds.
-      try {
-        const raw = await doc.getOutline()
-        if (myToken !== renderToken || !raw) return
-        const rawAny = raw as any
-        const items: any[] = Array.isArray(rawAny) ? rawAny : rawAny.items
-        if (items?.length) {
-          outline.value = await buildOutline(doc, items)
-        }
-      } catch (e) {
-        console.warn('failed to load PDF outline', e)
-      }
     } catch (e) {
       if (myToken !== renderToken) return
       error.value = e instanceof Error ? e.message : String(e)
@@ -374,36 +380,37 @@
   }
 
   async function refineIntrinsicSizes(doc: pdfjs.PDFDocumentProxy, myToken: number): Promise<void> {
-    // Fire all getPage calls in parallel; pdf.js's worker queue serializes
-    // them but without artificial UI-thread awaits between iterations. Each
-    // resolution updates only its own placeholder.
-    await Promise.all(
-      Array.from({ length: doc.numPages }, async (_unused, idx) => {
-        const i = idx + 1
+    // Concurrency-limited pool so we don't flood pdf.js's worker queue.
+    // 6 concurrent requests keep the worker busy without spawning thousands
+    // of pending promises for large documents.
+    const CONCURRENCY = 6
+    const pending = Array.from({ length: doc.numPages }, (_unused, idx) => idx + 1)
+
+    async function worker(): Promise<void> {
+      while (pending.length > 0) {
+        const i = pending.shift()!
         if (myToken !== renderToken) return
         try {
           const page = await doc.getPage(i)
-          if (myToken !== renderToken) return
+          if (myToken !== renderToken) { page.cleanup(); return }
           const baseViewport = page.getViewport({ scale: 1 })
           const intr = intrinsicSizes[i - 1]
-          if (!intr) return
-          // Skip if this page is already rendered (its real dims are baked
-          // into the canvas) or unchanged.
+          if (!intr) { page.cleanup(); continue }
           if (intr.w === baseViewport.width && intr.h === baseViewport.height) {
             page.cleanup()
-            return
+            continue
           }
           intr.w = baseViewport.width
           intr.h = baseViewport.height
           applyPlaceholderSize(i)
-          // Free the structural proxy; renderPageOnce will re-fetch on
-          // actual render. This keeps the worker's per-page memory bounded.
           page.cleanup()
         } catch {
           /* ignore individual-page failure; placeholder keeps fallback size */
         }
-      }),
-    )
+      }
+    }
+
+    await Promise.all(Array.from({ length: CONCURRENCY }, () => worker()))
   }
 
   async function buildOutline(doc: pdfjs.PDFDocumentProxy, items: any[]): Promise<OutlineEntry[]> {
@@ -491,34 +498,39 @@
       activeTasks.set(pageNum, renderTask)
       activeScales.set(pageNum, scale)
 
-      // Render text layer into a detached div so we can insert it as a unit
-      // alongside the canvas on success.
-      const textLayerDiv = document.createElement('div')
-      textLayerDiv.className = 'textLayer'
-      textLayerDiv.style.width = `${viewport.width}px`
-      textLayerDiv.style.height = `${viewport.height}px`
-      textLayerDiv.style.setProperty('--scale-factor', String(viewport.scale))
-      textLayerDiv.style.setProperty('--total-scale-factor', String(viewport.scale))
-      const textLayer = new pdfjs.TextLayer({
-        textContentSource: page.streamTextContent(),
-        container: textLayerDiv,
-        viewport,
-      })
-      const textPromise = textLayer.render().catch(() => undefined)
+      // Only render text layer for pages near the viewport centre.
+      // Distant pre-renders skip the per-glyph span overhead (which doubles
+      // DOM node count) and pick up a text layer later once scrolled near.
+      const nearCurrent = Math.abs(pageNum - currentPage.value) <= 1
+      let textLayerDiv: HTMLDivElement | null = null
+      if (nearCurrent) {
+        textLayerDiv = document.createElement('div')
+        textLayerDiv.className = 'textLayer'
+        textLayerDiv.style.width = `${viewport.width}px`
+        textLayerDiv.style.height = `${viewport.height}px`
+        textLayerDiv.style.setProperty('--scale-factor', String(viewport.scale))
+        textLayerDiv.style.setProperty('--total-scale-factor', String(viewport.scale))
+        const textLayer = new pdfjs.TextLayer({
+          textContentSource: page.streamTextContent(),
+          container: textLayerDiv,
+          viewport,
+        })
+        await textLayer.render()
+      }
 
-      await Promise.all([renderTask.promise, textPromise])
+      await renderTask.promise
       if (myToken !== renderToken) return
 
-      // Swap atomically: remove all prior canvas/textLayer children, then
-      // insert ours. The label (the only other child) is preserved.
+      // Swap atomically: remove all prior canvas/textLayer children.
       for (const old of Array.from(ph.querySelectorAll('canvas'))) ph.removeChild(old)
       for (const old of Array.from(ph.querySelectorAll('.textLayer'))) ph.removeChild(old)
       ph.insertBefore(canvas, ph.firstChild)
-      ph.insertBefore(textLayerDiv, canvas.nextSibling)
+      if (textLayerDiv) ph.insertBefore(textLayerDiv, canvas.nextSibling)
 
       renderedPages.add(pageNum)
       renderedScales.set(pageNum, scale)
       renderOrder.push(pageNum)
+      if (textLayerDiv) textLayerPages.add(pageNum)
       evictIfNeeded(pageNum)
     } catch {
       /* render cancelled or failed — leave the previous canvas (if any) */
@@ -550,30 +562,69 @@
 
   function evictIfNeeded(justRendered: number): void {
     while (renderOrder.length > MAX_LIVE_CANVASES) {
-      // Find the oldest page that is currently far from the viewport.
       let evictedAny = false
       for (let i = 0; i < renderOrder.length; i++) {
         const candidate = renderOrder[i]!
         if (candidate === justRendered) continue
+        if (!lastKnownOffscreen.has(candidate)) continue
         const ph = placeholders[candidate - 1]
         if (!ph) continue
-        const rect = ph.getBoundingClientRect()
-        const offscreen =
-          rect.bottom < -RENDER_MARGIN_PX || rect.top > window.innerHeight + RENDER_MARGIN_PX
-        if (offscreen) {
-          const canvas = ph.querySelector('canvas')
-          if (canvas) ph.removeChild(canvas)
-          const textLayerDiv = ph.querySelector('.textLayer')
-          if (textLayerDiv) ph.removeChild(textLayerDiv)
-          renderedPages.delete(candidate)
-          renderedScales.delete(candidate)
-          renderOrder.splice(i, 1)
-          evictedAny = true
-          break
-        }
+        const canvas = ph.querySelector('canvas')
+        if (canvas) ph.removeChild(canvas)
+        const textLayerDiv = ph.querySelector('.textLayer')
+        if (textLayerDiv) ph.removeChild(textLayerDiv)
+        renderedPages.delete(candidate)
+        renderedScales.delete(candidate)
+        renderOrder.splice(i, 1)
+        textLayerPages.delete(candidate)
+        evictedAny = true
+        break
       }
       if (!evictedAny) break
     }
+  }
+
+  async function renderTextLayerForPage(pageNum: number): Promise<void> {
+    if (!activeDoc) return
+    if (textLayerPages.has(pageNum)) return
+    if (!renderedPages.has(pageNum)) return
+    const ph = placeholders[pageNum - 1]
+    if (!ph) return
+    const myToken = renderToken
+    try {
+      const page = await activeDoc.getPage(pageNum)
+      if (myToken !== renderToken) { page.cleanup(); return }
+      const existingCanvas = ph.querySelector('canvas')
+      if (!existingCanvas) { page.cleanup(); return }
+      const scale = renderedScales.get(pageNum) ?? targetScaleFor(pageNum)
+      const viewport = page.getViewport({ scale })
+      const textLayerDiv = document.createElement('div')
+      textLayerDiv.className = 'textLayer'
+      textLayerDiv.style.width = `${viewport.width}px`
+      textLayerDiv.style.height = `${viewport.height}px`
+      textLayerDiv.style.setProperty('--scale-factor', String(viewport.scale))
+      textLayerDiv.style.setProperty('--total-scale-factor', String(viewport.scale))
+      const textLayer = new pdfjs.TextLayer({
+        textContentSource: page.streamTextContent(),
+        container: textLayerDiv,
+        viewport,
+      })
+      await textLayer.render()
+      if (myToken !== renderToken) { page.cleanup(); return }
+      for (const old of Array.from(ph.querySelectorAll('.textLayer'))) ph.removeChild(old)
+      ph.insertBefore(textLayerDiv, existingCanvas.nextSibling)
+      textLayerPages.add(pageNum)
+      page.cleanup()
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function removeTextLayer(pageNum: number): void {
+    const ph = placeholders[pageNum - 1]
+    if (!ph) return
+    for (const old of Array.from(ph.querySelectorAll('.textLayer'))) ph.removeChild(old)
+    textLayerPages.delete(pageNum)
   }
 
   function updateCurrentPage(): void {
@@ -593,6 +644,15 @@
     if (best !== currentPage.value) {
       currentPage.value = best
       pageInput.value = String(best)
+      // Render text layers for new current page and neighbours.
+      for (const offset of [-1, 0, 1]) {
+        const n = best + offset
+        if (n >= 1 && n <= numPages.value) void renderTextLayerForPage(n)
+      }
+      // Prune text layers from pages no longer near current.
+      for (const p of textLayerPages) {
+        if (Math.abs(p - best) > 1) removeTextLayer(p)
+      }
     }
   }
 
@@ -608,6 +668,15 @@
       for (const offset of [1, -1, 2, -2]) {
         const m = n + offset
         if (m >= 1 && m <= numPages.value) void renderPageOnce(m)
+      }
+      // Ensure text layers on current page and neighbours (pre-rendered
+      // canvases may already exist without a text layer).
+      for (const offset of [-1, 0, 1]) {
+        const m = n + offset
+        if (m >= 1 && m <= numPages.value) void renderTextLayerForPage(m)
+      }
+      for (const p of textLayerPages) {
+        if (Math.abs(p - n) > 1) removeTextLayer(p)
       }
       return
     }
@@ -635,10 +704,6 @@
   }
   function jumpToLast(): void {
     jumpToPage(numPages.value)
-  }
-
-  function onScroll(): void {
-    updateCurrentPage()
   }
 
   function onKeydown(e: KeyboardEvent): void {
@@ -727,7 +792,6 @@
       activeDoc.destroy()
       activeDoc = null
     }
-    window.removeEventListener('scroll', onScroll)
     window.removeEventListener('keydown', onKeydown)
     window.removeEventListener('wheel', onWheel)
     if (typeof document !== 'undefined') {
@@ -735,10 +799,6 @@
     }
   })
 
-  // Listen on window because the article scrolls inside the viewport.
-  if (typeof window !== 'undefined') {
-    window.addEventListener('scroll', onScroll, { passive: true })
-  }
 </script>
 
 <template>
