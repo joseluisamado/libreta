@@ -285,6 +285,7 @@
                 <span v-else-if="child.kind === 'pdf'" class="text-[10px] font-semibold text-rose-500"
                   >PDF</span
                 >
+                <span v-else class="text-[10px] font-semibold text-sky-500">MD</span>
               </span>
               <span class="truncate">{{ child.title }}</span>
             </RouterLink>

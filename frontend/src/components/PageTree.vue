@@ -232,6 +232,11 @@
           <span v-if="node.kind === 'pdf'" class="text-[10px] font-semibold text-rose-500 shrink-0"
             >PDF</span
           >
+          <span
+            v-else-if="!node.is_directory && !node.children.length && !node.has_more"
+            class="text-[10px] font-semibold text-sky-500 shrink-0"
+            >MD</span
+          >
           <span class="truncate">{{ node.title }}</span>
         </RouterLink>
       </div>
