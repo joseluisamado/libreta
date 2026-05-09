@@ -1,12 +1,12 @@
 <script setup lang="ts">
-  import { computed, onBeforeUnmount, ref, watch, nextTick } from 'vue'
+  import { computed, onBeforeUnmount, onMounted, ref, watch, nextTick } from 'vue'
   import { useRoute } from 'vue-router'
   import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs'
   import workerUrl from 'pdfjs-dist/legacy/build/pdf.worker.mjs?url'
   import Breadcrumbs from '@/components/Breadcrumbs.vue'
   import OutlineList from '@/components/OutlineList.vue'
   import PageToolbar from '@/components/PageToolbar.vue'
-  import { useReadingWidth } from '@/composables/usePrefs'
+  import { usePdfLayout, useReadingWidth } from '@/composables/usePrefs'
 
   pdfjs.GlobalWorkerOptions.workerSrc = workerUrl
 
@@ -27,6 +27,7 @@
 
   const route = useRoute()
   const { width } = useReadingWidth()
+  const { layout: pdfLayout, toggle: togglePdfLayout } = usePdfLayout()
 
   const path = computed(() => {
     const raw = route.params.path
@@ -73,9 +74,13 @@
   let activeDoc: pdfjs.PDFDocumentProxy | null = null
   let renderToken = 0
   let observer: IntersectionObserver | null = null
+  let resizeObserver: ResizeObserver | null = null
+  let relayoutTimer: number | null = null
 
   // Per-page state. Index 0 is page 1.
   const placeholders: HTMLDivElement[] = []
+  const intrinsicSizes: { w: number; h: number }[] = [] // unscaled (scale=1) dims
+  const renderedScales: Map<number, number> = new Map() // pageNum -> scale at render
   const renderedPages: Set<number> = new Set() // 1-indexed page numbers
   const renderingPages: Set<number> = new Set()
   const renderOrder: number[] = [] // for LRU eviction
@@ -86,10 +91,117 @@
       observer = null
     }
     placeholders.length = 0
+    intrinsicSizes.length = 0
+    renderedScales.clear()
     renderedPages.clear()
     renderingPages.clear()
     renderOrder.length = 0
     if (containerEl.value) containerEl.value.innerHTML = ''
+  }
+
+  // Available dimensions for a single page in the current layout. In single
+  // mode we fit to viewport height (minus the sticky toolbar at the bottom);
+  // in scroll mode we fit to container width.
+  function availableDims(): { w: number; h: number } {
+    const container = containerEl.value
+    const w = container?.clientWidth || 800
+    // In single mode the page must fully fit the viewport — otherwise the
+    // page overflows, the body grows a scrollbar, and wheel scrolls instead
+    // of paginating. Measure the container's actual top offset so the page
+    // height excludes the article header (breadcrumbs+title) and our sticky
+    // bottom nav. The 72px allowance covers the nav bar + bottom margin.
+    const containerTop = container?.getBoundingClientRect().top ?? 0
+    const h = Math.max(200, Math.floor(window.innerHeight - containerTop - 72))
+    return { w, h }
+  }
+
+  function targetScaleFor(pageNum: number): number {
+    const intr = intrinsicSizes[pageNum - 1]
+    if (!intr) return 1
+    const { w, h } = availableDims()
+    if (pdfLayout.value === 'single') {
+      // Fit-to-height: scale so the full page height fits in the viewport.
+      // Width may end up narrower than the screen, which is fine — the page
+      // is centered horizontally.
+      return h / intr.h
+    }
+    return w / intr.w
+  }
+
+  function applyPlaceholderSize(pageNum: number): void {
+    const ph = placeholders[pageNum - 1]
+    const intr = intrinsicSizes[pageNum - 1]
+    if (!ph || !intr) return
+    const scale = targetScaleFor(pageNum)
+    ph.style.width = `${Math.floor(intr.w * scale)}px`
+    ph.style.height = `${Math.floor(intr.h * scale)}px`
+  }
+
+  function isPlaceholderVisible(pageNum: number): boolean {
+    if (pdfLayout.value === 'single') return pageNum === currentPage.value
+    return true
+  }
+
+  function applyLayoutVisibility(): void {
+    for (let i = 1; i <= placeholders.length; i++) {
+      const ph = placeholders[i - 1]!
+      ph.style.display = isPlaceholderVisible(i) ? '' : 'none'
+    }
+  }
+
+  // Drop canvases that no longer match the current layout's scale; the
+  // intersection observer (or single-mode jump) will re-render them.
+  function discardStaleRenders(): void {
+    for (const pageNum of Array.from(renderedPages)) {
+      const prev = renderedScales.get(pageNum)
+      const next = targetScaleFor(pageNum)
+      if (prev === undefined) continue
+      if (Math.abs(prev - next) / next < 0.01) continue // within 1% — keep
+      const ph = placeholders[pageNum - 1]
+      if (!ph) continue
+      const canvas = ph.querySelector('canvas')
+      if (canvas) ph.removeChild(canvas)
+      const textLayerDiv = ph.querySelector('.textLayer')
+      if (textLayerDiv) ph.removeChild(textLayerDiv)
+      renderedPages.delete(pageNum)
+      renderedScales.delete(pageNum)
+      const idx = renderOrder.indexOf(pageNum)
+      if (idx !== -1) renderOrder.splice(idx, 1)
+    }
+  }
+
+  function relayout(): void {
+    if (!placeholders.length) return
+    for (let i = 1; i <= placeholders.length; i++) applyPlaceholderSize(i)
+    applyLayoutVisibility()
+    discardStaleRenders()
+    if (pdfLayout.value === 'single') {
+      // Render the current page (and pre-render neighbors) right away — no
+      // scroll happens to retrigger the IntersectionObserver.
+      void renderPageOnce(currentPage.value)
+      if (currentPage.value + 1 <= numPages.value) void renderPageOnce(currentPage.value + 1)
+      if (currentPage.value - 1 >= 1) void renderPageOnce(currentPage.value - 1)
+    } else {
+      // Scroll mode: discardStaleRenders dropped canvases that no longer
+      // match the new scale, but the IntersectionObserver only fires on
+      // visibility *changes* — pages already in view won't refire. Manually
+      // re-render anything currently in (or near) the viewport.
+      for (let i = 1; i <= placeholders.length; i++) {
+        const ph = placeholders[i - 1]!
+        const rect = ph.getBoundingClientRect()
+        const inView =
+          rect.bottom > -RENDER_MARGIN_PX && rect.top < window.innerHeight + RENDER_MARGIN_PX
+        if (inView) void renderPageOnce(i)
+      }
+    }
+  }
+
+  function scheduleRelayout(): void {
+    if (relayoutTimer !== null) window.clearTimeout(relayoutTimer)
+    relayoutTimer = window.setTimeout(() => {
+      relayoutTimer = null
+      relayout()
+    }, 80)
   }
 
   async function loadDoc(): Promise<void> {
@@ -120,22 +232,16 @@
       const container = containerEl.value
       if (!container) return
 
-      const containerWidth = container.clientWidth || 800
-
       // Build placeholders. We need each page's intrinsic size to fix the
       // aspect ratio so the scrollbar is correct from the start.
       for (let i = 1; i <= doc.numPages; i++) {
         if (myToken !== renderToken) return
         const page = await doc.getPage(i)
         const baseViewport = page.getViewport({ scale: 1 })
-        const scale = containerWidth / baseViewport.width
-        const w = Math.floor(baseViewport.width * scale)
-        const h = Math.floor(baseViewport.height * scale)
+        intrinsicSizes.push({ w: baseViewport.width, h: baseViewport.height })
 
         const ph = document.createElement('div')
         ph.dataset.pageNumber = String(i)
-        ph.style.width = `${w}px`
-        ph.style.height = `${h}px`
         ph.className =
           'block mx-auto mb-4 shadow-sm border border-slate-200 bg-white relative overflow-hidden'
 
@@ -147,11 +253,13 @@
 
         container.appendChild(ph)
         placeholders.push(ph)
+        applyPlaceholderSize(i)
 
         // Free the structural page proxy now; we'll re-fetch on actual render.
         page.cleanup()
       }
 
+      applyLayoutVisibility()
       loading.value = false
 
       // Set up intersection-based rendering and current-page tracking.
@@ -229,9 +337,7 @@
       const page = await activeDoc.getPage(pageNum)
       if (myToken !== renderToken) return
 
-      const baseViewport = page.getViewport({ scale: 1 })
-      const targetWidth = ph.clientWidth || 800
-      const scale = targetWidth / baseViewport.width
+      const scale = targetScaleFor(pageNum)
       const viewport = page.getViewport({ scale })
       const dpr = window.devicePixelRatio || 1
 
@@ -251,7 +357,30 @@
       await page.render({ canvasContext: ctx, viewport, canvas }).promise
 
       if (myToken !== renderToken) return
+
+      // Build a selectable text layer above the canvas. Cheap relative to the
+      // canvas render and bounded by MAX_LIVE_CANVASES via eviction below.
+      try {
+        const textLayerDiv = document.createElement('div')
+        textLayerDiv.className = 'textLayer'
+        textLayerDiv.style.width = `${viewport.width}px`
+        textLayerDiv.style.height = `${viewport.height}px`
+        // pdf.js's TextLayer reads --scale-factor / --total-scale-factor.
+        textLayerDiv.style.setProperty('--scale-factor', String(viewport.scale))
+        textLayerDiv.style.setProperty('--total-scale-factor', String(viewport.scale))
+        ph.insertBefore(textLayerDiv, canvas.nextSibling)
+        const textLayer = new pdfjs.TextLayer({
+          textContentSource: page.streamTextContent(),
+          container: textLayerDiv,
+          viewport,
+        })
+        await textLayer.render()
+      } catch {
+        /* text layer is best-effort; image-only PDFs will simply have none */
+      }
+
       renderedPages.add(pageNum)
+      renderedScales.set(pageNum, scale)
       renderOrder.push(pageNum)
       evictIfNeeded(pageNum)
     } catch {
@@ -276,7 +405,10 @@
         if (offscreen) {
           const canvas = ph.querySelector('canvas')
           if (canvas) ph.removeChild(canvas)
+          const textLayerDiv = ph.querySelector('.textLayer')
+          if (textLayerDiv) ph.removeChild(textLayerDiv)
           renderedPages.delete(candidate)
+          renderedScales.delete(candidate)
           renderOrder.splice(i, 1)
           evictedAny = true
           break
@@ -287,6 +419,7 @@
   }
 
   function updateCurrentPage(): void {
+    if (pdfLayout.value === 'single') return // current page is set explicitly
     // Pick the placeholder whose top is closest to (but not past) the top of
     // the viewport — that's the page the user is reading.
     let best = 1
@@ -307,6 +440,17 @@
 
   function jumpToPage(n: number): void {
     if (!Number.isFinite(n) || n < 1 || n > numPages.value) return
+    if (pdfLayout.value === 'single') {
+      currentPage.value = n
+      pageInput.value = String(n)
+      applyLayoutVisibility()
+      window.scrollTo({ top: 0, behavior: 'auto' })
+      void renderPageOnce(n)
+      // Pre-render neighbors so paging feels instant.
+      if (n + 1 <= numPages.value) void renderPageOnce(n + 1)
+      if (n - 1 >= 1) void renderPageOnce(n - 1)
+      return
+    }
     const ph = placeholders[n - 1]
     if (ph) ph.scrollIntoView({ block: 'start', behavior: 'auto' })
   }
@@ -337,16 +481,94 @@
     updateCurrentPage()
   }
 
+  function onKeydown(e: KeyboardEvent): void {
+    // Don't hijack typing in the page-input box or any other input.
+    const t = e.target as HTMLElement | null
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
+    if (numPages.value === 0) return
+    switch (e.key) {
+      case 'ArrowRight':
+      case 'PageDown':
+        e.preventDefault()
+        jumpRelative(1)
+        break
+      case 'ArrowLeft':
+      case 'PageUp':
+        e.preventDefault()
+        jumpRelative(-1)
+        break
+      case ' ':
+        if (pdfLayout.value === 'single') {
+          e.preventDefault()
+          jumpRelative(e.shiftKey ? -1 : 1)
+        }
+        break
+      case 'Home':
+        if (pdfLayout.value === 'single') {
+          e.preventDefault()
+          jumpToFirst()
+        }
+        break
+      case 'End':
+        if (pdfLayout.value === 'single') {
+          e.preventDefault()
+          jumpToLast()
+        }
+        break
+    }
+  }
+
+  function onWheel(e: WheelEvent): void {
+    if (pdfLayout.value !== 'single') return
+    if (Math.abs(e.deltaY) < 20) return
+    e.preventDefault()
+    jumpRelative(e.deltaY > 0 ? 1 : -1)
+  }
+
   watch([path, sourceId, watchedLabel, containerEl], () => void loadDoc(), { immediate: true })
+  watch([pdfLayout, width], () => scheduleRelayout())
+
+  // In single-page mode, suppress the body scrollbar entirely — the page is
+  // sized to fit the viewport and wheel events drive pagination, not scroll.
+  watch(
+    pdfLayout,
+    (v) => {
+      if (typeof document === 'undefined') return
+      document.documentElement.style.overflow = v === 'single' ? 'hidden' : ''
+    },
+    { immediate: true },
+  )
+
+  onMounted(() => {
+    if (containerEl.value) {
+      resizeObserver = new ResizeObserver(() => scheduleRelayout())
+      resizeObserver.observe(containerEl.value)
+    }
+    window.addEventListener('keydown', onKeydown)
+    window.addEventListener('wheel', onWheel, { passive: false })
+  })
 
   onBeforeUnmount(() => {
     renderToken++
+    if (relayoutTimer !== null) {
+      window.clearTimeout(relayoutTimer)
+      relayoutTimer = null
+    }
     if (observer) observer.disconnect()
+    if (resizeObserver) {
+      resizeObserver.disconnect()
+      resizeObserver = null
+    }
     if (activeDoc) {
       activeDoc.destroy()
       activeDoc = null
     }
     window.removeEventListener('scroll', onScroll)
+    window.removeEventListener('keydown', onKeydown)
+    window.removeEventListener('wheel', onWheel)
+    if (typeof document !== 'undefined') {
+      document.documentElement.style.overflow = ''
+    }
   })
 
   // Listen on window because the article scrolls inside the viewport.
@@ -383,6 +605,48 @@
       <circle cx="4" cy="6" r="1" fill="currentColor" />
       <circle cx="4" cy="12" r="1" fill="currentColor" />
       <circle cx="4" cy="18" r="1" fill="currentColor" />
+    </svg>
+  </button>
+  <button
+    v-if="!loading && !error"
+    type="button"
+    class="fixed top-3 right-[120px] z-30 bg-white/90 backdrop-blur border border-slate-200 rounded-md p-2 hover:bg-slate-50 shadow-sm"
+    :class="pdfLayout === 'single' ? 'text-blue-600' : 'text-slate-600'"
+    :title="pdfLayout === 'single' ? 'Switch to scroll layout' : 'Switch to single-page layout'"
+    :aria-label="
+      pdfLayout === 'single' ? 'Switch to scroll layout' : 'Switch to single-page layout'
+    "
+    :aria-pressed="pdfLayout === 'single'"
+    @click="togglePdfLayout"
+  >
+    <svg
+      v-if="pdfLayout === 'single'"
+      xmlns="http://www.w3.org/2000/svg"
+      class="w-4 h-4"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    >
+      <rect x="6" y="3" width="12" height="14" rx="1" />
+      <path d="M9 20h6" />
+    </svg>
+    <svg
+      v-else
+      xmlns="http://www.w3.org/2000/svg"
+      class="w-4 h-4"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    >
+      <rect x="4" y="3" width="16" height="6" rx="1" />
+      <rect x="4" y="11" width="16" height="6" rx="1" />
+      <path d="M8 21h8" />
     </svg>
   </button>
   <a
@@ -456,15 +720,25 @@
     </div>
   </aside>
 
-  <article class="mx-auto py-6" :class="width === 'wide' ? 'max-w-none px-12' : 'max-w-3xl px-8'">
-    <header class="flex items-center justify-between mb-4" :class="width === 'wide' ? 'pr-48' : ''">
+  <article
+    class="mx-auto"
+    :class="[
+      pdfLayout === 'single' ? 'py-2' : 'py-6',
+      width === 'wide' ? 'max-w-none px-12' : 'max-w-3xl px-8',
+    ]"
+  >
+    <header
+      v-if="pdfLayout !== 'single'"
+      class="flex items-center justify-between mb-4"
+      :class="width === 'wide' ? 'pr-48' : ''"
+    >
       <Breadcrumbs
         :path="path"
         :source-id="sourceId || undefined"
         :watched-label="watchedLabel || undefined"
       />
     </header>
-    <h1 class="text-3xl font-bold mb-4">{{ title }}</h1>
+    <h1 v-if="pdfLayout !== 'single'" class="text-3xl font-bold mb-4">{{ title }}</h1>
     <p v-if="error" class="text-red-600">Failed to load PDF: {{ error }}</p>
     <p v-else-if="loading" class="text-slate-400">Loading PDF…</p>
     <div ref="containerEl" class="pdf-pages relative" />
@@ -523,3 +797,74 @@
     </div>
   </article>
 </template>
+
+<style>
+  /* Minimal text-layer styles from pdfjs-dist/web/pdf_viewer.css. The text
+     layer is positioned absolutely over each rendered canvas; spans are
+     transparent so the canvas shows through but text is selectable. */
+  .pdf-pages .textLayer {
+    position: absolute;
+    inset: 0;
+    overflow: clip;
+    opacity: 1;
+    line-height: 1;
+    text-align: initial;
+    -webkit-text-size-adjust: none;
+    -moz-text-size-adjust: none;
+    text-size-adjust: none;
+    forced-color-adjust: none;
+    transform-origin: 0 0;
+    caret-color: CanvasText;
+    z-index: 0;
+    --min-font-size: 1;
+    --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+    --min-font-size-inv: calc(1 / var(--min-font-size));
+  }
+  .pdf-pages .textLayer :is(span, br) {
+    color: transparent;
+    position: absolute;
+    white-space: pre;
+    cursor: text;
+    transform-origin: 0% 0%;
+  }
+  .pdf-pages .textLayer > :not(.markedContent),
+  .pdf-pages .textLayer .markedContent span:not(.markedContent) {
+    z-index: 1;
+    --font-height: 0;
+    font-size: calc(var(--text-scale-factor) * var(--font-height));
+    --scale-x: 1;
+    --rotate: 0deg;
+    transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+  }
+  .pdf-pages .textLayer .markedContent {
+    display: contents;
+  }
+  .pdf-pages .textLayer span[role='img'] {
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    user-select: none;
+    cursor: default;
+  }
+  .pdf-pages .textLayer ::selection {
+    background: rgba(0, 100, 255, 0.25);
+  }
+  .pdf-pages .textLayer ::-moz-selection {
+    background: rgba(0, 100, 255, 0.25);
+  }
+  .pdf-pages .textLayer br::selection {
+    background: transparent;
+  }
+  .pdf-pages .textLayer .endOfContent {
+    display: block;
+    position: absolute;
+    inset: 100% 0 0;
+    z-index: 0;
+    cursor: default;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    user-select: none;
+  }
+  .pdf-pages .textLayer.selecting .endOfContent {
+    top: 0;
+  }
+</style>
