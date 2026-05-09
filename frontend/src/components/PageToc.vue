@@ -51,9 +51,6 @@
     const targetTop = target.getBoundingClientRect().top
     scroller.scrollBy({ top: targetTop - scrollerTop - 16, behavior: 'smooth' })
     activeId.value = id
-    // Close the panel after navigating so the user sees the content they
-    // jumped to.
-    open.value = false
   }
 
   function onScroll(): void {
