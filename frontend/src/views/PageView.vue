@@ -2,7 +2,7 @@
   import { computed, ref, watch, nextTick } from 'vue'
   import { useRoute, useRouter } from 'vue-router'
   import { getPage, savePage, deletePage, movePage } from '@/api/client'
-  import type { PageNode, PageRead } from '@/api/types'
+  import type { OtherFile, PageNode, PageRead } from '@/api/types'
   import { renderMarkdown, renderMermaidIn } from '@/markdown'
   import { useTreeStore } from '@/stores/tree'
   import { useReadingWidth } from '@/composables/usePrefs'
@@ -40,6 +40,16 @@
     if (!node || !node.is_directory) return []
     return node.children
   })
+
+  const directoryOtherFiles = computed<OtherFile[]>(() => {
+    if (!page.value) return []
+    const node = findNode(tree.nodes, page.value.path)
+    return node?.other_files ?? []
+  })
+
+  function getOtherFileUrl(filePath: string): string {
+    return `/api/v1/assets/pages/${encodeURIComponent(filePath)}`
+  }
 
   const isDirectory = computed(() => {
     if (!page.value) return false
@@ -282,7 +292,9 @@
             >
               <span class="inline-block w-6 shrink-0 text-slate-400">
                 <span v-if="child.children.length">📁</span>
-                <span v-else-if="child.kind === 'pdf'" class="text-[10px] font-semibold text-rose-500"
+                <span
+                  v-else-if="child.kind === 'pdf'"
+                  class="text-[10px] font-semibold text-rose-500"
                   >PDF</span
                 >
                 <span v-else class="text-[10px] font-semibold text-sky-500">MD</span>
@@ -335,6 +347,44 @@
                 <line x1="14" y1="11" x2="14" y2="17" />
               </svg>
             </button>
+          </li>
+        </ul>
+      </section>
+      <section v-if="directoryOtherFiles.length" class="mt-6 border-t border-slate-200 pt-4">
+        <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-500 mb-2">
+          Other files
+        </h2>
+        <ul class="text-sm space-y-1">
+          <li
+            v-for="file in directoryOtherFiles"
+            :key="file.path"
+            class="flex items-center gap-1 group"
+          >
+            <a
+              :href="getOtherFileUrl(file.path)"
+              :download="file.name"
+              class="flex items-center flex-1 min-w-0 text-slate-600 hover:text-blue-600 hover:underline"
+            >
+              <span
+                class="w-6 shrink-0 mr-0.5 text-[10px] font-semibold text-center"
+                :class="{
+                  'text-emerald-500': file.kind === 'image',
+                  'text-orange-500': file.kind === 'drawio',
+                  'text-violet-500': file.kind === 'text',
+                  'text-slate-500': file.kind === 'binary',
+                }"
+                >{{
+                  file.kind === 'image'
+                    ? 'IMG'
+                    : file.kind === 'drawio'
+                      ? 'DRAW'
+                      : file.kind === 'text'
+                        ? 'TXT'
+                        : 'BIN'
+                }}</span
+              >
+              <span class="truncate">{{ file.name }}</span>
+            </a>
           </li>
         </ul>
       </section>

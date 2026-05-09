@@ -8,7 +8,7 @@
     deleteWatchedPage,
   } from '@/api/client'
   import { useWatchedStore } from '@/stores/watched'
-  import type { PageNode, PageRead } from '@/api/types'
+  import type { OtherFile, PageNode, PageRead } from '@/api/types'
   import { renderMarkdown, renderMermaidIn } from '@/markdown'
   import { useReadingWidth } from '@/composables/usePrefs'
   import { useViewMode } from '@/composables/useViewMode'
@@ -82,6 +82,12 @@
     if (!dirNode.value?.is_directory) return []
     return dirNode.value.children
   })
+
+  const dirOtherFiles = computed<OtherFile[]>(() => dirNode.value?.other_files ?? [])
+
+  function getOtherFileUrl(filePath: string): string {
+    return `/api/v1/watch/${label.value}/assets/${encodeURIComponent(filePath)}`
+  }
 
   const basePath = computed(() => (path.value === '' ? '' : path.value))
 
@@ -243,6 +249,8 @@
         :children="dirChildren"
         :base-path="basePath"
         :get-child-url="getChildUrl"
+        :other-files="dirOtherFiles"
+        :get-other-file-url="getOtherFileUrl"
         @create-page="onCreatePage"
         @create-folder="onCreateFolder"
         @delete="onDelete"

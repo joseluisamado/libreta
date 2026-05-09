@@ -9,7 +9,7 @@ import frontmatter
 from frontmatter import Post
 
 from libreta.errors import InvalidPathError, PageNotFoundError
-from libreta.models import PageMeta, PageNode, PageRead
+from libreta.models import OtherFile, PageMeta, PageNode, PageRead
 
 logger = logging.getLogger(__name__)
 
@@ -179,12 +179,164 @@ def write_page_file(
 # ---------------------------------------------------------------------------
 
 
+def _classify_other(name: str) -> str:
+    """Classify a non-page file by extension."""
+    lower = name.lower()
+    if lower.endswith((".drawio.svg", ".drawio.png", ".drawio")):
+        return "drawio"
+    if lower.endswith((".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".bmp", ".ico")):
+        return "image"
+    if lower.endswith(
+        (
+            ".txt",
+            ".html",
+            ".htm",
+            ".css",
+            ".js",
+            ".ts",
+            ".json",
+            ".yaml",
+            ".yml",
+            ".toml",
+            ".ini",
+            ".cfg",
+            ".conf",
+            ".log",
+            ".xml",
+            ".csv",
+            ".py",
+            ".rs",
+            ".go",
+            ".java",
+            ".c",
+            ".h",
+            ".sh",
+            ".bash",
+            ".zsh",
+            ".fish",
+        )
+    ):
+        return "text"
+    return "binary"
+
+
+def _build_tree(
+    dir_path: Path,
+    url_prefix: str,
+    max_depth: int | None = None,
+    depth: int = 0,
+) -> tuple[list[PageNode], list[OtherFile]]:
+    """Recursive helper for ``walk_tree`` and ``walk_children``.
+
+    Returns ``(nodes, other_files)`` where *nodes* are the children of
+    *dir_path* and *other_files* are the non-page files in *dir_path*.
+    """
+    nodes: list[PageNode] = []
+    other_entries: list[Path] = []
+    try:
+        entries = sorted(dir_path.iterdir(), key=lambda p: (not p.is_dir(), p.name.casefold()))
+    except OSError:
+        logger.warning("cannot list directory %s", dir_path)
+        return nodes, []
+
+    md_names: dict[str, Path] = {}
+    dir_names: dict[str, Path] = {}
+    pdf_files: list[Path] = []
+    for entry in entries:
+        if entry.name.startswith("."):
+            continue
+        try:
+            if entry.is_dir():
+                dir_names[entry.name] = entry
+            elif entry.suffix == ".md":
+                md_names[entry.stem] = entry
+            elif entry.suffix.lower() == ".pdf":
+                pdf_files.append(entry)
+            else:
+                other_entries.append(entry)
+        except OSError:
+            continue
+
+    all_names: set[str] = set()
+    all_names.update(md_names.keys())
+    all_names.update(dir_names.keys())
+
+    hit_max = max_depth is not None and depth >= max_depth
+
+    for name in sorted(all_names):
+        md_file = md_names.get(name)
+        sub_dir = dir_names.get(name)
+        child_url = f"{url_prefix}/{name}" if url_prefix else name
+        humanised = name.replace("-", " ").replace("_", " ").title()
+
+        if hit_max and sub_dir:
+            title = read_title_only(md_file, humanised) if md_file else humanised
+            nodes.append(
+                PageNode(
+                    path=child_url,
+                    title=title,
+                    is_directory=True,
+                    children=[],
+                    has_more=True,
+                )
+            )
+        else:
+            children: list[PageNode] = []
+            sub_other: list[OtherFile] = []
+            if sub_dir:
+                children, sub_other = _build_tree(sub_dir, child_url, max_depth, depth + 1)
+            if md_file:
+                title = read_title_only(md_file, humanised)
+                nodes.append(
+                    PageNode(
+                        path=child_url,
+                        title=title,
+                        is_directory=bool(sub_dir),
+                        children=children,
+                        other_files=sub_other,
+                    )
+                )
+            else:
+                nodes.append(
+                    PageNode(
+                        path=child_url,
+                        title=humanised,
+                        is_directory=True,
+                        children=children,
+                        other_files=sub_other,
+                    )
+                )
+
+    for pdf in sorted(pdf_files, key=lambda p: p.name.casefold()):
+        child_url = f"{url_prefix}/{pdf.name}" if url_prefix else pdf.name
+        nodes.append(
+            PageNode(
+                path=child_url,
+                title=pdf.stem.replace("-", " ").replace("_", " "),
+                is_directory=False,
+                children=[],
+                kind="pdf",
+            )
+        )
+
+    other = [
+        OtherFile(
+            name=entry.name,
+            path=f"{url_prefix}/{entry.name}" if url_prefix else entry.name,
+            kind=_classify_other(entry.name),
+        )
+        for entry in sorted(other_entries, key=lambda p: p.name.casefold())
+    ]
+    return nodes, other
+
+
 def walk_tree(root: Path, max_depth: int | None = None) -> list[PageNode]:
     """Recursive tree walk from *root*. Returns a list of ``PageNode``.
 
     - ``.md`` files become page nodes (title from frontmatter)
     - directories become folder nodes with children
     - ``.pdf`` files become leaf nodes with ``kind="pdf"``
+    - other files populate ``other_files`` on directory nodes
     - ``max_depth`` controls depth; truncated subtrees get ``has_more=True``
     """
     try:
@@ -194,101 +346,31 @@ def walk_tree(root: Path, max_depth: int | None = None) -> list[PageNode]:
         logger.warning("cannot access root %s", root)
         return []
 
-    def build(dir_path: Path, url_prefix: str, depth: int = 0) -> list[PageNode]:
-        nodes: list[PageNode] = []
-        try:
-            entries = sorted(dir_path.iterdir(), key=lambda p: (not p.is_dir(), p.name.casefold()))
-        except OSError:
-            logger.warning("cannot list directory %s", dir_path)
-            return nodes
-
-        md_names: dict[str, Path] = {}
-        dir_names: dict[str, Path] = {}
-        pdf_files: list[Path] = []
-        for entry in entries:
-            if entry.name.startswith("."):
-                continue
-            try:
-                if entry.is_dir():
-                    dir_names[entry.name] = entry
-                elif entry.suffix == ".md":
-                    md_names[entry.stem] = entry
-                elif entry.suffix.lower() == ".pdf":
-                    pdf_files.append(entry)
-            except OSError:
-                continue
-
-        all_names: set[str] = set()
-        all_names.update(md_names.keys())
-        all_names.update(dir_names.keys())
-
-        hit_max = max_depth is not None and depth >= max_depth
-
-        for name in sorted(all_names):
-            md_file = md_names.get(name)
-            sub_dir = dir_names.get(name)
-            child_url = f"{url_prefix}/{name}" if url_prefix else name
-            humanised = name.replace("-", " ").replace("_", " ").title()
-
-            if hit_max and sub_dir:
-                title = read_title_only(md_file, humanised) if md_file else humanised
-                nodes.append(
-                    PageNode(
-                        path=child_url,
-                        title=title,
-                        is_directory=True,
-                        children=[],
-                        has_more=True,
-                    )
-                )
-            else:
-                children = build(sub_dir, child_url, depth + 1) if sub_dir else []
-                if md_file:
-                    title = read_title_only(md_file, humanised)
-                    nodes.append(
-                        PageNode(
-                            path=child_url,
-                            title=title,
-                            is_directory=bool(sub_dir),
-                            children=children,
-                        )
-                    )
-                else:
-                    nodes.append(
-                        PageNode(
-                            path=child_url,
-                            title=humanised,
-                            is_directory=True,
-                            children=children,
-                        )
-                    )
-
-        for pdf in sorted(pdf_files, key=lambda p: p.name.casefold()):
-            child_url = f"{url_prefix}/{pdf.name}" if url_prefix else pdf.name
-            nodes.append(
-                PageNode(
-                    path=child_url,
-                    title=pdf.stem.replace("-", " ").replace("_", " "),
-                    is_directory=False,
-                    children=[],
-                    kind="pdf",
-                )
-            )
-        return nodes
-
-    return build(root, "")
+    nodes, root_other = _build_tree(root, "", max_depth)
+    # Attach root-level other files to a root directory node (e.g. "index")
+    # so they appear when viewing the content root.
+    if root_other:
+        for node in nodes:
+            if node.is_directory:
+                node.other_files = root_other
+                break
+    return nodes
 
 
-def walk_children(root: Path, raw_path: str) -> list[PageNode]:
-    """Return immediate children of *raw_path* within *root* (max_depth=1)."""
+def walk_children(root: Path, raw_path: str) -> tuple[list[PageNode], list[OtherFile]]:
+    """Return immediate children of *raw_path* within *root* (max_depth=1).
+
+    Also returns any non-page files in the directory so the caller can
+    populate ``other_files`` on the parent node.
+    """
     child_dir = (root / raw_path).resolve()
     try:
         child_dir.relative_to(root)
     except ValueError:
-        return []
+        return [], []
     if not child_dir.is_dir():
-        return []
-    return walk_tree(child_dir, max_depth=1)
+        return [], []
+    return _build_tree(child_dir, "", max_depth=1)
 
 
 # ---------------------------------------------------------------------------

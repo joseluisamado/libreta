@@ -19,6 +19,17 @@ export interface PageRead {
   body: string
 }
 
+export interface OtherFile {
+  name: string
+  path: string
+  kind: 'image' | 'drawio' | 'text' | 'binary'
+}
+
+export interface DirChildren {
+  children: PageNode[]
+  other_files: OtherFile[]
+}
+
 export interface PageNode {
   path: string
   title: string
@@ -26,6 +37,7 @@ export interface PageNode {
   children: PageNode[]
   has_more?: boolean
   kind?: 'page' | 'pdf'
+  other_files?: OtherFile[]
 }
 
 export interface HistoryEntry {

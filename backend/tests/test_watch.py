@@ -419,7 +419,8 @@ def test_watched_children_endpoint(client_with_watchers: TestClient, deep_fixtur
     # Fetch children of "notes" via the children endpoint
     r2 = client_with_watchers.get("/api/v1/watch/deep/children/notes")
     assert r2.status_code == 200
-    children = r2.json()
+    data = r2.json()
+    children = data["children"]
     child_paths = {c["path"] for c in children}
     assert "todo" in child_paths
     assert "archive" in child_paths

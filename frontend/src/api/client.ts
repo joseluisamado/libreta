@@ -1,6 +1,7 @@
 import type {
   AssetUploadResponse,
   DiffEntry,
+  DirChildren,
   GitSource,
   GitSourceCreate,
   GitSourceUpdate,
@@ -213,8 +214,8 @@ export function saveWatchedPage(label: string, path: string, data: PageWrite): P
   })
 }
 
-export function getWatchedChildren(label: string, path: string): Promise<PageNode[]> {
-  return request<PageNode[]>(`/watch/${enc(label)}/children/${enc(path)}`)
+export function getWatchedChildren(label: string, path: string): Promise<DirChildren> {
+  return request<DirChildren>(`/watch/${enc(label)}/children/${enc(path)}`)
 }
 
 export function createWatchedFolder(label: string, path: string): Promise<void> {
@@ -290,8 +291,8 @@ export function getSourceTree(id: string): Promise<PageNode[]> {
   return request<PageNode[]>(`/sources/${id}/tree`)
 }
 
-export function getSourceChildren(id: string, path: string): Promise<PageNode[]> {
-  return request<PageNode[]>(`/sources/${id}/children/${enc(path)}`)
+export function getSourceChildren(id: string, path: string): Promise<DirChildren> {
+  return request<DirChildren>(`/sources/${id}/children/${enc(path)}`)
 }
 
 export function getSourcePage(id: string, path: string): Promise<PageRead> {

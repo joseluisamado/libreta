@@ -12,6 +12,7 @@ from libreta.deps import get_settings
 from libreta.errors import AssetNotFoundError, PageNotFoundError
 from libreta.models import (
     AssetUploadResponse,
+    DirChildren,
     GitSourceCreate,
     GitSourceResponse,
     GitSourceUpdate,
@@ -197,13 +198,14 @@ async def get_source_tree(
     return await src_store.walk_source_tree(settings.repos_dir, source_id, max_depth=depth)
 
 
-@router.get("/{source_id}/children/{path:path}", response_model=list[PageNode])
+@router.get("/{source_id}/children/{path:path}", response_model=DirChildren)
 async def get_source_children(
     source_id: str,
     path: str,
     settings: Annotated[Settings, Depends(get_settings)],
-) -> list[PageNode]:
-    return await src_store.walk_source_children(settings.repos_dir, source_id, path)
+) -> DirChildren:
+    children, other = await src_store.walk_source_children(settings.repos_dir, source_id, path)
+    return DirChildren(children=children, other_files=other)
 
 
 @router.get("/{source_id}/pages/{path:path}", response_model=PageRead)

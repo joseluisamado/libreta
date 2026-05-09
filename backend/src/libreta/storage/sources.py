@@ -32,6 +32,7 @@ from libreta.models import (
     GitSourceCreate,
     GitSourceResponse,
     GitSourceUpdate,
+    OtherFile,
     PageNode,
     PageRead,
 )
@@ -582,7 +583,7 @@ async def walk_source_children(
     repos_dir: Path,
     source_id: str,
     raw_path: str,
-) -> list[PageNode]:
+) -> tuple[list[PageNode], list[OtherFile]]:
     local = _local_path(repos_dir, source_id)
     return await asyncio.to_thread(pagefile.walk_children, local, raw_path)
 

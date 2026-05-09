@@ -11,6 +11,7 @@ from libreta.errors import (
     WatchedFolderAlreadyExistsError,
 )
 from libreta.models import (
+    DirChildren,
     PageNode,
     PageRead,
     PageWrite,
@@ -89,22 +90,23 @@ async def get_watched_tree(
     return await walk_watched_tree(watched_root, max_depth=depth)
 
 
-@router.get("/{label}/children/{path:path}", response_model=list[PageNode])
+@router.get("/{label}/children/{path:path}", response_model=DirChildren)
 async def get_watched_children(
     label: str,
     path: str,
     settings: Annotated[Settings, Depends(get_settings)],
-) -> list[PageNode]:
+) -> DirChildren:
     config = await load_watched_config(settings.content_dir)
     entry = next((e for e in config if e["label"] == label), None)
     if entry is None:
-        return []
+        return DirChildren()
     watched_root = Path(entry["path"]).expanduser().resolve()
     try:
         _, _ = await resolve_watched_file(settings.content_dir, label, path)
     except Exception:
-        return []
-    return await walk_watched_children(watched_root, path)
+        return DirChildren()
+    children, other = await walk_watched_children(watched_root, path)
+    return DirChildren(children=children, other_files=other)
 
 
 @router.get("/{label}/assets/{path:path}")

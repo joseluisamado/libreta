@@ -1,10 +1,12 @@
 <script setup lang="ts">
-  import type { PageNode } from '@/api/types'
+  import type { OtherFile, PageNode } from '@/api/types'
 
   defineProps<{
     children: PageNode[]
     basePath: string
     getChildUrl: (childPath: string) => string
+    otherFiles?: OtherFile[]
+    getOtherFileUrl?: (filePath: string) => string
   }>()
 
   const emit = defineEmits<{
@@ -24,6 +26,32 @@
     const name = window.prompt('Folder name:')
     if (!name || !name.trim()) return
     emit('createFolder', name.trim())
+  }
+
+  function kindBadge(kind: string): string {
+    switch (kind) {
+      case 'image':
+        return 'IMG'
+      case 'drawio':
+        return 'DRAW'
+      case 'text':
+        return 'TXT'
+      default:
+        return 'BIN'
+    }
+  }
+
+  function kindColor(kind: string): string {
+    switch (kind) {
+      case 'image':
+        return 'text-emerald-500'
+      case 'drawio':
+        return 'text-orange-500'
+      case 'text':
+        return 'text-violet-500'
+      default:
+        return 'text-slate-500'
+    }
   }
 </script>
 
@@ -74,7 +102,9 @@
             class="w-4 shrink-0 mr-1.5 text-[10px] font-semibold text-rose-500 text-center"
             >PDF</span
           >
-          <span v-else class="w-4 shrink-0 mr-1.5 text-[10px] font-semibold text-sky-500 text-center"
+          <span
+            v-else
+            class="w-4 shrink-0 mr-1.5 text-[10px] font-semibold text-sky-500 text-center"
             >MD</span
           >
           <span class="truncate">{{ child.title }}</span>
@@ -128,5 +158,35 @@
       </li>
     </ul>
     <p v-else class="text-sm text-slate-400 italic">Empty folder</p>
+  </section>
+
+  <!-- Other files -->
+  <section v-if="otherFiles && otherFiles.length" class="mt-6 border-t border-slate-200 pt-4">
+    <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-500 mb-2">Other files</h2>
+    <ul class="text-sm space-y-1">
+      <li v-for="file in otherFiles" :key="file.path" class="flex items-center gap-1 group">
+        <a
+          v-if="getOtherFileUrl"
+          :href="getOtherFileUrl(file.path)"
+          :download="file.name"
+          class="flex items-center flex-1 min-w-0 text-slate-600 hover:text-blue-600 hover:underline"
+        >
+          <span
+            class="w-6 shrink-0 mr-0.5 text-[10px] font-semibold text-center"
+            :class="kindColor(file.kind)"
+            >{{ kindBadge(file.kind) }}</span
+          >
+          <span class="truncate">{{ file.name }}</span>
+        </a>
+        <span v-else class="flex items-center flex-1 min-w-0 text-slate-600">
+          <span
+            class="w-6 shrink-0 mr-0.5 text-[10px] font-semibold text-center"
+            :class="kindColor(file.kind)"
+            >{{ kindBadge(file.kind) }}</span
+          >
+          <span class="truncate">{{ file.name }}</span>
+        </span>
+      </li>
+    </ul>
   </section>
 </template>

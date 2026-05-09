@@ -6,16 +6,22 @@ import {
   getWatchedTree,
   getWatchedChildren,
 } from '@/api/client'
-import type { PageNode, WatchedFolder } from '@/api/types'
+import type { OtherFile, PageNode, WatchedFolder } from '@/api/types'
 
-function mergeChildren(nodes: PageNode[], parentPath: string, children: PageNode[]): boolean {
+function mergeChildren(
+  nodes: PageNode[],
+  parentPath: string,
+  children: PageNode[],
+  otherFiles: OtherFile[],
+): boolean {
   for (const n of nodes) {
     if (n.path === parentPath) {
       n.children = children
       n.has_more = false
+      n.other_files = otherFiles
       return true
     }
-    if (n.children?.length && mergeChildren(n.children, parentPath, children)) {
+    if (n.children?.length && mergeChildren(n.children, parentPath, children, otherFiles)) {
       return true
     }
   }
@@ -71,10 +77,10 @@ export const useWatchedStore = defineStore('watched', {
     },
     async loadTreeChildren(label: string, parentPath: string): Promise<void> {
       try {
-        const children = await getWatchedChildren(label, parentPath)
+        const result = await getWatchedChildren(label, parentPath)
         const tree = this.trees[label]
         if (tree) {
-          mergeChildren(tree, parentPath, children)
+          mergeChildren(tree, parentPath, result.children, result.other_files)
           this.trees[label] = [...tree]
         }
       } catch (e) {

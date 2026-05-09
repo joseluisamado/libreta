@@ -13,7 +13,7 @@ from libreta.errors import (
     WatchedFolderNotAccessibleError,
     WatchedLabelNotFoundError,
 )
-from libreta.models import PageNode, PageRead
+from libreta.models import OtherFile, PageNode, PageRead
 from libreta.storage import pagefile
 
 logger = logging.getLogger(__name__)
@@ -112,7 +112,9 @@ async def walk_watched_tree(
     return await asyncio.to_thread(pagefile.walk_tree, watched_root, max_depth)
 
 
-async def walk_watched_children(watched_root: Path, raw_path: str) -> list[PageNode]:
+async def walk_watched_children(
+    watched_root: Path, raw_path: str
+) -> tuple[list[PageNode], list[OtherFile]]:
     return await asyncio.to_thread(pagefile.walk_children, watched_root, raw_path)
 
 

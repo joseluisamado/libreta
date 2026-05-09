@@ -14,6 +14,19 @@ Living document. Update as work progresses. Latest at the top.
 
 ---
 
+## 2026-05-09 — Other files in directory listing
+
+**What changed**: Directory pages now show non-page files (images, diagrams, text files, binaries) in a separate "Other files" section below the existing "In this folder" listing. The sidebar tree remains unchanged — only folders, `.md`, and `.pdf` files appear there.
+
+**How it works**:
+- **Backend**: New `OtherFile` model (name, path, kind) and `DirChildren` response model. `PageNode` gained an `other_files` field. The `_build_tree` helper in `pagefile.py` collects non-hidden, non-md, non-pdf files in each directory and attaches them to the directory node. File kind is classified by extension (image, drawio, text, binary). The `/children/{path}` endpoints now return `DirChildren` so lazy-loaded trees also get `other_files`.
+- **Frontend**: `DirListing.vue` gained optional `otherFiles` / `getOtherFileUrl` props and renders a "Other files" section with type badges (IMG/DRAW/TXT/BIN) linking to the asset serving endpoint. `PageView.vue` has the same section inline. Both sections are sorted alphabetically, separate from the main page listing.
+- **Common code**: All changes are in `pagefile.walk_tree` / `_build_tree`, so the feature applies automatically to the main wiki, git sources, and watched folders.
+
+**Pre-flight**: backend mypy clean, ruff clean, pytest 95/95. Frontend vue-tsc clean, eslint clean (pre-existing v-html warnings only), prettier clean, vitest 65/65.
+
+---
+
 ## 2026-05-08 — Pending-changes indicator (M4 follow-up)
 
 **What changed**: The sidebar now shows when local commits haven't been pushed to the remote yet. Each git source's status dot turns amber on `pending_count > 0`; an `↑N` button next to the source label opens a popover listing the changed pages (grouped by path with the underlying commits underneath).

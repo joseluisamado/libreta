@@ -89,6 +89,21 @@ class PageMove(BaseModel):
     new_path: str
 
 
+class OtherFile(BaseModel):
+    """A non-page file in a directory (image, diagram, binary, etc.)."""
+
+    name: str  # filename with extension
+    path: str  # relative path within the source
+    kind: str  # "image" | "drawio" | "text" | "binary"
+
+
+class DirChildren(BaseModel):
+    """Response for a directory's children, including non-page files."""
+
+    children: list[PageNode] = Field(default_factory=list)
+    other_files: list[OtherFile] = Field(default_factory=list)
+
+
 class PageNode(BaseModel):
     path: str
     title: str
@@ -96,6 +111,7 @@ class PageNode(BaseModel):
     children: list[PageNode] = Field(default_factory=list)
     has_more: bool = False
     kind: str = "page"  # "page" | "pdf"
+    other_files: list[OtherFile] = Field(default_factory=list)
 
 
 class HistoryEntry(BaseModel):

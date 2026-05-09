@@ -15,19 +15,26 @@ import type {
   GitSource,
   GitSourceCreate,
   GitSourceUpdate,
+  OtherFile,
   PageNode,
   SshKey,
   SshKeyCreate,
 } from '@/api/types'
 
-function mergeChildren(nodes: PageNode[], parentPath: string, children: PageNode[]): boolean {
+function mergeChildren(
+  nodes: PageNode[],
+  parentPath: string,
+  children: PageNode[],
+  otherFiles: OtherFile[],
+): boolean {
   for (const n of nodes) {
     if (n.path === parentPath) {
       n.children = children
       n.has_more = false
+      n.other_files = otherFiles
       return true
     }
-    if (n.children?.length && mergeChildren(n.children, parentPath, children)) {
+    if (n.children?.length && mergeChildren(n.children, parentPath, children, otherFiles)) {
       return true
     }
   }
@@ -140,10 +147,10 @@ export const useSourcesStore = defineStore('sources', {
     },
     async loadTreeChildren(sourceId: string, parentPath: string): Promise<void> {
       try {
-        const children = await getSourceChildren(sourceId, parentPath)
+        const result = await getSourceChildren(sourceId, parentPath)
         const tree = this.trees[sourceId]
         if (tree) {
-          mergeChildren(tree, parentPath, children)
+          mergeChildren(tree, parentPath, result.children, result.other_files)
           this.trees[sourceId] = [...tree]
         }
       } catch (e) {

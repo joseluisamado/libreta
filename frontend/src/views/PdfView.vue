@@ -194,10 +194,7 @@
     }
   }
 
-  async function buildOutline(
-    doc: pdfjs.PDFDocumentProxy,
-    items: any[],
-  ): Promise<OutlineEntry[]> {
+  async function buildOutline(doc: pdfjs.PDFDocumentProxy, items: any[]): Promise<OutlineEntry[]> {
     const out: OutlineEntry[] = []
     for (const item of items) {
       if (!item?.title) continue
@@ -459,15 +456,13 @@
     </div>
   </aside>
 
-  <article
-    class="mx-auto py-6"
-    :class="width === 'wide' ? 'max-w-none px-12' : 'max-w-3xl px-8'"
-  >
-    <header
-      class="flex items-center justify-between mb-4"
-      :class="width === 'wide' ? 'pr-48' : ''"
-    >
-      <Breadcrumbs :path="path" :source-id="sourceId || undefined" :watched-label="watchedLabel || undefined" />
+  <article class="mx-auto py-6" :class="width === 'wide' ? 'max-w-none px-12' : 'max-w-3xl px-8'">
+    <header class="flex items-center justify-between mb-4" :class="width === 'wide' ? 'pr-48' : ''">
+      <Breadcrumbs
+        :path="path"
+        :source-id="sourceId || undefined"
+        :watched-label="watchedLabel || undefined"
+      />
     </header>
     <h1 class="text-3xl font-bold mb-4">{{ title }}</h1>
     <p v-if="error" class="text-red-600">Failed to load PDF: {{ error }}</p>
@@ -475,10 +470,7 @@
     <div ref="containerEl" class="pdf-pages relative" />
 
     <!-- Page navigation — sticky at the bottom of the article, centered within it -->
-    <div
-      v-if="!loading && numPages > 0"
-      class="sticky bottom-4 flex justify-center z-30 mt-4"
-    >
+    <div v-if="!loading && numPages > 0" class="sticky bottom-4 flex justify-center z-30 mt-4">
       <div
         class="inline-flex items-center gap-1 bg-white/95 backdrop-blur border border-slate-200 rounded-full shadow-md px-2 py-1 text-sm"
       >
