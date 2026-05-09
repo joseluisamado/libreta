@@ -148,9 +148,9 @@
     return renderMarkdown(page.value.body, page.value.path)
   })
 
-  watch(html, async () => {
+  watch([html, mode], async () => {
     await nextTick()
-    if (contentEl.value) await renderMermaidIn(contentEl.value)
+    if (mode.value === 'rendered' && contentEl.value) await renderMermaidIn(contentEl.value)
   })
 
   const highlightedSource = computed(() => {

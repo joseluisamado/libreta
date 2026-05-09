@@ -36,6 +36,28 @@
   const sidebarWidth = ref(loadSidebarWidth())
   const dragging = ref(false)
 
+  const SIDEBAR_COLLAPSED_KEY = 'libreta:sidebar-collapsed'
+  const COLLAPSED_WIDTH = 40
+
+  function loadCollapsed(): boolean {
+    try {
+      return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === '1'
+    } catch {
+      return false
+    }
+  }
+
+  const collapsed = ref(loadCollapsed())
+
+  function toggleCollapsed(): void {
+    collapsed.value = !collapsed.value
+    try {
+      localStorage.setItem(SIDEBAR_COLLAPSED_KEY, collapsed.value ? '1' : '0')
+    } catch {
+      /* ignore */
+    }
+  }
+
   function saveWidth(w: number): void {
     try {
       localStorage.setItem(SIDEBAR_WIDTH_KEY, String(w))
@@ -157,7 +179,7 @@
 </script>
 
 <template>
-  <div class="flex flex-col h-full md:flex-row overflow-x-hidden w-full max-w-full">
+  <div class="flex flex-col h-full md:flex-row overflow-hidden w-full max-w-full">
     <!-- Mobile top bar -->
     <header
       class="md:hidden flex items-center gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3"
@@ -198,8 +220,37 @@
       @click="drawerOpen = false"
     />
 
+    <!-- Collapsed rail (desktop only) -->
+    <aside
+      v-if="collapsed"
+      class="hidden md:flex flex-col items-center bg-slate-50 border-r border-slate-200 shrink-0 py-3"
+      :style="{ width: COLLAPSED_WIDTH + 'px' }"
+    >
+      <button
+        type="button"
+        class="p-1.5 rounded hover:bg-slate-200 text-slate-600"
+        title="Expand sidebar"
+        aria-label="Expand sidebar"
+        @click="toggleCollapsed"
+      >
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          class="w-4 h-4"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <polyline points="9 18 15 12 9 6" />
+        </svg>
+      </button>
+    </aside>
+
     <!-- Sidebar / drawer -->
     <aside
+      v-show="!collapsed || drawerOpen"
       :style="{ width: sidebarWidth + 'px' }"
       class="bg-slate-50 border-slate-200 overflow-y-auto overflow-x-hidden p-4 z-40 fixed inset-y-0 left-0 border-r transition-transform duration-200 md:relative md:shrink-0 md:border-r md:block md:translate-x-0 md:inset-auto"
       :class="[
@@ -208,10 +259,32 @@
       ]"
     >
       <!-- Logo + nav links -->
-      <RouterLink to="/" class="hover:underline flex items-center gap-2 mb-4">
-        <img :src="logoUrl" alt="" class="w-7 h-7 hidden md:block" />
-        <h1 class="text-lg font-semibold hidden md:block">Libreta</h1>
-      </RouterLink>
+      <div class="flex items-center justify-between mb-4">
+        <RouterLink to="/" class="hover:underline flex items-center gap-2">
+          <img :src="logoUrl" alt="" class="w-7 h-7 hidden md:block" />
+          <h1 class="text-lg font-semibold hidden md:block">Libreta</h1>
+        </RouterLink>
+        <button
+          type="button"
+          class="hidden md:inline-flex p-1.5 rounded hover:bg-slate-200 text-slate-500"
+          title="Collapse sidebar"
+          aria-label="Collapse sidebar"
+          @click="toggleCollapsed"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            class="w-4 h-4"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <polyline points="15 18 9 12 15 6" />
+          </svg>
+        </button>
+      </div>
       <div class="flex gap-2 mb-3">
         <RouterLink
           to="/search"

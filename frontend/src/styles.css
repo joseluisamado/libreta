@@ -5,11 +5,11 @@
 @layer base {
   html {
     height: 100%;
-    overflow-x: hidden;
+    overflow: hidden;
   }
   body {
     height: 100%;
-    overflow-x: hidden;
+    overflow: hidden;
   }
   #app {
     height: 100%;
