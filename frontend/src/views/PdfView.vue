@@ -19,6 +19,17 @@
   // that fast scrolling doesn't reveal blank placeholders.
   const RENDER_MARGIN_PX = 800
 
+  // Cap on simultaneous page renders. pdf.js's worker is single-threaded so
+  // letting many pages start at once mostly just allocates extra canvases
+  // and inflates peak memory; 2 keeps the visible page rendering while one
+  // neighbor preloads.
+  const RENDER_CONCURRENCY = 2
+
+  // Cap devicePixelRatio for canvas rendering. On 3× phones the naive
+  // multiplier produces 9× the pixels per page, which dominates render time
+  // for negligible visual gain on body text.
+  const MAX_CANVAS_DPR = 2
+
   interface OutlineEntry {
     title: string
     pageIndex: number | null
@@ -85,11 +96,31 @@
   const renderingPages: Set<number> = new Set()
   const renderOrder: number[] = [] // for LRU eviction
 
+  // Render queue. `queued` holds pages waiting to render (insertion order
+  // gives priority — most recently requested visible page goes first via
+  // unshift). `activeTasks` tracks in-flight pdf.js RenderTasks so we can
+  // cancel them when the user navigates away. `evictThrottleTimer` debounces
+  // scroll-driven proactive eviction.
+  const queued: number[] = []
+  const activeTasks: Map<number, { cancel: () => void }> = new Map()
+  const activeScales: Map<number, number> = new Map() // scale of in-flight render
+  let evictThrottleTimer: number | null = null
+
   function clearAll(): void {
     if (observer) {
       observer.disconnect()
       observer = null
     }
+    queued.length = 0
+    for (const task of activeTasks.values()) {
+      try {
+        task.cancel()
+      } catch {
+        /* ignore */
+      }
+    }
+    activeTasks.clear()
+    activeScales.clear()
     placeholders.length = 0
     intrinsicSizes.length = 0
     renderedScales.clear()
@@ -149,24 +180,38 @@
     }
   }
 
-  // Drop canvases that no longer match the current layout's scale; the
-  // intersection observer (or single-mode jump) will re-render them.
+  // Mark renders as stale (so re-renders are queued at the new scale) but
+  // KEEP the old canvas in the DOM — it stretches via CSS and avoids a
+  // flash-of-blank during resize. The old canvas is removed by
+  // `renderPageWorker` once the new one is ready. Also cancel any in-flight
+  // render at the stale scale so we don't waste work.
   function discardStaleRenders(): void {
     for (const pageNum of Array.from(renderedPages)) {
       const prev = renderedScales.get(pageNum)
       const next = targetScaleFor(pageNum)
       if (prev === undefined) continue
-      if (Math.abs(prev - next) / next < 0.01) continue // within 1% — keep
-      const ph = placeholders[pageNum - 1]
-      if (!ph) continue
-      const canvas = ph.querySelector('canvas')
-      if (canvas) ph.removeChild(canvas)
-      const textLayerDiv = ph.querySelector('.textLayer')
-      if (textLayerDiv) ph.removeChild(textLayerDiv)
+      // 5% tolerance — re-rendering for tiny scale changes (e.g. scrollbar
+      // appearing/disappearing during reflow) isn't worth the work; the CSS
+      // stretch is invisible at this magnitude.
+      if (Math.abs(prev - next) / next < 0.05) continue
+      // Don't tear down the canvas — let it stretch under the new placeholder
+      // size. Just mark this page as needing a fresh render. The visible
+      // pages get re-enqueued by relayout() after this returns.
       renderedPages.delete(pageNum)
       renderedScales.delete(pageNum)
       const idx = renderOrder.indexOf(pageNum)
       if (idx !== -1) renderOrder.splice(idx, 1)
+    }
+    // Cancel any in-flight render whose scale is now stale.
+    for (const [pageNum, task] of activeTasks) {
+      const prev = activeScales.get(pageNum)
+      const next = targetScaleFor(pageNum)
+      if (prev !== undefined && Math.abs(prev - next) / next < 0.05) continue
+      try {
+        task.cancel()
+      } catch {
+        /* ignore */
+      }
     }
   }
 
@@ -176,11 +221,13 @@
     applyLayoutVisibility()
     discardStaleRenders()
     if (pdfLayout.value === 'single') {
-      // Render the current page (and pre-render neighbors) right away — no
-      // scroll happens to retrigger the IntersectionObserver.
+      // Render the current page right away — no scroll fires the observer
+      // — and pre-render ±2 neighbors so the next wheel/keypress is instant.
       void renderPageOnce(currentPage.value)
-      if (currentPage.value + 1 <= numPages.value) void renderPageOnce(currentPage.value + 1)
-      if (currentPage.value - 1 >= 1) void renderPageOnce(currentPage.value - 1)
+      for (const offset of [1, -1, 2, -2]) {
+        const n = currentPage.value + offset
+        if (n >= 1 && n <= numPages.value) void renderPageOnce(n)
+      }
     } else {
       // Scroll mode: discardStaleRenders dropped canvases that no longer
       // match the new scale, but the IntersectionObserver only fires on
@@ -220,7 +267,21 @@
     clearAll()
 
     try {
-      const doc = await pdfjs.getDocument({ url: assetUrl.value }).promise
+      // Pass options that let pdf.js stream/range-fetch the file. Defaults
+      // are already friendly (range/stream enabled), but disableAutoFetch
+      // lets us avoid pulling the entire PDF when the user only reads the
+      // first few pages — large wins on big scanned books over slow links.
+      // disableAutoFetch:false (the default) lets pdf.js prefetch the rest
+      // of the file in the background after the first chunk arrives. Worth
+      // the bandwidth: it makes single-page navigation feel instant once the
+      // doc is loaded, since neighbor pages don't pay a round-trip per flip.
+      const doc = await pdfjs.getDocument({
+        url: assetUrl.value,
+        rangeChunkSize: 65536,
+        disableAutoFetch: false,
+        disableStream: false,
+        disableRange: false,
+      }).promise
       if (myToken !== renderToken) {
         doc.destroy()
         return
@@ -232,14 +293,14 @@
       const container = containerEl.value
       if (!container) return
 
-      // Build placeholders. We need each page's intrinsic size to fix the
-      // aspect ratio so the scrollbar is correct from the start.
+      // Build placeholders synchronously with a guessed aspect ratio so the
+      // user sees the page list immediately. We refine each placeholder's
+      // size as soon as its true intrinsic dims arrive (in parallel below).
+      // A4 portrait at 72 DPI is 595 × 842; that's a reasonable default.
+      const FALLBACK_W = 595
+      const FALLBACK_H = 842
       for (let i = 1; i <= doc.numPages; i++) {
-        if (myToken !== renderToken) return
-        const page = await doc.getPage(i)
-        const baseViewport = page.getViewport({ scale: 1 })
-        intrinsicSizes.push({ w: baseViewport.width, h: baseViewport.height })
-
+        intrinsicSizes.push({ w: FALLBACK_W, h: FALLBACK_H })
         const ph = document.createElement('div')
         ph.dataset.pageNumber = String(i)
         ph.className =
@@ -254,9 +315,6 @@
         container.appendChild(ph)
         placeholders.push(ph)
         applyPlaceholderSize(i)
-
-        // Free the structural page proxy now; we'll re-fetch on actual render.
-        page.cleanup()
       }
 
       applyLayoutVisibility()
@@ -270,9 +328,16 @@
             if (!n) continue
             if (entry.isIntersecting) {
               void renderPageOnce(n)
+            } else {
+              // Page just left the prefetch zone — drop any queued render
+              // request so we don't waste cycles on something the user
+              // scrolled past.
+              const idx = queued.indexOf(n)
+              if (idx !== -1) queued.splice(idx, 1)
             }
           }
           updateCurrentPage()
+          scheduleProactiveEviction()
         },
         {
           root: null,
@@ -282,11 +347,17 @@
       )
       for (const ph of placeholders) observer.observe(ph)
 
-      // Outline (best-effort; many PDFs lack one).
+      // Refine intrinsic dims in parallel. Visible pages' real sizes arrive
+      // first because pdf.js streams pages roughly in fetch order. Each
+      // resolution updates that page's placeholder; the layout reflows
+      // page-by-page rather than blocking the whole list.
+      void refineIntrinsicSizes(doc, myToken)
+
+      // Outline (best-effort; many PDFs lack one). Run page-index resolution
+      // in parallel within each level so deep outlines don't take seconds.
       try {
         const raw = await doc.getOutline()
         if (myToken !== renderToken || !raw) return
-        // Some pdf.js versions wrap the array in { items: [...] }.
         const rawAny = raw as any
         const items: any[] = Array.isArray(rawAny) ? rawAny : rawAny.items
         if (items?.length) {
@@ -302,45 +373,109 @@
     }
   }
 
-  async function buildOutline(doc: pdfjs.PDFDocumentProxy, items: any[]): Promise<OutlineEntry[]> {
-    const out: OutlineEntry[] = []
-    for (const item of items) {
-      if (!item?.title) continue
-      let pageIndex: number | null = null
-      try {
-        let dest: unknown = item.dest
-        if (typeof dest === 'string') dest = await doc.getDestination(dest)
-        if (Array.isArray(dest)) {
-          // dest[0] is typically a page ref { num, gen }.
-          const ref = dest[0] as { num: number; gen: number } | null
-          if (ref && typeof ref.num === 'number') {
-            pageIndex = await doc.getPageIndex(ref)
+  async function refineIntrinsicSizes(doc: pdfjs.PDFDocumentProxy, myToken: number): Promise<void> {
+    // Fire all getPage calls in parallel; pdf.js's worker queue serializes
+    // them but without artificial UI-thread awaits between iterations. Each
+    // resolution updates only its own placeholder.
+    await Promise.all(
+      Array.from({ length: doc.numPages }, async (_unused, idx) => {
+        const i = idx + 1
+        if (myToken !== renderToken) return
+        try {
+          const page = await doc.getPage(i)
+          if (myToken !== renderToken) return
+          const baseViewport = page.getViewport({ scale: 1 })
+          const intr = intrinsicSizes[i - 1]
+          if (!intr) return
+          // Skip if this page is already rendered (its real dims are baked
+          // into the canvas) or unchanged.
+          if (intr.w === baseViewport.width && intr.h === baseViewport.height) {
+            page.cleanup()
+            return
           }
+          intr.w = baseViewport.width
+          intr.h = baseViewport.height
+          applyPlaceholderSize(i)
+          // Free the structural proxy; renderPageOnce will re-fetch on
+          // actual render. This keeps the worker's per-page memory bounded.
+          page.cleanup()
+        } catch {
+          /* ignore individual-page failure; placeholder keeps fallback size */
         }
-      } catch {
-        /* unresolved destination — leave null */
-      }
-      const children = Array.isArray(item.items) ? await buildOutline(doc, item.items) : []
-      out.push({ title: String(item.title), pageIndex, children })
-    }
-    return out
+      }),
+    )
   }
 
-  async function renderPageOnce(pageNum: number): Promise<void> {
+  async function buildOutline(doc: pdfjs.PDFDocumentProxy, items: any[]): Promise<OutlineEntry[]> {
+    // Resolve siblings (and recurse into children) in parallel. A deep TOC
+    // with hundreds of entries would otherwise serialize hundreds of worker
+    // round-trips.
+    return Promise.all(
+      items
+        .filter((item) => item?.title)
+        .map(async (item) => {
+          let pageIndex: number | null = null
+          try {
+            let dest: unknown = item.dest
+            if (typeof dest === 'string') dest = await doc.getDestination(dest)
+            if (Array.isArray(dest)) {
+              const ref = dest[0] as { num: number; gen: number } | null
+              if (ref && typeof ref.num === 'number') {
+                pageIndex = await doc.getPageIndex(ref)
+              }
+            }
+          } catch {
+            /* unresolved destination — leave null */
+          }
+          const children = Array.isArray(item.items) ? await buildOutline(doc, item.items) : []
+          return { title: String(item.title), pageIndex, children }
+        }),
+    )
+  }
+
+  function renderPageOnce(pageNum: number): void {
     if (renderedPages.has(pageNum) || renderingPages.has(pageNum)) return
+    if (!activeDoc) return
+    if (queued.includes(pageNum)) {
+      // Re-prioritize: move to the front so the most recently requested
+      // page renders next.
+      queued.splice(queued.indexOf(pageNum), 1)
+      queued.unshift(pageNum)
+      return
+    }
+    queued.unshift(pageNum)
+    pumpRenderQueue()
+  }
+
+  function pumpRenderQueue(): void {
+    while (activeTasks.size < RENDER_CONCURRENCY && queued.length > 0) {
+      const pageNum = queued.shift()!
+      // Skip if it's no longer needed (already rendered or in flight).
+      if (renderedPages.has(pageNum) || renderingPages.has(pageNum)) continue
+      // In single mode drop pre-renders the user has already paged past —
+      // anything more than 2 away from the current page is wasted work.
+      if (pdfLayout.value === 'single' && Math.abs(pageNum - currentPage.value) > 2) continue
+      void renderPageWorker(pageNum)
+    }
+  }
+
+  async function renderPageWorker(pageNum: number): Promise<void> {
     if (!activeDoc) return
     const myToken = renderToken
     renderingPages.add(pageNum)
+    let page: pdfjs.PDFPageProxy | null = null
     try {
       const ph = placeholders[pageNum - 1]
       if (!ph) return
-      const page = await activeDoc.getPage(pageNum)
+      page = await activeDoc.getPage(pageNum)
       if (myToken !== renderToken) return
 
       const scale = targetScaleFor(pageNum)
       const viewport = page.getViewport({ scale })
-      const dpr = window.devicePixelRatio || 1
+      const dpr = Math.min(window.devicePixelRatio || 1, MAX_CANVAS_DPR)
 
+      // Render off-DOM. The previous (now stale-scale) canvas keeps showing,
+      // stretched via CSS, until ours is fully drawn — then we swap atomically.
       const canvas = document.createElement('canvas')
       canvas.width = Math.floor(viewport.width * dpr)
       canvas.height = Math.floor(viewport.height * dpr)
@@ -352,42 +487,65 @@
       if (!ctx) return
       ctx.scale(dpr, dpr)
 
-      // Insert before the label so the label stays on top.
-      ph.insertBefore(canvas, ph.firstChild)
-      await page.render({ canvasContext: ctx, viewport, canvas }).promise
+      const renderTask = page.render({ canvasContext: ctx, viewport, canvas })
+      activeTasks.set(pageNum, renderTask)
+      activeScales.set(pageNum, scale)
 
+      // Render text layer into a detached div so we can insert it as a unit
+      // alongside the canvas on success.
+      const textLayerDiv = document.createElement('div')
+      textLayerDiv.className = 'textLayer'
+      textLayerDiv.style.width = `${viewport.width}px`
+      textLayerDiv.style.height = `${viewport.height}px`
+      textLayerDiv.style.setProperty('--scale-factor', String(viewport.scale))
+      textLayerDiv.style.setProperty('--total-scale-factor', String(viewport.scale))
+      const textLayer = new pdfjs.TextLayer({
+        textContentSource: page.streamTextContent(),
+        container: textLayerDiv,
+        viewport,
+      })
+      const textPromise = textLayer.render().catch(() => undefined)
+
+      await Promise.all([renderTask.promise, textPromise])
       if (myToken !== renderToken) return
 
-      // Build a selectable text layer above the canvas. Cheap relative to the
-      // canvas render and bounded by MAX_LIVE_CANVASES via eviction below.
-      try {
-        const textLayerDiv = document.createElement('div')
-        textLayerDiv.className = 'textLayer'
-        textLayerDiv.style.width = `${viewport.width}px`
-        textLayerDiv.style.height = `${viewport.height}px`
-        // pdf.js's TextLayer reads --scale-factor / --total-scale-factor.
-        textLayerDiv.style.setProperty('--scale-factor', String(viewport.scale))
-        textLayerDiv.style.setProperty('--total-scale-factor', String(viewport.scale))
-        ph.insertBefore(textLayerDiv, canvas.nextSibling)
-        const textLayer = new pdfjs.TextLayer({
-          textContentSource: page.streamTextContent(),
-          container: textLayerDiv,
-          viewport,
-        })
-        await textLayer.render()
-      } catch {
-        /* text layer is best-effort; image-only PDFs will simply have none */
-      }
+      // Swap atomically: remove all prior canvas/textLayer children, then
+      // insert ours. The label (the only other child) is preserved.
+      for (const old of Array.from(ph.querySelectorAll('canvas'))) ph.removeChild(old)
+      for (const old of Array.from(ph.querySelectorAll('.textLayer'))) ph.removeChild(old)
+      ph.insertBefore(canvas, ph.firstChild)
+      ph.insertBefore(textLayerDiv, canvas.nextSibling)
 
       renderedPages.add(pageNum)
       renderedScales.set(pageNum, scale)
       renderOrder.push(pageNum)
       evictIfNeeded(pageNum)
     } catch {
-      /* render aborted or failed — leave placeholder blank */
+      /* render cancelled or failed — leave the previous canvas (if any) */
     } finally {
+      activeTasks.delete(pageNum)
+      activeScales.delete(pageNum)
       renderingPages.delete(pageNum)
+      // Free per-page graphics state in the worker. The proxy will be
+      // re-fetched cheaply on a future render.
+      if (page) {
+        try {
+          page.cleanup()
+        } catch {
+          /* ignore */
+        }
+      }
+      pumpRenderQueue()
     }
+  }
+
+  function scheduleProactiveEviction(): void {
+    if (evictThrottleTimer !== null) return
+    evictThrottleTimer = window.setTimeout(() => {
+      evictThrottleTimer = null
+      // Use -1 as a sentinel meaning "don't protect any specific page".
+      evictIfNeeded(-1)
+    }, 250)
   }
 
   function evictIfNeeded(justRendered: number): void {
@@ -446,9 +604,11 @@
       applyLayoutVisibility()
       window.scrollTo({ top: 0, behavior: 'auto' })
       void renderPageOnce(n)
-      // Pre-render neighbors so paging feels instant.
-      if (n + 1 <= numPages.value) void renderPageOnce(n + 1)
-      if (n - 1 >= 1) void renderPageOnce(n - 1)
+      // Pre-render ±2 neighbors so the next wheel/keypress is instant.
+      for (const offset of [1, -1, 2, -2]) {
+        const m = n + offset
+        if (m >= 1 && m <= numPages.value) void renderPageOnce(m)
+      }
       return
     }
     const ph = placeholders[n - 1]
@@ -553,6 +713,10 @@
     if (relayoutTimer !== null) {
       window.clearTimeout(relayoutTimer)
       relayoutTimer = null
+    }
+    if (evictThrottleTimer !== null) {
+      window.clearTimeout(evictThrottleTimer)
+      evictThrottleTimer = null
     }
     if (observer) observer.disconnect()
     if (resizeObserver) {
