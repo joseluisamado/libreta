@@ -416,23 +416,25 @@ def test_watched_children_endpoint(client_with_watchers: TestClient, deep_fixtur
     assert notes["has_more"] is True
     assert notes["children"] == []
 
-    # Fetch children of "notes" via the children endpoint
+    # Fetch children of "notes" via the children endpoint. Children come
+    # back with full paths (rooted at the watched repo) so the frontend can
+    # merge them into the existing tree without rewriting.
     r2 = client_with_watchers.get("/api/v1/watch/deep/children/notes")
     assert r2.status_code == 200
     data = r2.json()
     children = data["children"]
     child_paths = {c["path"] for c in children}
-    assert "todo" in child_paths
-    assert "archive" in child_paths
+    assert "notes/todo" in child_paths
+    assert "notes/archive" in child_paths
 
     # archive has real children (2023.md, 2024.md); since max_depth=1 for
     # the child walk, archive (depth 0 < 1) is expanded and its children
     # appear with the prefixed path.
-    archive = next(c for c in children if c["path"] == "archive")
+    archive = next(c for c in children if c["path"] == "notes/archive")
     assert archive["is_directory"] is True
     child_of_archive = {c["path"] for c in archive["children"]}
-    assert "archive/2023" in child_of_archive
-    assert "archive/2024" in child_of_archive
+    assert "notes/archive/2023" in child_of_archive
+    assert "notes/archive/2024" in child_of_archive
 
-    todo = next(c for c in children if c["path"] == "todo")
+    todo = next(c for c in children if c["path"] == "notes/todo")
     assert todo["has_more"] is False

@@ -157,5 +157,18 @@ export const useSourcesStore = defineStore('sources', {
         this.error = e instanceof Error ? e.message : String(e)
       }
     },
+    // Walk down each ancestor of *path*, fetching children for any segment
+    // not already present in the tree. Needed when navigating directly to a
+    // URL deeper than the initial tree depth (the intermediate folders are
+    // unknown to the client and would never be expanded otherwise).
+    async ensurePathExpanded(sourceId: string, path: string): Promise<void> {
+      if (!path) return
+      const segments = path.split('/').filter(Boolean)
+      let acc = ''
+      for (const seg of segments) {
+        acc = acc ? `${acc}/${seg}` : seg
+        await this.loadTreeChildren(sourceId, acc)
+      }
+    },
   },
 })

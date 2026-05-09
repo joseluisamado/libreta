@@ -48,6 +48,13 @@
       page.value = await getSourcePage(sourceId.value, path.value)
       // Ensure the tree is loaded so we can detect directory status
       await sources.loadTree(sourceId.value)
+      // The initial tree is depth-limited; if the current path is deeper
+      // than that, the intermediate nodes are unknown to the client. Walk
+      // each ancestor and fetch its children so dirNode resolves and the
+      // listing renders.
+      if (page.value && path.value) {
+        await sources.ensurePathExpanded(sourceId.value, path.value)
+      }
     } catch (e) {
       error.value = e instanceof Error ? e.message : String(e)
     }

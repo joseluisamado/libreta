@@ -87,5 +87,14 @@ export const useWatchedStore = defineStore('watched', {
         this.error = e instanceof Error ? e.message : String(e)
       }
     },
+    async ensurePathExpanded(label: string, path: string): Promise<void> {
+      if (!path) return
+      const segments = path.split('/').filter(Boolean)
+      let acc = ''
+      for (const seg of segments) {
+        acc = acc ? `${acc}/${seg}` : seg
+        await this.loadTreeChildren(label, acc)
+      }
+    },
   },
 })

@@ -360,6 +360,10 @@ def walk_tree(root: Path, max_depth: int | None = None) -> list[PageNode]:
 def walk_children(root: Path, raw_path: str) -> tuple[list[PageNode], list[OtherFile]]:
     """Return immediate children of *raw_path* within *root* (max_depth=1).
 
+    Children are returned with full paths (rooted at the source/watched
+    repo), matching the convention used by ``walk_tree`` so the frontend can
+    merge them into the existing tree without any path rewriting.
+
     Also returns any non-page files in the directory so the caller can
     populate ``other_files`` on the parent node.
     """
@@ -370,7 +374,7 @@ def walk_children(root: Path, raw_path: str) -> tuple[list[PageNode], list[Other
         return [], []
     if not child_dir.is_dir():
         return [], []
-    return _build_tree(child_dir, "", max_depth=1)
+    return _build_tree(child_dir, raw_path, max_depth=1)
 
 
 # ---------------------------------------------------------------------------

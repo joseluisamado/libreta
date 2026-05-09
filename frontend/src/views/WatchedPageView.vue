@@ -49,6 +49,11 @@
       if (!watched.trees[label.value]) {
         await watched.loadTree(label.value)
       }
+      // The initial tree is depth-limited; expand each ancestor of the
+      // current path so deep directories list their children correctly.
+      if (page.value && path.value) {
+        await watched.ensurePathExpanded(label.value, path.value)
+      }
     } catch (e) {
       error.value = e instanceof Error ? e.message : String(e)
     }
