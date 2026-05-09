@@ -95,6 +95,7 @@ class PageNode(BaseModel):
     is_directory: bool
     children: list[PageNode] = Field(default_factory=list)
     has_more: bool = False
+    kind: str = "page"  # "page" | "pdf"
 
 
 class HistoryEntry(BaseModel):

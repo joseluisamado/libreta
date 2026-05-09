@@ -528,9 +528,7 @@ def list_pending_sync(repos_dir: Path, source_id: str, branch: str) -> list[dict
     return out
 
 
-async def list_pending(
-    repos_dir: Path, source_id: str, branch: str
-) -> list[dict[str, Any]]:
+async def list_pending(repos_dir: Path, source_id: str, branch: str) -> list[dict[str, Any]]:
     return await asyncio.to_thread(list_pending_sync, repos_dir, source_id, branch)
 
 
@@ -588,6 +586,7 @@ def _walk_tree_sync(
 
         md_names: dict[str, Path] = {}
         dir_names: dict[str, Path] = {}
+        pdf_files: list[Path] = []
         for entry in entries:
             if entry.name.startswith("."):
                 continue
@@ -596,6 +595,8 @@ def _walk_tree_sync(
                     dir_names[entry.name] = entry
                 elif entry.suffix == ".md":
                     md_names[entry.stem] = entry
+                elif entry.suffix.lower() == ".pdf":
+                    pdf_files.append(entry)
             except OSError:
                 continue
 
@@ -649,6 +650,18 @@ def _walk_tree_sync(
                             children=children,
                         )
                     )
+
+        for pdf in sorted(pdf_files, key=lambda p: p.name.casefold()):
+            child_url = f"{url_prefix}/{pdf.name}" if url_prefix else pdf.name
+            nodes.append(
+                PageNode(
+                    path=child_url,
+                    title=pdf.stem.replace("-", " ").replace("_", " "),
+                    is_directory=False,
+                    children=[],
+                    kind="pdf",
+                )
+            )
         return nodes
 
     return build(pages_root, "")

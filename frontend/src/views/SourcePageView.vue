@@ -38,6 +38,10 @@
   })
 
   async function load(): Promise<void> {
+    if (path.value.toLowerCase().endsWith('.pdf')) {
+      router.replace(`/pdf-source/${sourceId.value}/${path.value}`)
+      return
+    }
     page.value = null
     error.value = null
     try {
@@ -87,6 +91,9 @@
   const basePath = computed(() => (path.value === '' ? '' : path.value))
 
   function getChildUrl(childPath: string): string {
+    if (childPath.toLowerCase().endsWith('.pdf')) {
+      return `/pdf-source/${sourceId.value}/${childPath}`
+    }
     return `/source/${sourceId.value}/${childPath}`
   }
 

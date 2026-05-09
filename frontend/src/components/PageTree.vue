@@ -161,6 +161,23 @@
   function childRootNamespace(node: PageNode): string {
     return props.rootNamespace ?? node.path.split('/')[0] ?? ''
   }
+
+  // Build the link target for a node, accounting for pdf nodes whose viewer
+  // route depends on context (main wiki vs. source vs. watched-not-supported).
+  function nodeLink(node: PageNode): string {
+    const prefix = props.linkPrefix ?? '/w'
+    if (node.kind === 'pdf') {
+      const sourceMatch = /^\/source\/([^/]+)$/.exec(prefix)
+      if (sourceMatch) return `/pdf-source/${sourceMatch[1]}/${node.path}`
+      if (prefix === '/w') return `/pdf/${node.path}`
+      // Watched / unsupported context: link to the raw asset (browser handles).
+      const watchedMatch = /^\/watch\/([^/]+)$/.exec(prefix)
+      if (watchedMatch) {
+        return `/pdf/${node.path}` // best-effort; viewer will 404 but shows error
+      }
+    }
+    return `${prefix}/${node.path}`
+  }
 </script>
 
 <template>
@@ -203,8 +220,8 @@
         </button>
         <span v-else class="shrink-0 w-4 h-4" aria-hidden="true" />
         <RouterLink
-          :to="`${linkPrefix ?? '/w'}/${node.path}`"
-          class="flex-1 truncate"
+          :to="nodeLink(node)"
+          class="flex-1 truncate flex items-center gap-1"
           :class="
             node.children.length || node.has_more
               ? 'text-slate-800 font-medium hover:text-blue-600'
@@ -212,7 +229,10 @@
           "
           active-class="text-blue-700 font-semibold"
         >
-          {{ node.title }}
+          <span v-if="node.kind === 'pdf'" class="text-[10px] font-semibold text-rose-500 shrink-0"
+            >PDF</span
+          >
+          <span class="truncate">{{ node.title }}</span>
         </RouterLink>
       </div>
       <PageTree

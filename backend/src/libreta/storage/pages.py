@@ -219,9 +219,10 @@ def _walk_tree_sync(content_dir: Path) -> list[PageNode]:
             return nodes
 
         # Partition entries: dot-files are skipped, .md files become pages,
-        # directories provide children.
+        # .pdf files become leaf pdf nodes, directories provide children.
         md_names: dict[str, Path] = {}
         dir_names: dict[str, Path] = {}
+        pdf_files: list[Path] = []
         for entry in entries:
             if entry.name.startswith("."):
                 continue
@@ -229,6 +230,8 @@ def _walk_tree_sync(content_dir: Path) -> list[PageNode]:
                 dir_names[entry.name] = entry
             elif entry.suffix == ".md":
                 md_names[entry.stem] = entry
+            elif entry.suffix.lower() == ".pdf":
+                pdf_files.append(entry)
 
         all_names: set[str] = set()
         all_names.update(md_names.keys())
@@ -259,6 +262,21 @@ def _walk_tree_sync(content_dir: Path) -> list[PageNode]:
                         children=children,
                     )
                 )
+
+        # Append PDFs as leaf nodes. The path keeps the .pdf suffix so the
+        # frontend can route it to the viewer and the asset endpoint can
+        # resolve it as pages/<...>.pdf.
+        for pdf in sorted(pdf_files, key=lambda p: p.name.casefold()):
+            child_url = f"{url_prefix}/{pdf.name}" if url_prefix else pdf.name
+            nodes.append(
+                PageNode(
+                    path=child_url,
+                    title=pdf.stem.replace("-", " ").replace("_", " "),
+                    is_directory=False,
+                    children=[],
+                    kind="pdf",
+                )
+            )
         return nodes
 
     return build(pages_root, "")

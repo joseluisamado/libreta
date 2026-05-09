@@ -25,6 +25,7 @@ export interface PageNode {
   is_directory: boolean
   children: PageNode[]
   has_more?: boolean
+  kind?: 'page' | 'pdf'
 }
 
 export interface HistoryEntry {

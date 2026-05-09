@@ -54,6 +54,10 @@
   })
 
   async function load(): Promise<void> {
+    if (path.value.toLowerCase().endsWith('.pdf')) {
+      router.replace(`/pdf/${path.value}`)
+      return
+    }
     page.value = null
     error.value = null
     try {
@@ -273,11 +277,14 @@
             class="flex items-center gap-1 group"
           >
             <RouterLink
-              :to="`/w/${child.path}`"
+              :to="`${child.kind === 'pdf' ? '/pdf' : '/w'}/${child.path}`"
               class="flex items-center flex-1 min-w-0 text-slate-700 hover:text-blue-600 hover:underline"
             >
               <span class="inline-block w-6 shrink-0 text-slate-400">
                 <span v-if="child.children.length">📁</span>
+                <span v-else-if="child.kind === 'pdf'" class="text-[10px] font-semibold text-rose-500"
+                  >PDF</span
+                >
               </span>
               <span class="truncate">{{ child.title }}</span>
             </RouterLink>
