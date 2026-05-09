@@ -86,6 +86,9 @@
   const basePath = computed(() => (path.value === '' ? '' : path.value))
 
   function getChildUrl(childPath: string): string {
+    if (childPath.toLowerCase().endsWith('.pdf')) {
+      return `/pdf-watch/${label.value}/${childPath}`
+    }
     return `/watch/${label.value}/${childPath}`
   }
 

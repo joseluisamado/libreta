@@ -170,10 +170,9 @@
       const sourceMatch = /^\/source\/([^/]+)$/.exec(prefix)
       if (sourceMatch) return `/pdf-source/${sourceMatch[1]}/${node.path}`
       if (prefix === '/w') return `/pdf/${node.path}`
-      // Watched / unsupported context: link to the raw asset (browser handles).
       const watchedMatch = /^\/watch\/([^/]+)$/.exec(prefix)
       if (watchedMatch) {
-        return `/pdf/${node.path}` // best-effort; viewer will 404 but shows error
+        return `/pdf-watch/${watchedMatch[1]}/${node.path}`
       }
     }
     return `${prefix}/${node.path}`
