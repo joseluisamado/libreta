@@ -9,7 +9,18 @@
   const props = defineProps<{ source: GitSource }>()
 
   const store = useSourcesStore()
-  const expanded = ref(true)
+
+  function loadStoredExpanded(): boolean {
+    try {
+      const raw = window.localStorage.getItem(`libreta:source-expanded-${props.source.id}`)
+      if (raw === null) return true
+      return raw === 'true'
+    } catch {
+      return true
+    }
+  }
+
+  const expanded = ref(loadStoredExpanded())
   const syncing = ref(false)
   const syncMessage = ref<string | null>(null)
   const loadingPaths = ref<Set<string>>(new Set())
@@ -23,6 +34,14 @@
     },
     { immediate: true },
   )
+
+  watch(expanded, (v) => {
+    try {
+      window.localStorage.setItem(`libreta:source-expanded-${props.source.id}`, String(v))
+    } catch {
+      // localStorage full or disabled — ignore
+    }
+  })
 
   async function handleExpand(node: PageNode): Promise<void> {
     loadingPaths.value = new Set([...loadingPaths.value, node.path])

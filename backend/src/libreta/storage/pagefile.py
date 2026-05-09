@@ -1,0 +1,314 @@
+from __future__ import annotations
+
+import logging
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
+
+import frontmatter
+from frontmatter import Post
+
+from libreta.errors import InvalidPathError, PageNotFoundError
+from libreta.models import PageMeta, PageNode, PageRead
+
+logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Shared data transforms
+# ---------------------------------------------------------------------------
+
+
+def parse_meta(raw: dict[str, Any], fallback_title: str) -> PageMeta:
+    title = raw.get("title") or fallback_title
+    tags = raw.get("tags") or []
+    if not isinstance(tags, list):
+        tags = [str(tags)]
+    return PageMeta(
+        title=str(title),
+        created=_as_datetime(raw.get("created")),
+        updated=_as_datetime(raw.get("updated")),
+        tags=[str(t) for t in tags],
+    )
+
+
+def _as_datetime(value: Any) -> datetime | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value
+    try:
+        return datetime.fromisoformat(str(value))
+    except ValueError:
+        return None
+
+
+def read_title_only(file: Path, fallback: str) -> str:
+    try:
+        post = frontmatter.load(file)
+        title = post.metadata.get("title")
+        return str(title) if title else fallback
+    except (OSError, ValueError):
+        return fallback
+
+
+# ---------------------------------------------------------------------------
+# Path validation
+# ---------------------------------------------------------------------------
+
+
+def validate_path_segments(raw_path: str) -> None:
+    if not raw_path:
+        return
+    for part in raw_path.split("/"):
+        if not part or part in {".", ".."}:
+            raise InvalidPathError(f"invalid path segment {part!r} in {raw_path!r}")
+        if "\x00" in part:
+            raise InvalidPathError("null byte in path")
+
+
+# ---------------------------------------------------------------------------
+# Read & write page files
+# ---------------------------------------------------------------------------
+
+
+def read_page_file(root: Path, raw_path: str) -> PageRead:
+    """Read a page from *root* at *raw_path*.
+
+    - ``.md`` / ``.html`` / ``.txt`` → parsed with frontmatter
+    - binary files (PDF, images, etc.) → stub PageRead with empty body
+    - directory → synthesized empty directory page
+    - missing → ``PageNotFoundError``
+    """
+    file = root / raw_path
+    fallback_title = file.name.replace("-", " ").replace("_", " ").title()
+
+    actual = file.with_suffix(".md") if not file.suffix else file
+    if actual.exists():
+        if actual.is_dir():
+            return PageRead(
+                path=raw_path,
+                meta=PageMeta(title=fallback_title),
+                body="",
+            )
+        suffix = actual.suffix.lower()
+        if suffix in {".md", ".html", ".txt"}:
+            post = frontmatter.load(actual)
+            return PageRead(
+                path=raw_path,
+                meta=parse_meta(post.metadata, fallback_title),
+                body=post.content,
+            )
+        # Binary or unsupported — stub for viewer routing
+        return PageRead(
+            path=raw_path,
+            meta=PageMeta(title=fallback_title),
+            body="",
+        )
+
+    if file.is_dir():
+        return PageRead(
+            path=raw_path,
+            meta=PageMeta(title=fallback_title),
+            body="",
+        )
+
+    raise PageNotFoundError(raw_path)
+
+
+def write_page_file(
+    root: Path, raw_path: str, body: str, extra_meta: dict[str, Any] | None = None
+) -> tuple[PageRead, str]:
+    """Write a page at *root* / *raw_path*.
+
+    Preserves existing frontmatter (title, created, tags) and sets updated=now.
+    *extra_meta* is merged on top of preserved metadata so callers can inject
+    auto-derived fields (e.g. tags on first save).
+
+    Returns ``(PageRead, verb)`` where *verb* is ``"create"`` or ``"update"``.
+    """
+    file = root / raw_path
+    fallback_title = file.name.replace("-", " ").replace("_", " ").title()
+
+    existing = file.with_suffix(".md") if not file.suffix else file
+    existed = existing.exists()
+
+    existing_meta: dict[str, Any] = {}
+    if existed:
+        try:
+            post = frontmatter.load(existing)
+            existing_meta = dict(post.metadata)
+        except (OSError, ValueError):
+            pass
+
+    now = datetime.now(UTC)
+    metadata: dict[str, Any] = {
+        "title": existing_meta.get("title", fallback_title),
+        "updated": now,
+    }
+    if "created" in existing_meta:
+        metadata["created"] = existing_meta["created"]
+    else:
+        metadata["created"] = now
+    if "tags" in existing_meta:
+        metadata["tags"] = existing_meta["tags"]
+
+    if extra_meta:
+        metadata.update(extra_meta)
+
+    existing.parent.mkdir(parents=True, exist_ok=True)
+    post = Post(body, **metadata)
+    existing.write_text(frontmatter.dumps(post), encoding="utf-8")
+
+    verb = "update" if existed else "create"
+
+    result = PageRead(
+        path=raw_path,
+        meta=PageMeta(
+            title=str(metadata["title"]),
+            created=metadata["created"] if isinstance(metadata["created"], datetime) else now,
+            updated=now,
+            tags=list(metadata.get("tags", [])),
+        ),
+        body=body,
+    )
+    return result, verb
+
+
+# ---------------------------------------------------------------------------
+# Tree walk
+# ---------------------------------------------------------------------------
+
+
+def walk_tree(root: Path, max_depth: int | None = None) -> list[PageNode]:
+    """Recursive tree walk from *root*. Returns a list of ``PageNode``.
+
+    - ``.md`` files become page nodes (title from frontmatter)
+    - directories become folder nodes with children
+    - ``.pdf`` files become leaf nodes with ``kind="pdf"``
+    - ``max_depth`` controls depth; truncated subtrees get ``has_more=True``
+    """
+    try:
+        if not root.exists():
+            return []
+    except OSError:
+        logger.warning("cannot access root %s", root)
+        return []
+
+    def build(dir_path: Path, url_prefix: str, depth: int = 0) -> list[PageNode]:
+        nodes: list[PageNode] = []
+        try:
+            entries = sorted(dir_path.iterdir(), key=lambda p: (not p.is_dir(), p.name.casefold()))
+        except OSError:
+            logger.warning("cannot list directory %s", dir_path)
+            return nodes
+
+        md_names: dict[str, Path] = {}
+        dir_names: dict[str, Path] = {}
+        pdf_files: list[Path] = []
+        for entry in entries:
+            if entry.name.startswith("."):
+                continue
+            try:
+                if entry.is_dir():
+                    dir_names[entry.name] = entry
+                elif entry.suffix == ".md":
+                    md_names[entry.stem] = entry
+                elif entry.suffix.lower() == ".pdf":
+                    pdf_files.append(entry)
+            except OSError:
+                continue
+
+        all_names: set[str] = set()
+        all_names.update(md_names.keys())
+        all_names.update(dir_names.keys())
+
+        hit_max = max_depth is not None and depth >= max_depth
+
+        for name in sorted(all_names):
+            md_file = md_names.get(name)
+            sub_dir = dir_names.get(name)
+            child_url = f"{url_prefix}/{name}" if url_prefix else name
+            humanised = name.replace("-", " ").replace("_", " ").title()
+
+            if hit_max and sub_dir:
+                title = read_title_only(md_file, humanised) if md_file else humanised
+                nodes.append(
+                    PageNode(
+                        path=child_url,
+                        title=title,
+                        is_directory=True,
+                        children=[],
+                        has_more=True,
+                    )
+                )
+            else:
+                children = build(sub_dir, child_url, depth + 1) if sub_dir else []
+                if md_file:
+                    title = read_title_only(md_file, humanised)
+                    nodes.append(
+                        PageNode(
+                            path=child_url,
+                            title=title,
+                            is_directory=bool(sub_dir),
+                            children=children,
+                        )
+                    )
+                else:
+                    nodes.append(
+                        PageNode(
+                            path=child_url,
+                            title=humanised,
+                            is_directory=True,
+                            children=children,
+                        )
+                    )
+
+        for pdf in sorted(pdf_files, key=lambda p: p.name.casefold()):
+            child_url = f"{url_prefix}/{pdf.name}" if url_prefix else pdf.name
+            nodes.append(
+                PageNode(
+                    path=child_url,
+                    title=pdf.stem.replace("-", " ").replace("_", " "),
+                    is_directory=False,
+                    children=[],
+                    kind="pdf",
+                )
+            )
+        return nodes
+
+    return build(root, "")
+
+
+def walk_children(root: Path, raw_path: str) -> list[PageNode]:
+    """Return immediate children of *raw_path* within *root* (max_depth=1)."""
+    child_dir = (root / raw_path).resolve()
+    try:
+        child_dir.relative_to(root)
+    except ValueError:
+        return []
+    if not child_dir.is_dir():
+        return []
+    return walk_tree(child_dir, max_depth=1)
+
+
+# ---------------------------------------------------------------------------
+# Asset resolution
+# ---------------------------------------------------------------------------
+
+
+def resolve_asset(root: Path, raw_path: str) -> Path:
+    """Resolve an asset file path within *root*.
+
+    Validates containment, rejects ``.md`` files and path traversal.
+    Returns the absolute ``Path`` to the asset.
+    """
+    validate_path_segments(raw_path)
+    suffix = Path(raw_path).suffix.lower()
+    if suffix == ".md" or suffix == "":
+        raise InvalidPathError("markdown pages are not served via /assets")
+    candidate = (root / raw_path).resolve()
+    if root not in candidate.parents and candidate != root:
+        raise InvalidPathError("asset path escapes root directory")
+    if not candidate.is_file():
+        raise PageNotFoundError(raw_path)
+    return candidate

@@ -39,8 +39,16 @@
     return Array.isArray(raw) ? raw[0] : (raw ?? '')
   })
 
+  const watchedLabel = computed(() => {
+    const raw = route.params.label
+    return Array.isArray(raw) ? raw[0] : (raw ?? '')
+  })
+
   const assetUrl = computed(() => {
     const segments = path.value.split('/').map(encodeURIComponent).join('/')
+    if (watchedLabel.value) {
+      return `/api/v1/watch/${encodeURIComponent(watchedLabel.value)}/assets/${segments}`
+    }
     if (sourceId.value) {
       return `/api/v1/sources/${encodeURIComponent(sourceId.value)}/assets/${segments}`
     }
@@ -332,7 +340,7 @@
     updateCurrentPage()
   }
 
-  watch([path, sourceId, containerEl], () => void loadDoc(), { immediate: true })
+  watch([path, sourceId, watchedLabel, containerEl], () => void loadDoc(), { immediate: true })
 
   onBeforeUnmount(() => {
     renderToken++
@@ -459,7 +467,7 @@
       class="flex items-center justify-between mb-4"
       :class="width === 'wide' ? 'pr-48' : ''"
     >
-      <Breadcrumbs :path="path" :source-id="sourceId || undefined" />
+      <Breadcrumbs :path="path" :source-id="sourceId || undefined" :watched-label="watchedLabel || undefined" />
     </header>
     <h1 class="text-3xl font-bold mb-4">{{ title }}</h1>
     <p v-if="error" class="text-red-600">Failed to load PDF: {{ error }}</p>

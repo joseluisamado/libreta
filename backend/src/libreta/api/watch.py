@@ -2,10 +2,14 @@ from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import FileResponse
 
 from libreta.config import Settings
 from libreta.deps import get_settings
-from libreta.errors import WatchedFolderAlreadyExistsError
+from libreta.errors import (
+    PageNotFoundError,
+    WatchedFolderAlreadyExistsError,
+)
 from libreta.models import (
     PageNode,
     PageRead,
@@ -13,6 +17,7 @@ from libreta.models import (
     WatchedFolderCreate,
     WatchedFolderResponse,
 )
+from libreta.storage import pagefile
 from libreta.storage.watched import (
     create_watched_folder,
     delete_watched_page,
@@ -100,6 +105,19 @@ async def get_watched_children(
     except Exception:
         return []
     return await walk_watched_children(watched_root, path)
+
+
+@router.get("/{label}/assets/{path:path}")
+async def get_watched_asset(
+    label: str,
+    path: str,
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> FileResponse:
+    watched_root, _ = await resolve_watched_file(settings.content_dir, label, path)
+    try:
+        return FileResponse(pagefile.resolve_asset(watched_root, path))
+    except PageNotFoundError:
+        raise HTTPException(status_code=404, detail=f"asset not found: {path}") from None
 
 
 @router.get("/{label}/{path:path}", response_model=PageRead)

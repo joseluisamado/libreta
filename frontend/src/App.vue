@@ -11,7 +11,20 @@
   const watchedStore = useWatchedStore()
   const route = useRoute()
   const drawerOpen = ref(false)
-  const sidebarTab = ref<'repos' | 'watched'>('repos')
+
+  const SIDEBAR_TAB_KEY = 'libreta:sidebar-tab'
+
+  function loadSidebarTab(): 'repos' | 'watched' {
+    try {
+      const raw = localStorage.getItem(SIDEBAR_TAB_KEY)
+      if (raw === 'repos' || raw === 'watched') return raw
+    } catch {
+      /* ignore */
+    }
+    return 'repos'
+  }
+
+  const sidebarTab = ref<'repos' | 'watched'>(loadSidebarTab())
 
   // ----- Sidebar drag-to-resize --------------------------------------------
 
@@ -93,6 +106,14 @@
   onMounted(() => {
     sourcesStore.loadSources()
     watchedStore.loadFolders()
+  })
+
+  watch(sidebarTab, (v) => {
+    try {
+      localStorage.setItem(SIDEBAR_TAB_KEY, v)
+    } catch {
+      /* ignore */
+    }
   })
 
   // Adaptive poll for the sources list. The `pending_count` field changes

@@ -20,25 +20,22 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-import frontmatter
 import pygit2
-from frontmatter import Post
 
 from libreta.errors import (
     GitSourceAlreadyExistsError,
     GitSourceCloneError,
     GitSourceNotFoundError,
     InvalidPathError,
-    PageNotFoundError,
 )
 from libreta.models import (
     GitSourceCreate,
     GitSourceResponse,
     GitSourceUpdate,
-    PageMeta,
     PageNode,
     PageRead,
 )
+from libreta.storage import pagefile
 from libreta.storage.ssh import make_callbacks
 
 logger = logging.getLogger(__name__)
@@ -557,126 +554,20 @@ def _commit_sync(
 
 
 # ---------------------------------------------------------------------------
-# Tree walk (identical logic to watched.py, just applied to the source clone)
+# Path validation for source page routes (rejects hidden segments)
 # ---------------------------------------------------------------------------
 
 
-def _read_title_only(file: Path, fallback: str) -> str:
-    try:
-        post = frontmatter.load(file)
-        title = post.metadata.get("title")
-        return str(title) if title else fallback
-    except (OSError, ValueError):
-        return fallback
+def _validate_source_path(raw_path: str) -> None:
+    pagefile.validate_path_segments(raw_path)
+    for part in raw_path.split("/"):
+        if part.startswith("."):
+            raise InvalidPathError(f"invalid path segment {part!r}")
 
 
-def _walk_tree_sync(
-    pages_root: Path,
-    max_depth: int | None = None,
-) -> list[PageNode]:
-    if not pages_root.exists():
-        return []
-
-    def build(dir_path: Path, url_prefix: str, depth: int = 0) -> list[PageNode]:
-        nodes: list[PageNode] = []
-        try:
-            entries = sorted(dir_path.iterdir(), key=lambda p: (not p.is_dir(), p.name.casefold()))
-        except OSError:
-            return nodes
-
-        md_names: dict[str, Path] = {}
-        dir_names: dict[str, Path] = {}
-        pdf_files: list[Path] = []
-        for entry in entries:
-            if entry.name.startswith("."):
-                continue
-            try:
-                if entry.is_dir():
-                    dir_names[entry.name] = entry
-                elif entry.suffix == ".md":
-                    md_names[entry.stem] = entry
-                elif entry.suffix.lower() == ".pdf":
-                    pdf_files.append(entry)
-            except OSError:
-                continue
-
-        all_names: set[str] = set()
-        all_names.update(md_names.keys())
-        all_names.update(dir_names.keys())
-
-        hit_max = max_depth is not None and depth >= max_depth
-
-        for name in sorted(all_names):
-            md_file = md_names.get(name)
-            sub_dir = dir_names.get(name)
-            child_url = f"{url_prefix}/{name}" if url_prefix else name
-            has_real_children = bool(sub_dir)
-
-            if hit_max and has_real_children:
-                title = (
-                    _read_title_only(md_file, name.replace("-", " ").replace("_", " ").title())
-                    if md_file
-                    else name.replace("-", " ").replace("_", " ").title()
-                )
-                nodes.append(
-                    PageNode(
-                        path=child_url,
-                        title=title,
-                        is_directory=True,
-                        children=[],
-                        has_more=True,
-                    )
-                )
-            else:
-                children = build(sub_dir, child_url, depth + 1) if sub_dir else []
-                if md_file:
-                    title = _read_title_only(
-                        md_file, name.replace("-", " ").replace("_", " ").title()
-                    )
-                    nodes.append(
-                        PageNode(
-                            path=child_url,
-                            title=title,
-                            is_directory=bool(sub_dir),
-                            children=children,
-                        )
-                    )
-                else:
-                    nodes.append(
-                        PageNode(
-                            path=child_url,
-                            title=name.replace("-", " ").replace("_", " ").title(),
-                            is_directory=True,
-                            children=children,
-                        )
-                    )
-
-        for pdf in sorted(pdf_files, key=lambda p: p.name.casefold()):
-            child_url = f"{url_prefix}/{pdf.name}" if url_prefix else pdf.name
-            nodes.append(
-                PageNode(
-                    path=child_url,
-                    title=pdf.stem.replace("-", " ").replace("_", " "),
-                    is_directory=False,
-                    children=[],
-                    kind="pdf",
-                )
-            )
-        return nodes
-
-    return build(pages_root, "")
-
-
-def _walk_source_children_sync(pages_root: Path, raw_path: str) -> list[PageNode]:
-    """Return immediate children of *raw_path* at max_depth=1."""
-    child_dir = (pages_root / raw_path).resolve()
-    try:
-        child_dir.relative_to(pages_root)
-    except ValueError:
-        return []
-    if not child_dir.is_dir():
-        return []
-    return _walk_tree_sync(child_dir, max_depth=1)
+# ---------------------------------------------------------------------------
+# Tree walk (delegates to pagefile)
+# ---------------------------------------------------------------------------
 
 
 async def walk_source_tree(
@@ -684,7 +575,7 @@ async def walk_source_tree(
     source_id: str,
     max_depth: int | None = None,
 ) -> list[PageNode]:
-    return await asyncio.to_thread(_walk_tree_sync, _local_path(repos_dir, source_id), max_depth)
+    return await asyncio.to_thread(pagefile.walk_tree, _local_path(repos_dir, source_id), max_depth)
 
 
 async def walk_source_children(
@@ -692,132 +583,24 @@ async def walk_source_children(
     source_id: str,
     raw_path: str,
 ) -> list[PageNode]:
-    return await asyncio.to_thread(
-        _walk_source_children_sync, _local_path(repos_dir, source_id), raw_path
-    )
+    local = _local_path(repos_dir, source_id)
+    return await asyncio.to_thread(pagefile.walk_children, local, raw_path)
 
 
 # ---------------------------------------------------------------------------
-# Read page
+# Read page (delegates to pagefile)
 # ---------------------------------------------------------------------------
-
-
-def _parse_meta(raw: dict[str, Any], fallback_title: str) -> PageMeta:
-    title = raw.get("title") or fallback_title
-    tags = raw.get("tags") or []
-    if not isinstance(tags, list):
-        tags = [str(tags)]
-    return PageMeta(
-        title=str(title),
-        created=_as_dt(raw.get("created")),
-        updated=_as_dt(raw.get("updated")),
-        tags=[str(t) for t in tags],
-    )
-
-
-def _as_dt(value: Any) -> datetime | None:
-    if value is None:
-        return None
-    if isinstance(value, datetime):
-        return value
-    try:
-        return datetime.fromisoformat(str(value))
-    except ValueError:
-        return None
-
-
-def _validate_path_segments(raw_path: str) -> None:
-    if not raw_path:
-        return
-    for part in raw_path.split("/"):
-        if not part or part in {".", ".."} or part.startswith("."):
-            raise InvalidPathError(f"invalid path segment {part!r}")
-        if "\x00" in part:
-            raise InvalidPathError("null byte in path")
-
-
-def _read_page_sync(pages_root: Path, raw_path: str) -> PageRead:
-    _validate_path_segments(raw_path)
-    file = pages_root / raw_path
-    fallback = file.name.replace("-", " ").replace("_", " ").title()
-
-    direct = file.with_suffix(".md") if not file.suffix else file
-    if direct.exists():
-        post = frontmatter.load(direct)
-        return PageRead(
-            path=raw_path,
-            meta=_parse_meta(post.metadata, fallback),
-            body=post.content,
-        )
-
-    if file.is_dir():
-        return PageRead(
-            path=raw_path,
-            meta=PageMeta(title=fallback),
-            body="",
-        )
-
-    raise PageNotFoundError(raw_path)
 
 
 async def read_source_page(repos_dir: Path, source_id: str, raw_path: str) -> PageRead:
-    return await asyncio.to_thread(_read_page_sync, _local_path(repos_dir, source_id), raw_path)
+    _validate_source_path(raw_path)
+    local = _local_path(repos_dir, source_id)
+    return await asyncio.to_thread(pagefile.read_page_file, local, raw_path)
 
 
 # ---------------------------------------------------------------------------
-# Write page (commits locally; caller enqueues push)
+# Write page (delegates to pagefile, then commits locally)
 # ---------------------------------------------------------------------------
-
-
-def _write_page_sync(
-    local: Path,
-    raw_path: str,
-    body: str,
-) -> tuple[PageRead, str]:
-    _validate_path_segments(raw_path)
-    file = local / raw_path
-    fallback = file.name.replace("-", " ").replace("_", " ").title()
-
-    existing = file.with_suffix(".md") if not file.suffix else file
-    existed = existing.exists()
-    existing_meta: dict[str, Any] = {}
-    if existed:
-        try:
-            post = frontmatter.load(existing)
-            existing_meta = dict(post.metadata)
-        except (OSError, ValueError):
-            pass
-
-    now = datetime.now(UTC)
-    metadata: dict[str, Any] = {
-        "title": existing_meta.get("title", fallback),
-        "updated": now,
-        "created": existing_meta.get("created", now),
-    }
-    if "tags" in existing_meta:
-        metadata["tags"] = existing_meta["tags"]
-
-    existing.parent.mkdir(parents=True, exist_ok=True)
-    new_post = Post(body, **metadata)
-    existing.write_text(frontmatter.dumps(new_post), encoding="utf-8")
-
-    # git commit
-    repo = _open_repo(local)
-    rel = str(existing.relative_to(local))
-    verb = "update" if existed else "create"
-    _commit_sync(repo, [rel], f"{verb} {rel}")
-
-    result = PageRead(
-        path=raw_path,
-        meta=PageMeta(
-            title=str(metadata["title"]),
-            created=metadata["created"] if isinstance(metadata["created"], datetime) else now,
-            updated=now,
-            tags=list(metadata.get("tags", [])),
-        ),
-        body=body,
-    )
-    return result, verb
 
 
 async def write_source_page(
@@ -828,7 +611,16 @@ async def write_source_page(
     raw_path: str,
     body: str,
 ) -> PageRead:
+    _validate_source_path(raw_path)
     local = _local_path(repos_dir, source_id)
     async with _get_lock(source_id):
-        result, _ = await asyncio.to_thread(_write_page_sync, local, raw_path, body)
+        result, _ = await asyncio.to_thread(pagefile.write_page_file, local, raw_path, body)
+        existing = (
+            (local / raw_path).with_suffix(".md")
+            if not Path(raw_path).suffix
+            else (local / raw_path)
+        )
+        repo = _open_repo(local)
+        rel = str(existing.relative_to(local))
+        _commit_sync(repo, [rel], f"update {rel}")
     return result

@@ -9,7 +9,7 @@ from fastapi.responses import FileResponse
 
 from libreta.config import Settings
 from libreta.deps import get_settings
-from libreta.errors import AssetNotFoundError, InvalidPathError
+from libreta.errors import AssetNotFoundError, PageNotFoundError
 from libreta.models import (
     AssetUploadResponse,
     GitSourceCreate,
@@ -24,7 +24,7 @@ from libreta.models import (
     SshKeyResponse,
 )
 from libreta.services.sync import enqueue_push
-from libreta.storage import sources as src_store, ssh as ssh_store
+from libreta.storage import pagefile, sources as src_store, ssh as ssh_store
 from libreta.storage.assets import replace_asset, store_asset
 from libreta.storage.repo import _delete_commit_sync, _move_commit_sync, commit_page, open_repo
 from libreta.storage.sources import _commit_sync
@@ -221,23 +221,11 @@ async def get_source_asset(
     path: str,
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> FileResponse:
-    if not path or path.startswith("/"):
-        raise InvalidPathError(f"asset path must be relative and non-empty: {path!r}")
-    parts = path.split("/")
-    for p in parts:
-        if not p or p in {".", ".."}:
-            raise InvalidPathError(f"invalid asset segment {p!r} in {path!r}")
-        if "\x00" in p:
-            raise InvalidPathError("null byte in path")
-    if path.endswith(".md"):
-        raise InvalidPathError("markdown pages are not served via /assets")
     repo_root = (settings.repos_dir / source_id).resolve()
-    candidate = (repo_root / Path(*parts)).resolve()
-    if repo_root not in candidate.parents and candidate != repo_root:
-        raise InvalidPathError("asset path escapes repository directory")
-    if not candidate.is_file():
-        raise AssetNotFoundError(path)
-    return FileResponse(candidate)
+    try:
+        return FileResponse(pagefile.resolve_asset(repo_root, path))
+    except PageNotFoundError:
+        raise AssetNotFoundError(path) from None
 
 
 @router.post("/{source_id}/pages/{path:path}/assets", response_model=AssetUploadResponse)

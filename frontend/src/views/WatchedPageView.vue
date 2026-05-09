@@ -37,6 +37,10 @@
   })
 
   async function load(): Promise<void> {
+    if (path.value.toLowerCase().endsWith('.pdf')) {
+      router.replace(`/pdf-watch/${label.value}/${path.value}`)
+      return
+    }
     page.value = null
     error.value = null
     try {
