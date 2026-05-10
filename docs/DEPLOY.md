@@ -161,18 +161,68 @@ asynchronously — you don't wait for the push.
 
 ---
 
-## 7. Front with TLS (Caddy example)
+## 7. Front with TLS (Caddy)
 
-`/etc/caddy/Caddyfile`:
+The repo ships a ready-to-use Caddy overlay (`docker-compose.caddy.yml` +
+`Caddyfile.example`) that runs Caddy as a sidecar container, terminates TLS
+with Let's Encrypt, and proxies to the frontend nginx. This is the
+recommended production setup — no separate Caddy install on the host.
 
+### 7a. Configure
+
+```bash
+cp Caddyfile.example Caddyfile
+# Edit: replace `wiki.example.com` with your domain and `you@example.com`
+# with an address you read (used for ACME expiry notices).
+$EDITOR Caddyfile
 ```
-wiki.example.com {
-    reverse_proxy localhost:8080
-}
+
+Make sure:
+
+- The domain's A/AAAA record points at this host.
+- Ports **80** and **443** are open on the firewall (and **443/udp** if you
+  want HTTP/3).
+- Nothing else is bound to those ports on the host.
+
+### 7b. Start with the overlay
+
+```bash
+VERSION=$(cat VERSION) docker compose \
+    -f docker-compose.yml \
+    -f docker-compose.prod.yml \
+    -f docker-compose.caddy.yml \
+    up -d
 ```
 
-Open ports 80 and 443; close everything else. Caddy will obtain the Let's
-Encrypt certificate on first request.
+The overlay:
+
+- Drops the public port from `frontend-prod` (only Caddy is reachable from
+  outside).
+- Adds a `caddy` container that mounts `./Caddyfile` read-only.
+- Persists the issued certificate + ACME account in the `caddy-data` named
+  volume so restarts don't re-issue.
+
+Caddy obtains the certificate on the first HTTPS request to your domain.
+Watch progress with:
+
+```bash
+docker compose logs -f caddy
+```
+
+### 7c. Renewals and reloads
+
+Renewal is automatic (Caddy checks twice daily). To apply a Caddyfile edit
+without restarting:
+
+```bash
+docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile
+```
+
+### 7d. Using a different reverse proxy
+
+If you already run Nginx or Traefik on the host, skip the Caddy overlay
+and bring up only `docker-compose.yml` + `docker-compose.prod.yml`. Point
+your existing proxy at `localhost:${LIBRETA_HTTP_PORT}` (default `8080`).
 
 ---
 
@@ -197,6 +247,10 @@ That archive contains:
 The local clone *is* the backup for the wiki content, because it is a full git
 repo. If you lose the volume but still have the remote, just re-add the source
 in the Admin UI — Libreta will re-clone.
+
+If you use the Caddy overlay, also back up the `caddy-data` volume — it
+holds the issued certificate and ACME account key. Without it, Caddy will
+re-issue on restore (rate-limited by Let's Encrypt).
 
 ---
 

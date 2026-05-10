@@ -1,0 +1,27 @@
+# Caddyfile.example — copy to `Caddyfile` and edit the domain.
+#
+# Caddy automatically obtains a Let's Encrypt certificate for the domain
+# below on first request. Make sure:
+#   - the domain's A/AAAA record points at this host
+#   - ports 80 and 443 are reachable from the public internet
+#   - you replace the email with one you actually read (used for ACME
+#     expiry notices)
+
+{
+    email you@example.com
+}
+
+wiki.example.com {
+    encode zstd gzip
+
+    # Reasonable upload ceiling for attachments. Raise if you store large
+    # PDFs or images. Libreta's API accepts whatever Caddy passes through.
+    request_body {
+        max_size 50MB
+    }
+
+    # `frontend-prod` is the nginx container in docker-compose.prod.yml.
+    # It serves the SPA and proxies /api/ to the backend internally, so
+    # Caddy only needs to know about this one upstream.
+    reverse_proxy frontend-prod:80
+}

@@ -1,0 +1,43 @@
+# Caddy overlay — adds a Caddy reverse proxy in front of `frontend-prod` with
+# automatic Let's Encrypt TLS.
+#
+# Usage:
+#
+#   1. Copy Caddyfile.example to Caddyfile and edit the domain.
+#   2. Point your DNS A/AAAA record at this host.
+#   3. Open ports 80 and 443 on the firewall.
+#   4. Bring up the stack with all three overlays:
+#
+#        VERSION=$(cat VERSION) docker compose \
+#            -f docker-compose.yml \
+#            -f docker-compose.prod.yml \
+#            -f docker-compose.caddy.yml \
+#            up -d
+#
+# Caddy obtains and renews the certificate automatically. The cert + ACME
+# account live in the `caddy-data` named volume; back that up to avoid
+# re-issuing on restore.
+services:
+  frontend-prod:
+    # Drop the host port — only Caddy is exposed publicly.
+    ports: !reset []
+    expose:
+      - "80"
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"  # HTTP/3
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - frontend-prod
+
+volumes:
+  caddy-data:
+  caddy-config:
