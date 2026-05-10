@@ -250,6 +250,10 @@ def _classify_other(name: str) -> str:
             ".tmpl",
             ".example",
             ".tsbuildinfo",
+            ".plist",
+            ".swift",
+            ".entitlements",
+            ".pbxproj"
         )
     ):
         return "text"
