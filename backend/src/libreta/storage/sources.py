@@ -15,6 +15,7 @@ import contextlib
 import json
 import logging
 import os
+import re
 import threading
 from datetime import UTC, datetime
 from pathlib import Path
@@ -100,7 +101,15 @@ async def save_sources(content_dir: Path, sources: list[dict[str, Any]]) -> None
 # ---------------------------------------------------------------------------
 
 
+_SOURCE_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
+
+
 def _local_path(repos_dir: Path, source_id: str) -> Path:
+    # source_id arrives from URL path params on read endpoints — enforce the
+    # same shape we require at create time, so a request like
+    # /api/v1/sources/../assets/... cannot escape the repos directory.
+    if not _SOURCE_ID_RE.match(source_id):
+        raise InvalidPathError(f"invalid source id: {source_id!r}")
     return repos_dir / source_id
 
 

@@ -258,7 +258,9 @@ function patchRenderer(): void {
   md.renderer.rules.fence = (tokens, idx, options, env, self) => {
     const token = tokens[idx]
     if (token && token.info.trim() === 'mermaid') {
-      return `<pre class="mermaid">${token.content}</pre>\n`
+      // R6: must HTML-escape user content before injecting raw HTML — mermaid
+      // re-reads `textContent` so the diagram still renders correctly.
+      return `<pre class="mermaid">${md.utils.escapeHtml(token.content)}</pre>\n`
     }
     return defaultFence(tokens, idx, options, env, self)
   }

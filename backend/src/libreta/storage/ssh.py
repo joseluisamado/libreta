@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import contextlib
 import hashlib
 import json
 import logging
@@ -148,6 +149,11 @@ def make_callbacks(
                 valid: bool,
                 host: bytes | str,
             ) -> bool:
+                # v1 caveat: no known-hosts pinning yet. We log the host so
+                # operators can spot unexpected changes; multi-user mode
+                # (M6) will introduce proper TOFU/known-hosts. See
+                # docs/SECURITY-REVIEW.md "Known limitations".
+                logger.info("git remote host=%r certificate.valid=%s", host, valid)
                 return True
 
         return _HttpCallbacks()
@@ -159,14 +165,21 @@ def make_callbacks(
 
     import stat as _stat
     import tempfile
+    import weakref
 
     # Write key to a temp file; pygit2.Keypair requires a file path.
-    # delete=False because the file must outlive this function scope.
+    # delete=False because the file must outlive this function scope; we
+    # register a finalizer on the callbacks instance so the tempfile is
+    # cleaned up when the operation finishes.
     tmp_fd, tmp_path = tempfile.mkstemp(suffix=".key")
     with os.fdopen(tmp_fd, "w") as f:
         f.write(private_key_pem)
     os.chmod(tmp_path, _stat.S_IRUSR | _stat.S_IWUSR)
     keypair = pygit2.Keypair("git", None, tmp_path, "")
+
+    def _cleanup(path: str = tmp_path) -> None:
+        with contextlib.suppress(OSError):
+            os.unlink(path)
 
     class _SshCallbacks(pygit2.RemoteCallbacks):
         def credentials(
@@ -183,9 +196,16 @@ def make_callbacks(
             valid: bool,
             host: bytes | str,
         ) -> bool:
+            # v1 caveat: no known-hosts pinning yet. We log the host so
+            # operators can spot unexpected changes; multi-user mode (M6)
+            # will introduce proper TOFU/known-hosts. See
+            # docs/SECURITY-REVIEW.md "Known limitations".
+            logger.info("git remote host=%r certificate.valid=%s", host, valid)
             return True
 
-    return _SshCallbacks()
+    cb = _SshCallbacks()
+    weakref.finalize(cb, _cleanup)
+    return cb
 
 
 # ---------------------------------------------------------------------------

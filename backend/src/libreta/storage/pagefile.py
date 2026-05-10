@@ -56,6 +56,9 @@ def read_title_only(file: Path, fallback: str) -> str:
 # ---------------------------------------------------------------------------
 
 
+_FORBIDDEN_HIDDEN_PREFIXES = (".git", ".ssh", ".libreta")
+
+
 def validate_path_segments(raw_path: str) -> None:
     if not raw_path:
         return
@@ -64,6 +67,11 @@ def validate_path_segments(raw_path: str) -> None:
             raise InvalidPathError(f"invalid path segment {part!r} in {raw_path!r}")
         if "\x00" in part:
             raise InvalidPathError("null byte in path")
+        # Sidecar dirs start with '.' (e.g. '.page.md/') and must remain
+        # accessible. Block well-known sensitive hidden segments instead.
+        lower = part.lower()
+        if any(lower.startswith(prefix) for prefix in _FORBIDDEN_HIDDEN_PREFIXES):
+            raise InvalidPathError(f"forbidden path segment {part!r}")
 
 
 # ---------------------------------------------------------------------------

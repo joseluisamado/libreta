@@ -223,7 +223,8 @@ async def get_source_asset(
     path: str,
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> FileResponse:
-    repo_root = (settings.repos_dir / source_id).resolve()
+    # _local_path validates source_id format; this resolves to <repos_dir>/<id>.
+    repo_root = src_store._local_path(settings.repos_dir, source_id).resolve()
     try:
         return FileResponse(pagefile.resolve_asset(repo_root, path))
     except PageNotFoundError:
