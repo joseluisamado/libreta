@@ -2,7 +2,7 @@
 
 > A self-hosted wiki where the source of truth is a directory of plain markdown files in a git repository — with a Confluence-grade WYSIWYG editor and first-class diagrams.net integration on top.
 
-**Status**: 🟡 Pre-alpha. Read-only wiki works end-to-end (M0 + M1 done). Editing, search, and diagrams still ahead. See [`docs/PROGRESS.md`](./docs/PROGRESS.md).
+**Status**: v1.0 release candidate. Editing, search, diagrams, git-source sync, and the production deployment story are all in. See [`docs/PROGRESS.md`](./docs/PROGRESS.md) for what landed and [`docs/ROADMAP.md`](./docs/ROADMAP.md) for what's beyond v1.
 
 ## Why this exists
 
@@ -22,24 +22,31 @@ See [`docs/PROJECT.md`](./docs/PROJECT.md) for full motivation, principles, and 
 
 ## Quickstart
 
+You need: Docker Engine 24+, the `docker compose` plugin, and a git repository
+to use as your wiki (it can be empty — Libreta will populate it).
+
 ```bash
-# Clone the project
+# 1. Clone Libreta
 git clone https://github.com/<you>/libreta.git
 cd libreta
 
-# Initialise your content repository (this is your wiki)
-mkdir -p ./data/content
-git -C ./data/content init
+# 2. Build and start the production stack
+make build-prod
+VERSION=$(cat VERSION) docker compose \
+    -f docker-compose.yml -f docker-compose.prod.yml up -d
 
-# Start it (dev stack: api + Vite frontend + drawio, all hot-reloading)
-make dev
-
-# Open http://localhost:8091  — Vite dev server (with HMR)
-#      http://localhost:8092  — API directly (FastAPI / OpenAPI at /api/v1/docs)
-#      http://localhost:8093  — drawio sidecar
+# 3. Open http://localhost:8080 in a browser, then go to /-/admin
+#    to add your wiki's git source. Libreta clones it for you.
 ```
 
-Your wiki content lives in `./data/content` — a normal git repository of markdown files. You can clone it elsewhere, edit it in any editor, push it to GitHub or a private Forgejo, and Libreta will pick up changes.
+That's it. Pages are stored as markdown files inside the git repository you
+configured — every save is a commit, and Libreta pushes back to your remote
+asynchronously. You can `git clone` the same repo elsewhere, edit in any
+editor, push, and Libreta picks up the changes on its next sync.
+
+> Want HTTPS? Use the Caddy overlay — see [`docs/DEPLOY.md`](./docs/DEPLOY.md).
+>
+> Want to develop on Libreta itself? See [Dev vs prod](#dev-vs-prod) below.
 
 ### Dev vs prod
 
@@ -78,7 +85,22 @@ make import-dokuwiki       # Import a DokuWiki installation into your wiki
 
 See [`docs/ROADMAP.md`](./docs/ROADMAP.md) for what's planned beyond v1 (auth, multi-user, plugins, etc.).
 
-## Project documents
+## Documentation
+
+User-facing — start here if you want to **use** Libreta:
+
+| Page | What's there |
+|---|---|
+| [`docs/site/index.md`](./docs/site/index.md) | Landing page — what Libreta is and isn't |
+| [`docs/site/getting-started.md`](./docs/site/getting-started.md) | Five-minute install & first page |
+| [`docs/site/faq.md`](./docs/site/faq.md) | Frequently asked questions |
+| [`docs/site/troubleshooting.md`](./docs/site/troubleshooting.md) | Symptoms → causes → fixes |
+
+These pages are written as a Libreta-flavoured markdown corpus on
+purpose: point a Libreta instance at the [`docs/site/`](./docs/site/)
+directory and it dogfoods as a small site about itself.
+
+Reference and project docs:
 
 | File | Purpose |
 |---|---|
@@ -88,8 +110,18 @@ See [`docs/ROADMAP.md`](./docs/ROADMAP.md) for what's planned beyond v1 (auth, m
 | [`docs/PROGRESS.md`](./docs/PROGRESS.md) | Current state of execution |
 | [`docs/DEPLOY.md`](./docs/DEPLOY.md) | Production deployment (Docker Compose + Caddy + TLS) |
 | [`docs/BACKUP.md`](./docs/BACKUP.md) | Backup & restore — what to snapshot, how to recover |
+| [`docs/MIGRATION-APPLE-NOTES.md`](./docs/MIGRATION-APPLE-NOTES.md) | Migrating from Apple Notes (importer + caveats) |
+| [`docs/SECURITY-REVIEW.md`](./docs/SECURITY-REVIEW.md) | Pre-1.0 security review — threat model, findings, known limitations |
+| [`docs/PERFORMANCE.md`](./docs/PERFORMANCE.md) | Smoke benchmarks vs the NFRs in PROJECT.md |
 | [`CLAUDE.md`](./CLAUDE.md) | Conventions and guardrails for Claude Code agents working on this repo |
 
 ## License
 
-TBD — likely AGPL-3.0 to match the wiki ecosystem norm and ensure forks remain open. Confirm before first public release.
+Libreta is licensed under the **GNU Affero General Public License v3.0**
+([`LICENSE`](./LICENSE)). The AGPL choice is deliberate: if you run a
+modified Libreta as a network service, the AGPL requires you to make
+your modifications available to the users of that service. This matches
+the wiki ecosystem norm (Wiki.js, BookStack) and ensures the project's
+git-as-source-of-truth ethos extends to its own code.
+
+> SPDX-License-Identifier: AGPL-3.0-only
