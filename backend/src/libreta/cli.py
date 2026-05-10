@@ -41,12 +41,63 @@ def main() -> None:
         help="Delete orphans and commit per page. Default is dry-run (list only).",
     )
 
+    an = sub.add_parser(
+        "import-apple-notes",
+        help="Import Apple Notes (NoteStore.sqlite) into a git working tree",
+    )
+    an.add_argument(
+        "--notestore",
+        type=Path,
+        default=Path.home() / "Library/Group Containers/group.com.apple.notes/NoteStore.sqlite",
+        help="Path to NoteStore.sqlite (default: standard macOS location).",
+    )
+    an.add_argument("--repo", type=Path, required=True, help="Target git working tree.")
+    an.add_argument(
+        "--dest",
+        type=str,
+        default="apple-notes",
+        help="Destination subpath inside --repo (default: apple-notes).",
+    )
+    an.add_argument("--account", type=str, default=None)
+    an.add_argument("--folder", type=str, default=None)
+    an.add_argument("--dry-run", action="store_true")
+
     args = parser.parse_args()
 
     if args.command == "reindex":
         _run_reindex(args.content_dir)
     elif args.command == "gc":
         _run_gc(args.source, args.repo, args.delete)
+    elif args.command == "import-apple-notes":
+        _run_import_apple_notes(args)
+
+
+def _run_import_apple_notes(args: argparse.Namespace) -> None:
+    # Reuse the standalone script as a library, so the CLI and `python
+    # scripts/import_apple_notes.py` share one implementation.
+    import importlib.util
+
+    script = Path(__file__).resolve().parents[3] / "scripts" / "import_apple_notes.py"
+    spec = importlib.util.spec_from_file_location("_libreta_apple_notes", script)
+    if spec is None or spec.loader is None:
+        print(f"error: could not load {script}", file=sys.stderr)
+        sys.exit(1)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    stats = mod.import_notes(
+        notestore=args.notestore.expanduser(),
+        repo=args.repo.expanduser().resolve(),
+        dest_subpath=args.dest,
+        dry_run=args.dry_run,
+        account_filter=args.account,
+        folder_filter=args.folder,
+    )
+    print(
+        f"Done. Seen {stats.notes_seen}, wrote {stats.notes_written}, "
+        f"locked-skipped {stats.notes_skipped_locked}.",
+        file=sys.stderr,
+    )
 
 
 def _run_reindex(content_dir: Path | None) -> None:

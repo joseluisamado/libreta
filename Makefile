@@ -16,6 +16,7 @@
         up up-dev rebuild rebuild-dev down logs ps \
         clean clean-backend clean-frontend \
         import-dokuwiki import-dokuwiki-dry \
+        import-apple-notes import-apple-notes-dry \
         compute-tags compute-tags-dry \
         version version-bump version-set sync-version \
         build-prod build-prod-frontend release
@@ -158,6 +159,16 @@ import-dokuwiki: ## Import a DokuWiki installation into pages/ (override SOURCE=
 
 import-dokuwiki-dry: ## Dry-run the DokuWiki importer (override SOURCE=...)
 	cd $(BACKEND) && uv run python ../scripts/import_dokuwiki.py --dry-run $(if $(SOURCE),--source $(SOURCE))
+
+import-apple-notes: ## Import Apple Notes into REPO=<git working tree> [DEST=apple-notes]
+	@test -n "$(REPO)" || (echo "error: pass REPO=/path/to/wiki-clone" >&2; exit 1)
+	cd $(BACKEND) && uv run python ../scripts/import_apple_notes.py \
+		--repo $(REPO) $(if $(DEST),--dest $(DEST)) $(if $(ACCOUNT),--account "$(ACCOUNT)") $(if $(FOLDER),--folder "$(FOLDER)")
+
+import-apple-notes-dry: ## Dry-run Apple Notes import
+	@test -n "$(REPO)" || (echo "error: pass REPO=/path/to/wiki-clone" >&2; exit 1)
+	cd $(BACKEND) && uv run python ../scripts/import_apple_notes.py \
+		--repo $(REPO) --dry-run $(if $(DEST),--dest $(DEST)) $(if $(ACCOUNT),--account "$(ACCOUNT)") $(if $(FOLDER),--folder "$(FOLDER)")
 
 compute-tags: ## Compute frontmatter tags for any untagged pages
 	cd $(BACKEND) && uv run python ../scripts/compute_tags.py $(if $(FORCE),--force)
