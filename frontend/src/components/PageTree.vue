@@ -184,7 +184,7 @@
     <li v-for="node in nodes" :key="node.path" class="my-0.5">
       <div class="flex items-start gap-1">
         <button
-          v-if="node.children.length || node.has_more"
+          v-if="node.is_directory || node.children.length || node.has_more"
           type="button"
           class="shrink-0 w-4 h-4 mt-0.5 flex items-center justify-center text-slate-400 hover:text-slate-700"
           :aria-expanded="isOpen(node.path)"
@@ -222,7 +222,7 @@
           :to="nodeLink(node)"
           class="flex-1 truncate flex items-center gap-1"
           :class="
-            node.children.length || node.has_more
+            node.is_directory || node.children.length || node.has_more
               ? 'text-slate-800 font-medium hover:text-blue-600'
               : 'text-slate-700 hover:text-blue-600'
           "
@@ -240,7 +240,7 @@
         </RouterLink>
       </div>
       <PageTree
-        v-if="(node.children.length || node.has_more) && isOpen(node.path)"
+        v-if="(node.is_directory || node.children.length || node.has_more) && isOpen(node.path)"
         :nodes="node.children"
         :root-namespace="childRootNamespace(node)"
         :link-prefix="linkPrefix"

@@ -205,6 +205,8 @@ _NOEXT_TEXT_NAMES = {
     "rakefile",
     "procfile",
     "vagrantfile",
+    "caddyfile",
+    "crontab"
 }
 
 
@@ -246,6 +248,8 @@ def _classify_other(name: str) -> str:
             ".zsh",
             ".fish",
             ".tmpl",
+            ".example",
+            ".tsbuildinfo",
         )
     ):
         return "text"
