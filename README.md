@@ -86,6 +86,8 @@ See [`docs/ROADMAP.md`](./docs/ROADMAP.md) for what's planned beyond v1 (auth, m
 | [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) | Components, data model, tech stack, deployment topology |
 | [`docs/ROADMAP.md`](./docs/ROADMAP.md) | Milestones M0 → M5 |
 | [`docs/PROGRESS.md`](./docs/PROGRESS.md) | Current state of execution |
+| [`docs/DEPLOY.md`](./docs/DEPLOY.md) | Production deployment (Docker Compose + Caddy + TLS) |
+| [`docs/BACKUP.md`](./docs/BACKUP.md) | Backup & restore — what to snapshot, how to recover |
 | [`CLAUDE.md`](./CLAUDE.md) | Conventions and guardrails for Claude Code agents working on this repo |
 
 ## License

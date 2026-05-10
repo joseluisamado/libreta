@@ -228,6 +228,10 @@ your existing proxy at `localhost:${LIBRETA_HTTP_PORT}` (default `8080`).
 
 ## 8. Backups
 
+> See [`BACKUP.md`](./BACKUP.md) for the full backup & restore guide
+> (single-page restore, lost-volume recovery, lost-host recovery,
+> verification, scheduling). The summary below is the tl;dr.
+
 The entire state of Libreta lives in **one Docker named volume**: `libreta-data`.
 
 ```bash
