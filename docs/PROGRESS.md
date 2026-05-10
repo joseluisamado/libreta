@@ -8,9 +8,58 @@ Living document. Update as work progresses. Latest at the top.
 
 ## Status
 
-**Current milestone**: M4 — Diagrams.net integration ✅
-**Next milestone**: M5 — v1.0 release
-**Next action**: Manual end-to-end smoke test of the diagram editor in the browser, then start M5 (production compose example with Caddy + TLS, backup/restore docs).
+**Current milestone**: M5 — v1.0 release ✅
+**Next milestone**: post-1.0 hardening / M6 (multi-user & auth)
+**Next action**: push the `v1.0.0` tag, watch the first install land somewhere real, react to issues.
+
+---
+
+## 2026-05-09 — M5 release pass (v1.0.0)
+
+**What changed**: shipped all M5 items in one pass, ending with the
+v1.0.0 tag.
+
+**Pieces**:
+- **Production deploy**: `docker-compose.caddy.yml` + `Caddyfile.example`
+  add Caddy on :80/:443 with auto-Let's-Encrypt; HTTP/3 enabled, certs
+  persisted in `caddy-data` volume. `DEPLOY.md` §7 rewritten with the
+  full recipe.
+- **Backup & restore**: new `docs/BACKUP.md` covering state inventory
+  (authoritative vs derived), one-shot + cron strategies, three restore
+  scenarios (single page, lost volume, lost host).
+- **Apple Notes migration**: `scripts/import_apple_notes.py` reads
+  `NoteStore.sqlite` directly via stdlib `sqlite3` + a hand-rolled
+  protobuf decoder (no new deps). Renders to GFM with sidecar
+  attachments, frontmatter captures `apple_notes_uuid` for future
+  re-runs. Wired as `libreta import-apple-notes` and
+  `make import-apple-notes REPO=...`. Migration guide:
+  `docs/MIGRATION-APPLE-NOTES.md`.
+- **Security review**: `docs/SECURITY-REVIEW.md` — threat model + 7
+  findings. Fixes landed in the same pass:
+  - **P1** XSS via mermaid fence content (`md.utils.escapeHtml`).
+  - **P1** Hidden-file disclosure: `validate_path_segments` now blocks
+    `.git*` / `.ssh*` / `.libreta*` prefixes; sidecar dirs unaffected.
+  - **P1** Source-id traversal: `_local_path` regex-validates.
+  - **P1 partially mitigated** SSH `certificate_check` now logs host on
+    every git op; full TOFU/known-hosts deferred to M6.
+  - **P3** SSH key tempfile leak fixed via `weakref.finalize` cleanup.
+  - **Info**: `pip-audit` clean; 2 dev-only `pnpm audit` advisories
+    (vite/esbuild dev server) noted, not shipped to prod.
+- **Performance**: `scripts/smoke_bench.sh` + `docs/PERFORMANCE.md`.
+  Measured on dev stack with 197 pages: tree 9.5 ms, search 6.2 ms,
+  page read 2.2 ms, idle memory 81 MiB — all an order of magnitude
+  under target. Pi 4 + 1000-page corpus not yet measured.
+- **User-facing docs**: `docs/site/` — landing, getting-started, FAQ,
+  troubleshooting. README quickstart rewritten to reflect the
+  git-source model (the old `mkdir data/content` path was stale since
+  M3.5).
+- **License**: AGPL-3.0-only — canonical text in `LICENSE`, SPDX in
+  `pyproject.toml` and `package.json`, README license section rewritten
+  with rationale.
+
+**Pre-flight**: backend pytest 95/95, mypy strict clean. Ruff has 5
+pre-existing housekeeping items (B904, RUF005, SIM117) unrelated to
+this work. Frontend vitest 65/65, vue-tsc clean.
 
 ---
 

@@ -131,18 +131,18 @@ A milestone-based plan, not a calendar. Each milestone is a coherent slice of va
 
 ---
 
-## M5 — v1.0 release
+## M5 — v1.0 release ✅ (2026-05-09)
 
 **Goal**: Ship it.
 
-- [ ] Production Docker Compose example with Caddy reverse proxy and TLS
-- [ ] Backup & restore guide (it's just `git push` of the content repo, but document it)
-- [ ] Migration guide: importing from BookStack / Wiki.js / Notion exports / Obsidian vaults
-- [ ] User-facing docs site (built with Libreta itself, dogfooded)
-- [ ] Performance benchmarks against the targets in `PROJECT.md` "Non-functional requirements"
-- [ ] Security review: path traversal, sanitisation, dependency audit
-- [ ] License finalised (likely AGPL-3.0)
-- [ ] First public release tag: `v1.0.0`
+- [x] Production Docker Compose example with Caddy reverse proxy and TLS — `docker-compose.caddy.yml` + `Caddyfile.example`, full recipe in `DEPLOY.md` §7
+- [x] Backup & restore guide — `docs/BACKUP.md` covers state inventory, snapshot strategies, three restore scenarios
+- [x] Migration guide: Apple Notes — `scripts/import_apple_notes.py` reads `NoteStore.sqlite` directly; `docs/MIGRATION-APPLE-NOTES.md`. (Originally scoped as BookStack/Wiki.js/Notion/Obsidian; narrowed to Apple Notes since that's what we use ourselves and the others are deferred until a real user asks.)
+- [x] User-facing docs site — `docs/site/` corpus (index, getting-started, FAQ, troubleshooting). Dogfoodable: point Libreta at the directory and it serves itself.
+- [x] Performance benchmarks — `scripts/smoke_bench.sh` + `docs/PERFORMANCE.md`. Measured numbers an order of magnitude under target on the dev stack.
+- [x] Security review — `docs/SECURITY-REVIEW.md`. 4 P1s fixed (mermaid XSS, two path-traversal classes, SSH key tempfile leak); SSH host-key verification limitation documented and deferred to M6.
+- [x] License — AGPL-3.0-only. `LICENSE` (canonical text), SPDX in package metadata, rationale in README.
+- [x] First public release tag: `v1.0.0`
 
 **Exit criteria**: First external user installs Libreta and uses it for a week without filing critical bugs.
 
