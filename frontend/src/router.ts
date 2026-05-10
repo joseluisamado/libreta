@@ -27,6 +27,21 @@ const routes: RouteRecordRaw[] = [
     component: () => import('./views/PdfView.vue'),
   },
   {
+    path: '/text/:path(.*)*',
+    name: 'text',
+    component: () => import('./views/TextView.vue'),
+  },
+  {
+    path: '/text-source/:sourceId/:path(.*)*',
+    name: 'text-source',
+    component: () => import('./views/TextView.vue'),
+  },
+  {
+    path: '/text-watch/:label/:path(.*)*',
+    name: 'text-watch',
+    component: () => import('./views/TextView.vue'),
+  },
+  {
     path: '/history/:path(.*)*',
     name: 'history',
     component: () => import('./views/HistoryView.vue'),

@@ -93,6 +93,10 @@
     return `/api/v1/sources/${sourceId.value}/assets/${encodeURIComponent(filePath)}`
   }
 
+  function getTextFileUrl(filePath: string): string {
+    return `/text-source/${sourceId.value}/${filePath}`
+  }
+
   function slugify(name: string): string {
     return name
       .trim()
@@ -275,6 +279,7 @@
         :get-child-url="getChildUrl"
         :other-files="dirOtherFiles"
         :get-other-file-url="getOtherFileUrl"
+        :get-text-file-url="getTextFileUrl"
         @create-page="onCreatePage"
         @create-folder="onCreateFolder"
         @rename="onRename"

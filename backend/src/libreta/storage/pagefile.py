@@ -187,6 +187,27 @@ def write_page_file(
 # ---------------------------------------------------------------------------
 
 
+_NOEXT_TEXT_NAMES = {
+    "version",
+    "license",
+    "licence",
+    "makefile",
+    "dockerfile",
+    "changelog",
+    "contributors",
+    "authors",
+    "readme",
+    "copying",
+    "news",
+    "todo",
+    "install",
+    "gemfile",
+    "rakefile",
+    "procfile",
+    "vagrantfile",
+}
+
+
 def _classify_other(name: str) -> str:
     """Classify a non-page file by extension."""
     lower = name.lower()
@@ -194,6 +215,8 @@ def _classify_other(name: str) -> str:
         return "drawio"
     if lower.endswith((".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".bmp", ".ico")):
         return "image"
+    if lower in _NOEXT_TEXT_NAMES:
+        return "text"
     if lower.endswith(
         (
             ".txt",
@@ -222,6 +245,7 @@ def _classify_other(name: str) -> str:
             ".bash",
             ".zsh",
             ".fish",
+            ".tmpl",
         )
     ):
         return "text"
@@ -398,7 +422,7 @@ def resolve_asset(root: Path, raw_path: str) -> Path:
     """
     validate_path_segments(raw_path)
     suffix = Path(raw_path).suffix.lower()
-    if suffix == ".md" or suffix == "":
+    if suffix == ".md":
         raise InvalidPathError("markdown pages are not served via /assets")
     candidate = (root / raw_path).resolve()
     if root not in candidate.parents and candidate != root:

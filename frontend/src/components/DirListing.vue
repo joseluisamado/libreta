@@ -7,6 +7,7 @@
     getChildUrl: (childPath: string) => string
     otherFiles?: OtherFile[]
     getOtherFileUrl?: (filePath: string) => string
+    getTextFileUrl?: (filePath: string) => string
   }>()
 
   const emit = defineEmits<{
@@ -165,8 +166,20 @@
     <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-500 mb-2">Other files</h2>
     <ul class="text-sm space-y-1">
       <li v-for="file in otherFiles" :key="file.path" class="flex items-center gap-1 group">
+        <RouterLink
+          v-if="file.kind === 'text' && getTextFileUrl"
+          :to="getTextFileUrl(file.path)"
+          class="flex items-center flex-1 min-w-0 text-slate-600 hover:text-blue-600 hover:underline"
+        >
+          <span
+            class="w-6 shrink-0 mr-0.5 text-[10px] font-semibold text-center"
+            :class="kindColor(file.kind)"
+            >{{ kindBadge(file.kind) }}</span
+          >
+          <span class="truncate">{{ file.name }}</span>
+        </RouterLink>
         <a
-          v-if="getOtherFileUrl"
+          v-else-if="getOtherFileUrl"
           :href="getOtherFileUrl(file.path)"
           :download="file.name"
           class="flex items-center flex-1 min-w-0 text-slate-600 hover:text-blue-600 hover:underline"

@@ -51,6 +51,10 @@
     return `/api/v1/assets/pages/${encodeURIComponent(filePath)}`
   }
 
+  function getTextFileUrl(filePath: string): string {
+    return `/text/${filePath}`
+  }
+
   const isDirectory = computed(() => {
     if (!page.value) return false
     const node = findNode(tree.nodes, page.value.path)
@@ -360,7 +364,19 @@
             :key="file.path"
             class="flex items-center gap-1 group"
           >
+            <RouterLink
+              v-if="file.kind === 'text'"
+              :to="getTextFileUrl(file.path)"
+              class="flex items-center flex-1 min-w-0 text-slate-600 hover:text-blue-600 hover:underline"
+            >
+              <span
+                class="w-6 shrink-0 mr-0.5 text-[10px] font-semibold text-violet-500 text-center"
+                >TXT</span
+              >
+              <span class="truncate">{{ file.name }}</span>
+            </RouterLink>
             <a
+              v-else
               :href="getOtherFileUrl(file.path)"
               :download="file.name"
               class="flex items-center flex-1 min-w-0 text-slate-600 hover:text-blue-600 hover:underline"
@@ -370,17 +386,10 @@
                 :class="{
                   'text-emerald-500': file.kind === 'image',
                   'text-orange-500': file.kind === 'drawio',
-                  'text-violet-500': file.kind === 'text',
                   'text-slate-500': file.kind === 'binary',
                 }"
                 >{{
-                  file.kind === 'image'
-                    ? 'IMG'
-                    : file.kind === 'drawio'
-                      ? 'DRAW'
-                      : file.kind === 'text'
-                        ? 'TXT'
-                        : 'BIN'
+                  file.kind === 'image' ? 'IMG' : file.kind === 'drawio' ? 'DRAW' : 'BIN'
                 }}</span
               >
               <span class="truncate">{{ file.name }}</span>

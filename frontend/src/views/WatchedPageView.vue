@@ -94,6 +94,10 @@
     return `/api/v1/watch/${label.value}/assets/${encodeURIComponent(filePath)}`
   }
 
+  function getTextFileUrl(filePath: string): string {
+    return `/text-watch/${label.value}/${filePath}`
+  }
+
   const basePath = computed(() => (path.value === '' ? '' : path.value))
 
   function getChildUrl(childPath: string): string {
@@ -256,6 +260,7 @@
         :get-child-url="getChildUrl"
         :other-files="dirOtherFiles"
         :get-other-file-url="getOtherFileUrl"
+        :get-text-file-url="getTextFileUrl"
         @create-page="onCreatePage"
         @create-folder="onCreateFolder"
         @delete="onDelete"
