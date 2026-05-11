@@ -15,10 +15,10 @@ deleted page to a lost server.
 | Where | What | Authoritative? | Backup priority |
 |---|---|---|---|
 | Your **git remote** (GitHub / Gitea / Forgejo / bare repo) | Pages, attachments, drawio diagrams, frontmatter | ✅ Yes — source of truth | n/a, the remote is the backup |
-| `libreta-data` Docker volume → `/var/lib/libreta/repos/<id>/` | Local clone of each git source (working tree + `.git`) | ❌ Mirrors the remote | Optional — re-cloneable |
-| `libreta-data` → `/var/lib/libreta/ssh_keys/` | Private SSH keys for git remotes | ✅ Yes — only copy on this host | **High** |
-| `libreta-data` → `/var/lib/libreta/meta/_meta/` | `sources.json`, `watched.json`, FTS5 search index | Mixed — config is, index is regenerable | **High** for config, low for index |
-| `caddy-data` Docker volume (if using the Caddy overlay) | TLS certificates, ACME account key | Reissuable but rate-limited | Medium |
+| `libreta_libreta-data` Docker volume → `/var/lib/libreta/repos/<id>/` | Local clone of each git source (working tree + `.git`) | ❌ Mirrors the remote | Optional — re-cloneable |
+| `libreta_libreta-data` → `/var/lib/libreta/ssh_keys/` | Private SSH keys for git remotes | ✅ Yes — only copy on this host | **High** |
+| `libreta_libreta-data` → `/var/lib/libreta/meta/_meta/` | `sources.json`, `watched.json`, FTS5 search index | Mixed — config is, index is regenerable | **High** for config, low for index |
+| `libreta_caddy-data` Docker volume (if using the Caddy overlay) | TLS certificates, ACME account key | Reissuable but rate-limited | Medium |
 | Project repo (`/opt/libreta`) | Source code, compose files, `Caddyfile`, `.env`, `VERSION` | ✅ For your local edits (Caddyfile, .env) | **High** for `.env` and `Caddyfile` |
 
 The wiki itself (markdown + attachments) is *not* in this table because it
@@ -53,14 +53,17 @@ cd /opt/libreta
 mkdir -p ./backups
 DATE=$(date +%Y%m%d-%H%M%S)
 
+# Verify volume names — Docker Compose prefixes them with the project name:
+# docker volume ls | grep libreta
+
 # Volumes
 docker run --rm \
-  -v libreta-data:/data:ro \
+  -v libreta_libreta-data:/data:ro \
   -v "$(pwd)/backups:/backup" \
   alpine tar czf "/backup/libreta-data-${DATE}.tar.gz" -C /data .
 
 docker run --rm \
-  -v caddy-data:/data:ro \
+  -v libreta_caddy-data:/data:ro \
   -v "$(pwd)/backups:/backup" \
   alpine tar czf "/backup/caddy-data-${DATE}.tar.gz" -C /data .
 
@@ -91,9 +94,9 @@ DATE=$(date +%Y%m%d)
 DEST=./backups
 mkdir -p "$DEST"
 
-docker run --rm -v libreta-data:/data:ro -v "$PWD/$DEST:/b" \
+docker run --rm -v libreta_libreta-data:/data:ro -v "$PWD/$DEST:/b" \
   alpine tar czf "/b/libreta-data-$DATE.tar.gz" -C /data .
-docker run --rm -v caddy-data:/data:ro -v "$PWD/$DEST:/b" \
+docker run --rm -v libreta_caddy-data:/data:ro -v "$PWD/$DEST:/b" \
   alpine tar czf "/b/caddy-data-$DATE.tar.gz" -C /data .
 tar czf "$DEST/libreta-config-$DATE.tar.gz" \
   .env Caddyfile VERSION docker-compose*.yml
@@ -148,7 +151,7 @@ docker compose exec api sh -lc '
 The next periodic sync — or a manual **Sync** click in the sidebar —
 brings the rest of the world in line.
 
-### Scenario B: the `libreta-data` volume is lost
+### Scenario B: the `libreta_libreta-data` volume is lost
 
 You still have the project repo, the `.env`, and your git remotes.
 
@@ -162,7 +165,7 @@ VERSION=$(cat VERSION) docker compose \
 
 # 2. Restore SSH keys + sources.json from the most recent snapshot
 docker run --rm \
-  -v libreta-data:/data \
+  -v libreta_libreta-data:/data \
   -v "$(pwd)/backups:/backup:ro" \
   alpine sh -c 'cd /data && tar xzf /backup/libreta-data-YYYYMMDD.tar.gz'
 
@@ -195,12 +198,12 @@ tar xzf /path/to/backups/libreta-config-YYYYMMDD.tar.gz
 make build-prod
 
 # 5. Restore volumes (creates them if missing)
-docker volume create libreta-data
-docker volume create caddy-data
+docker volume create libreta_libreta-data
+docker volume create libreta_caddy-data
 
-docker run --rm -v libreta-data:/data -v /path/to/backups:/b:ro \
+docker run --rm -v libreta_libreta-data:/data -v /path/to/backups:/b:ro \
   alpine sh -c 'cd /data && tar xzf /b/libreta-data-YYYYMMDD.tar.gz'
-docker run --rm -v caddy-data:/data -v /path/to/backups:/b:ro \
+docker run --rm -v libreta_caddy-data:/data -v /path/to/backups:/b:ro \
   alpine sh -c 'cd /data && tar xzf /b/caddy-data-YYYYMMDD.tar.gz'
 
 # 6. Bring it up
@@ -211,11 +214,11 @@ VERSION=$(cat VERSION) docker compose \
   up -d
 ```
 
-Restoring `caddy-data` reuses your existing Let's Encrypt certificate, so
+Restoring `libreta_caddy-data` reuses your existing Let's Encrypt certificate, so
 there's no rate-limit risk and no certificate-rotation event for clients
 pinning the chain.
 
-If you skip the `caddy-data` restore, Caddy issues a fresh certificate on
+If you skip the `libreta_caddy-data` restore, Caddy issues a fresh certificate on
 the first HTTPS request — fine, just observable.
 
 ---
