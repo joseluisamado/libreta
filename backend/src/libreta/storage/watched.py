@@ -153,13 +153,19 @@ async def create_watched_folder(watched_root: Path, raw_path: str) -> None:
 
 
 def _delete_watched_page_sync(watched_root: Path, raw_path: str) -> None:
-    md_file = (watched_root / raw_path).with_suffix(".md")
+    raw_target = watched_root / raw_path
+    suffix = Path(raw_path).suffix.lower()
+    md_file = raw_target if suffix == ".md" else raw_target.with_suffix(".md")
     dir_path = watched_root / raw_path
 
     try:
-        (watched_root / raw_path).resolve().relative_to(watched_root.resolve())
+        raw_target.resolve().relative_to(watched_root.resolve())
     except ValueError:
         raise WatchedFileOutsideRootError(raw_path)
+
+    if suffix and suffix != ".md" and raw_target.is_file():
+        raw_target.unlink()
+        return
 
     if md_file.is_file():
         sidecar = md_file.parent / f".{md_file.name}"
