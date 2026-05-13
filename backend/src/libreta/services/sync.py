@@ -98,17 +98,49 @@ async def _sync_one(
         await record_sync_result(content_dir, source_id, error)
 
 
+_SYNC_PARALLELISM = 2
+
+# Shared across startup_sync and periodic_sync_loop so the two paths cannot
+# overlap and double the CPU load right after process start.
+_sync_sem: asyncio.Semaphore | None = None
+
+
+def _get_sync_sem() -> asyncio.Semaphore:
+    global _sync_sem
+    if _sync_sem is None:
+        _sync_sem = asyncio.Semaphore(_SYNC_PARALLELISM)
+    return _sync_sem
+
+
+async def _bounded_sync_one(
+    repos_dir: Path,
+    ssh_keys_dir: Path,
+    content_dir: Path,
+    entry: dict,  # type: ignore[type-arg]
+) -> None:
+    async with _get_sync_sem():
+        await _sync_one(repos_dir, ssh_keys_dir, content_dir, entry)
+
+
 async def startup_sync(
     repos_dir: Path,
     ssh_keys_dir: Path,
     content_dir: Path,
 ) -> None:
-    """Clone missing sources and fetch existing ones at startup."""
+    """Clone missing sources and fetch existing ones at startup.
+
+    Capped at _SYNC_PARALLELISM concurrent syncs. libgit2's fetch (delta
+    resolution) is CPU-bound and single-threaded per call, so fanning out
+    every source in parallel on a low-core host just pegs all cores and
+    increases wall-clock time through contention.
+    """
     sources = await load_sources(content_dir)
     if not sources:
         return
-    tasks = [_sync_one(repos_dir, ssh_keys_dir, content_dir, s) for s in sources]
-    await asyncio.gather(*tasks, return_exceptions=True)
+    await asyncio.gather(
+        *[_bounded_sync_one(repos_dir, ssh_keys_dir, content_dir, s) for s in sources],
+        return_exceptions=True,
+    )
 
 
 async def periodic_sync_loop(
@@ -117,8 +149,19 @@ async def periodic_sync_loop(
     content_dir: Path,
 ) -> None:
     """Poll each source on its own interval.  Run as a background task."""
-    # Track next-sync time per source id (in monotonic seconds)
+    # Track next-sync time per source id (in monotonic seconds).
+    # Seed every known source with "now + interval" so the first tick after
+    # process start does NOT fire an immediate fetch — startup_sync already
+    # handled that. Without this, the first tick (at t≈60s) re-fetched every
+    # source unconditionally because next_sync.get(sid, 0) returned 0.
     next_sync: dict[str, float] = {}
+    initial_sources = await load_sources(content_dir)
+    initial_now = asyncio.get_event_loop().time()
+    for entry in initial_sources:
+        sid = entry["id"]
+        interval_secs = entry.get("sync_interval_minutes", 15) * 60
+        next_sync[sid] = initial_now + interval_secs
+
     # Keep task references alive so they're not garbage-collected mid-run
     _running: set[asyncio.Task[None]] = set()
 
@@ -128,10 +171,14 @@ async def periodic_sync_loop(
         now = asyncio.get_event_loop().time()
 
         for entry in sources:
-            sid: str = entry["id"]
+            sid = entry["id"]
             interval_secs = entry.get("sync_interval_minutes", 15) * 60
             if now >= next_sync.get(sid, 0):
-                task = asyncio.create_task(_sync_one(repos_dir, ssh_keys_dir, content_dir, entry))
+                # Bounded via the shared semaphore so multiple sources don't
+                # fetch in parallel on low-core hosts.
+                task = asyncio.create_task(
+                    _bounded_sync_one(repos_dir, ssh_keys_dir, content_dir, entry)
+                )
                 _running.add(task)
                 task.add_done_callback(_running.discard)
                 next_sync[sid] = now + interval_secs

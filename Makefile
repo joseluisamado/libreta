@@ -28,6 +28,10 @@ FRONTEND  := frontend
 # and propagate to backend/pyproject.toml and frontend/package.json.
 VERSION := $(shell cat VERSION 2>/dev/null)
 
+# SSH target for `make release` image deployment. Override on the command
+# line if needed: `make release LEVEL=patch DEPLOY_HOST=user@homelab`.
+DEPLOY_HOST := example.com
+
 # Compose invocation: dev stacks layer docker-compose.dev.yml on top of the
 # base file so the api service gets a source bind-mount and uvicorn --reload.
 COMPOSE_DEV := docker compose -f docker-compose.yml -f docker-compose.dev.yml --profile dev
@@ -203,13 +207,17 @@ build-prod-frontend: ## Build the frontend static bundle into a runnable image
 	@echo "→ building libreta-frontend:$(VERSION)"
 	docker build -f $(FRONTEND)/Dockerfile.prod -t libreta-frontend:$(VERSION) -t libreta-frontend:latest $(FRONTEND)
 
-release: ## Bump VERSION (LEVEL=patch|minor|major), build images, tag git
+release: ## Bump VERSION (LEVEL=patch|minor|major), build images, tag git, deploy to DEPLOY_HOST
 	@if [ -z "$(LEVEL)" ]; then echo "usage: make release LEVEL=patch|minor|major" && exit 2; fi
 	$(MAKE) version-bump LEVEL=$(LEVEL)
 	$(MAKE) build-prod
 	@new=$$(cat VERSION); \
 	echo "→ tagging git as v$$new"; \
 	git tag -a "v$$new" -m "release v$$new" || echo "  (skipped: already tagged?)"
+	@new=$$(cat VERSION); \
+	echo "→ deploying images to $(DEPLOY_HOST) via ssh"; \
+	docker save libreta-api:$$new libreta-api:latest libreta-frontend:$$new libreta-frontend:latest \
+	  | ssh $(DEPLOY_HOST) docker load
 	@echo ""
-	@echo "Release v$$(cat VERSION) built locally."
-	@echo "Push: docker push <registry>/libreta-api:$$(cat VERSION) && git push --tags"
+	@echo "Release v$$(cat VERSION) built locally and loaded into docker on $(DEPLOY_HOST)."
+	@echo "Run: git push --tags"

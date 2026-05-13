@@ -236,11 +236,11 @@ Unknown frontmatter keys are preserved on roundtrip — Libreta reads what it kn
 
 ### Git source lifecycle
 
-At **startup**, the api clones any configured sources that don't have a local clone yet, and fast-forwards those that do (if the working tree is clean). This happens concurrently for all sources.
+At **startup**, the api clones any configured sources that don't have a local clone yet, and fast-forwards those that do. Startup work runs as background tasks inside the FastAPI lifespan so the HTTP server becomes responsive immediately. Concurrent syncs are capped at 2 via a shared semaphore — fanning out one fetch per source on a low-core host (libgit2's pack resolution is single-threaded and CPU-bound) just pegs every core through contention.
 
-A **background push worker** (asyncio task) drains a queue of pending pushes. Every local commit enqueues a push. The worker retries up to 3 times with exponential backoff (5 s, 10 s, 20 s). On final failure the error is written to `sources.json` and surfaced in the UI.
+A **background push worker** (asyncio task) drains a queue of pending pushes. Every local commit enqueues a push. The worker retries up to 3 times with exponential backoff (5 s, 10 s, 20 s). On final failure the error is written to `sources.json` and surfaced in the UI. Push assumes whatever is in `HEAD` is what should be shipped — Libreta commits on every page write, so the push path does not auto-stage external modifications. Files edited outside Libreta are the user's responsibility to commit.
 
-A **periodic sync loop** (asyncio task) checks every 60 seconds which sources are due for a pull (based on their `sync_interval_minutes`). It runs a `fetch` + `fast-forward` for each due source. If the working tree has local changes that would conflict, the sync is skipped with a warning.
+A **periodic sync loop** (asyncio task) checks every 60 seconds which sources are due for a pull (based on their `sync_interval_minutes`). To avoid double-fetching what `startup_sync` already did, every known source is seeded with `next_sync = startup_time + interval` before the loop's first tick. Each due source goes through the same 2-permit semaphore as startup. The fast-forward itself uses `pygit2`'s `SAFE` checkout strategy: libgit2 refuses the FF if any file in the diff has uncommitted local changes, so there is no pre-flight working-tree scan (that scan used to hash the whole repo every call when the index stat cache was stale, e.g. right after a `rsync`-style migration).
 
 ### Cadence summary
 
@@ -526,9 +526,13 @@ CREATE VIRTUAL TABLE documents USING fts5(
 
 ### Reindex
 
-- On startup, walk `pages/` and rebuild incrementally (skip unchanged by mtime).
-- On every commit, reindex the affected paths.
-- Manual full reindex via CLI: `libreta reindex`.
+The startup reindex is commit-aware. A `sources_meta(source_id, indexed_head)` row records the git HEAD each source was last indexed at:
+
+- If a source's current HEAD equals `indexed_head`, the source is skipped entirely — no file I/O at all.
+- If HEAD moved, the diff between old and new HEAD is asked of `pygit2`; only the changed `.md` files are reindexed, and files removed in the new tree are deleted from the index.
+- If `indexed_head` is missing (first run after upgrade, or DB rebuild), the old mtime-based walk runs as a fallback and then records HEAD for next time.
+
+On every commit, the affected paths are reindexed inline (single-page `index_page` call). A full rebuild is available via the CLI: `libreta reindex`. The startup reindex also runs as a background task — it does not block the HTTP server.
 
 ## Authentication (forward-looking)
 

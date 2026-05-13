@@ -105,6 +105,54 @@ it into a proper harness (locust, k6, or pytest-benchmark) instead.
 
 ---
 
+## Low-spec / homelab notes
+
+A deployment on a 2 GB-RAM 4-core ARM SBC (NanoPi-class) with ~2 GB of
+working-tree content across two git sources surfaced latency issues
+that don't show up on a developer Mac. Fixes that landed in this
+corpus:
+
+- **Backend image footprint**. Multi-stage Dockerfile + reliance on
+  pygit2's manylinux wheel (statically bundles libgit2, openssl,
+  libssh2, pcre) dropped the image from **586 MB → 206 MB**. No
+  `libgit2-dev` or `build-essential` survives into the runtime image;
+  only `ca-certificates` is added.
+- **Sync click latency**. Each fetch used to run `repo.status()` on
+  the working tree (or, later, `index.diff_to_workdir()`) to gate the
+  fast-forward. After an `rsync`-style migration the index stat cache
+  was invalidated, so libgit2 re-hashed every tracked file — 1.2 GB on
+  the affected box, ~73 s of CPU per sync. The pre-flight scan was
+  removed entirely; the FF now uses `pygit2.CheckoutStrategy.SAFE` and
+  lets libgit2 itself refuse the checkout if any file in the diff has
+  uncommitted local changes (same semantics as `git pull`, but only
+  the files that would change get hashed). Sync click dropped from
+  ~60 s to a few seconds on a clean tree.
+- **Push: no more auto-stage**. The push path used to call
+  `repo.status()` to auto-stage anything dirty before pushing. Since
+  Libreta commits on every page write, the auto-stage only ever caught
+  external edits — which are now the user's responsibility to commit.
+  Skipping the scan eliminates a per-push working-tree hash.
+- **Startup reindex**. The FTS5 reindex used to read every `.md` body
+  on every restart. It now compares the recorded
+  `sources_meta.indexed_head` against the current HEAD; equal → skip
+  the source entirely. If HEAD moved, only the files in the git diff
+  are reindexed. On a quiet repo, restart consumes <0.1 s of CPU.
+- **Startup is non-blocking**. Reindex and source sync run as
+  background tasks inside the FastAPI lifespan instead of awaiting in
+  the lifespan body, so the HTTP server accepts requests within
+  ~30 s (Python startup) instead of waiting minutes for sync.
+- **Sync parallelism cap**. `startup_sync` and the periodic loop share
+  a 2-permit semaphore. Fanning out one fetch per source in parallel
+  on a low-core host pegs every core through contention (libgit2 pack
+  resolution is CPU-bound and single-threaded per call). `next_sync`
+  is also seeded so the first periodic tick after startup doesn't
+  re-fetch what `startup_sync` just did.
+
+These changes only matter on slow / low-core hardware. On a developer
+Mac with cache-warm SSD, all of them were invisible.
+
+---
+
 ## When to re-run
 
 - Before tagging a release.

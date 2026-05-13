@@ -206,7 +206,7 @@ _NOEXT_TEXT_NAMES = {
     "procfile",
     "vagrantfile",
     "caddyfile",
-    "crontab"
+    "crontab",
 }
 
 
@@ -253,7 +253,7 @@ def _classify_other(name: str) -> str:
             ".plist",
             ".swift",
             ".entitlements",
-            ".pbxproj"
+            ".pbxproj",
         )
     ):
         return "text"

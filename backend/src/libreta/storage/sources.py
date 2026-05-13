@@ -347,24 +347,6 @@ def fetch_and_ff_sync(
     callbacks = make_callbacks(ssh_keys_dir, key_id, http_username, http_password)
     repo = _open_repo(local)
 
-    # Check for uncommitted changes
-    status = repo.status()
-    dirty = any(
-        flags
-        & (
-            pygit2.enums.FileStatus.INDEX_NEW
-            | pygit2.enums.FileStatus.INDEX_MODIFIED
-            | pygit2.enums.FileStatus.INDEX_DELETED
-            | pygit2.enums.FileStatus.WT_NEW
-            | pygit2.enums.FileStatus.WT_MODIFIED
-            | pygit2.enums.FileStatus.WT_DELETED
-        )
-        for flags in status.values()
-    )
-    if dirty:
-        logger.warning("source %s has uncommitted changes, skipping pull", source_id)
-        return
-
     remote = repo.remotes["origin"]
     remote.fetch(callbacks=callbacks)
 
@@ -393,8 +375,18 @@ def fetch_and_ff_sync(
         logger.warning("source %s: diverged from remote, manual merge needed", source_id)
         return
 
+    # SAFE strategy lets libgit2 itself be the dirty-check: if any tracked
+    # file in the FF diff has uncommitted local changes, the checkout aborts
+    # without touching anything. This avoids a pre-flight full-tree scan
+    # (which on slow-storage hosts hashed every tracked file's contents).
     local_ref.set_target(remote_commit.id)
-    repo.checkout_head(strategy=pygit2.enums.CheckoutStrategy.FORCE)  # type: ignore[no-untyped-call]
+    try:
+        repo.checkout_head(strategy=pygit2.enums.CheckoutStrategy.SAFE)  # type: ignore[no-untyped-call]
+    except pygit2.GitError as exc:
+        # Roll back the ref so HEAD still matches the working tree.
+        local_ref.set_target(local_commit.id)
+        logger.warning("source %s: cannot fast-forward, local changes in path: %s", source_id, exc)
+        return
     logger.info("source %s: fast-forwarded to %s", source_id, str(remote_commit.id)[:7])
 
 
@@ -406,48 +398,15 @@ async def fetch_and_ff(
     await asyncio.to_thread(fetch_and_ff_sync, repos_dir, ssh_keys_dir, entry)
 
 
-def _auto_commit_sync(repo: pygit2.Repository) -> bool:
-    """Stage every uncommitted change and commit.  Returns True if a commit was made."""
-    status = repo.status()
-    if not status:
-        return False
-
-    index = repo.index
-    index.read()
-    staged = False
-    for path, flags in status.items():
-        if flags & (
-            pygit2.enums.FileStatus.WT_NEW
-            | pygit2.enums.FileStatus.WT_MODIFIED
-            | pygit2.enums.FileStatus.INDEX_NEW
-            | pygit2.enums.FileStatus.INDEX_MODIFIED
-        ):
-            index.add(path)
-            staged = True
-        elif flags & (pygit2.enums.FileStatus.WT_DELETED | pygit2.enums.FileStatus.INDEX_DELETED):
-            index.remove(path)
-            staged = True
-
-    if not staged:
-        return False
-
-    index.write()
-    tree = index.write_tree()
-    try:
-        parents = [repo.head.target]
-    except (pygit2.GitError, KeyError):
-        parents = []
-    sig = pygit2.Signature("Libreta", "libreta@localhost")
-    repo.create_commit("HEAD", sig, sig, "sync: auto-commit pending changes", tree, parents)
-    logger.info("auto-commit: staged %d paths", len(status))
-    return True
-
-
 def push_sync(
     repos_dir: Path,
     ssh_keys_dir: Path,
     entry: dict[str, Any],
 ) -> None:
+    # Libreta commits on every page write, so a push only ships commits already
+    # in HEAD. Files edited outside Libreta are the user's responsibility to
+    # commit. Scanning the working tree for stragglers used to cost a full
+    # SHA-1 pass over every file on each push.
     source_id: str = entry["id"]
     branch: str = entry.get("branch", "main")
     key_id: str | None = entry.get("ssh_key_id")
@@ -460,7 +419,6 @@ def push_sync(
         return
 
     repo = _open_repo(local)
-    _auto_commit_sync(repo)
 
     callbacks = make_callbacks(ssh_keys_dir, key_id, http_username, http_password)
     remote = repo.remotes["origin"]

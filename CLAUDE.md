@@ -262,6 +262,10 @@ A short collection of recurring traps, accumulated over time. Add to it.
 - **"Add a `<script>` rendering capability for trusted users"**: no. R6. Even with auth, even for admins.
 - **"Use a custom `:::tip` block syntax"**: no. R4. Stick to GFM. If we need callouts, they're rendered from a recognised pattern (e.g., GitHub's `> [!NOTE]`) — never a new syntax.
 - **"Hold the diagram XML in the database for fast access"**: no. R2 + R5. The `.drawio.svg` file *is* the diagram, including its editable XML.
+- **"Run `repo.status()` to check if the working tree is dirty before fetching/pulling"**: it's an O(working-tree-bytes) operation that hashes every untracked file (and every tracked file when the index stat cache is stale, e.g. right after a `rsync`-style migration). On low-spec hardware with hundreds of MB of attachments this pegs a core for minutes per call. Let `pygit2.CheckoutStrategy.SAFE` be the dirty-check during checkout — it scopes the work to files that would actually change.
+- **"Auto-stage external modifications on push"**: tempting but wrong. Libreta commits on every write, so an auto-stage on push only ever catches edits made outside Libreta. Those are explicitly the user's responsibility to commit (`PROJECT.md` P1: the filesystem is the source of truth, including for users who edit it directly). Doing the scan costs a full-tree hash per push.
+- **"Block FastAPI lifespan on startup sync/reindex"**: don't await heavy work in `lifespan` — launch it as `asyncio.create_task` instead. Even when the work is cheap on dev hardware, blocking lifespan makes the API unresponsive for the duration on the target box, which looks like "Libreta is broken" to a user reloading the tab.
+- **"`location /api/` in nginx is enough to proxy the API"**: only as long as no API URL ends in a static-asset extension. A regex `location ~*` block for `*.svg|*.png|…` matches before plain prefix locations and will intercept `/api/v1/.../foo.drawio.svg`. Use `location ^~ /api/` so the prefix beats regex matches.
 
 ---
 

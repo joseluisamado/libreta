@@ -8,9 +8,34 @@ Living document. Update as work progresses. Latest at the top.
 
 ## Status
 
-**Current milestone**: M5 — v1.0 release ✅
+**Current milestone**: M5 — v1.0 release ✅ (post-1.0 hardening pass shipped 2026-05-13)
 **Next milestone**: post-1.0 hardening / M6 (multi-user & auth)
-**Next action**: push the `v1.0.0` tag, watch the first install land somewhere real, react to issues.
+**Next action**: push the tags, keep eyes on the homelab install.
+
+---
+
+## 2026-05-13 — Homelab deploy hardening
+
+**What changed**: first real-hardware deploy (NanoPi-class ARM SBC, 4 cores / 2 GB RAM, ~2 GB content across two git sources) surfaced a string of latency and footprint issues. None of them showed on the dev Mac. All fixed in this pass; detailed list in `docs/PERFORMANCE.md` "Low-spec / homelab notes".
+
+**Pieces**:
+- **Backend image: 586 MB → 206 MB.** `backend/Dockerfile` rewritten as a multi-stage build. The builder installs deps into `/opt/venv`; the runtime image copies only that venv and the source. `libgit2-dev` and `build-essential` are no longer in the runtime — pygit2's manylinux wheel statically bundles libgit2, openssl, libssh2, and pcre. `uv` is dropped from the runtime entirely (the prebuilt `ghcr.io/astral-sh/uv` binary is only used in the builder stage). Only `ca-certificates` is added at runtime for HTTPS git remotes.
+- **Sync click: ~60 s → a few seconds.** `fetch_and_ff_sync` no longer runs a pre-flight working-tree scan. The FF uses `pygit2.CheckoutStrategy.SAFE` so libgit2 refuses the FF if any file in the diff has uncommitted local changes; on conflict the ref is rolled back and a warning logged. After an `rsync`-style migration the index stat cache was invalidated, and `index.diff_to_workdir()` was hashing the full 1.2 GB working tree every call (73 s on `libreta-data`, 47 s on `work`). The new path only hashes files that would actually change. Same semantics as `git pull`.
+- **Push: no more auto-stage.** `push_sync` no longer calls `repo.status()` to auto-commit external changes before pushing. Libreta commits on every page write, so the auto-stage only caught modifications made outside Libreta — explicitly the user's responsibility now. Eliminates a per-push working-tree hash.
+- **Startup reindex is commit-aware.** New `sources_meta(source_id, indexed_head)` table records the git HEAD each source was last indexed at. If HEAD hasn't moved, the source is skipped entirely (no file I/O). If HEAD moved, only the `.md` files in the git diff are reindexed; removed files are deleted from the index. First run / missing row falls back to the old mtime walk and then records HEAD. On a quiet repo, startup reindex now consumes <0.1 s of CPU.
+- **Startup is non-blocking.** `incremental_reindex` and `startup_sync` are launched with `asyncio.create_task` from `lifespan` instead of being awaited there. The HTTP server accepts requests within ~30 s (Python startup) instead of waiting minutes for sync work to drain.
+- **Sync parallelism cap.** `startup_sync` and `periodic_sync_loop` share a 2-permit semaphore (`_bounded_sync_one`). libgit2's pack resolution is CPU-bound and single-threaded per call; fanning out one fetch per source on a 4-core ARM box pegged every core through contention. The periodic loop also seeds `next_sync = startup_time + interval` for every known source before its first tick, so the t≈60 s tick doesn't re-fetch what `startup_sync` just handled.
+- **Production frontend nginx: API assets with image extensions.** `frontend/nginx.prod.conf`'s `/api/` location was a plain prefix and lost precedence to the regex location matching `\.(svg|png|jpg|…)$`. Any asset URL like `/api/v1/sources/<id>/assets/foo.drawio.svg` was matched by the static-asset block, which had no `proxy_pass`, and returned 404 from nginx instead of reaching the backend. Promoted the API location to `location ^~ /api/` so it wins over regex matches. Drawio diagrams and images embedded in markdown pages now load on the production frontend image. Dev was unaffected (Vite handles its own proxy).
+- **`make release` deploys to the homelab.** New `DEPLOY_HOST` constant in the Makefile; the `release` target now pipes `docker save … | ssh $(DEPLOY_HOST) docker load` for both api and frontend images (each with `:VERSION` and `:latest` tags). Override at the command line: `make release LEVEL=patch DEPLOY_HOST=other`.
+
+**Measured impact on the home server**:
+- Cold restart CPU: ~170 s of total CPU in the first 3 min (≈90 % across cores) → 0.09 s in the first 2 min. Restart pressure is gone.
+- Sync-click CPU: full core for ~1 min → near-instant on a clean tree. Confirmed by an isolated timing harness: pre-flight 73 s + 47 s → 0 s; fetch ~1 s; push ~3 s.
+- Image pull on the SBC went from 586 MB → 206 MB.
+
+**Docs**: `ARCHITECTURE.md` "Git source lifecycle" + "Reindex" updated to match. `PERFORMANCE.md` gained a "Low-spec / homelab notes" section enumerating the wins.
+
+**Pre-flight (each step)**: backend ruff clean (5 pre-existing housekeeping items unchanged), mypy 0 errors, pytest 95/95. No frontend code changed; nginx config diff is a 1-character addition.
 
 ---
 
