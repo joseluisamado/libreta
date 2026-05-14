@@ -16,6 +16,7 @@ services:
     volumes:
       - libreta-data:/var/lib/libreta
       - /srv:/srv
+      - '/srv/data:/srv/data'
     ports:
       - "8092:8080"
     depends_on:
