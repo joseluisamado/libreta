@@ -159,7 +159,12 @@ function isAbsolute(url: string): boolean {
   return /^([a-z][a-z0-9+.-]*:)?\/\//i.test(url) || url.startsWith('/') || url.startsWith('data:')
 }
 
-export function resolveAssetUrl(src: string, pagePath: string, sourceId?: string): string {
+export function resolveAssetUrl(
+  src: string,
+  pagePath: string,
+  sourceId?: string,
+  watchedLabel?: string,
+): string {
   if (isAbsolute(src) || src.startsWith('#')) return src
   // References include the sidecar prefix (e.g. ".saml.md/photo.png").
   // Resolve relative to the page's parent directory.
@@ -175,6 +180,9 @@ export function resolveAssetUrl(src: string, pagePath: string, sourceId?: string
     }
     out.push(s)
   }
+  if (watchedLabel) {
+    return `/api/v1/watch/${encodeURIComponent(watchedLabel)}/assets/${out.join('/')}`
+  }
   if (sourceId) {
     return `/api/v1/sources/${sourceId}/assets/${out.join('/')}`
   }
@@ -184,6 +192,7 @@ export function resolveAssetUrl(src: string, pagePath: string, sourceId?: string
 interface RenderEnv {
   pagePath?: string
   sourceId?: string
+  watchedLabel?: string
 }
 
 // Extensions we treat as "asset" downloads when they appear in a relative
@@ -276,7 +285,7 @@ function patchRenderer(): void {
       const attr = token.attrs?.[srcIdx]
       if (srcIdx >= 0 && attr) {
         const e = env as RenderEnv
-        attr[1] = resolveAssetUrl(attr[1], e.pagePath ?? '', e.sourceId)
+        attr[1] = resolveAssetUrl(attr[1], e.pagePath ?? '', e.sourceId, e.watchedLabel)
       }
     }
     return defaultImage(tokens, idx, options, env, self)
@@ -299,7 +308,7 @@ function patchRenderer(): void {
       if (hrefIdx >= 0 && attr) {
         if (looksLikeAssetHref(attr[1])) {
           const e = env as RenderEnv
-          attr[1] = resolveAssetUrl(attr[1], e.pagePath ?? '', e.sourceId)
+          attr[1] = resolveAssetUrl(attr[1], e.pagePath ?? '', e.sourceId, e.watchedLabel)
         } else if (isExternalUrl(attr[1])) {
           token.attrSet('target', '_blank')
           token.attrSet('rel', 'noopener noreferrer')
@@ -313,8 +322,13 @@ function patchRenderer(): void {
 
 patchRenderer()
 
-export function renderMarkdown(source: string, pagePath = '', sourceId?: string): string {
-  return md.render(source, { pagePath, sourceId })
+export function renderMarkdown(
+  source: string,
+  pagePath = '',
+  sourceId?: string,
+  watchedLabel?: string,
+): string {
+  return md.render(source, { pagePath, sourceId, watchedLabel })
 }
 
 export async function renderMermaidIn(container: HTMLElement): Promise<void> {

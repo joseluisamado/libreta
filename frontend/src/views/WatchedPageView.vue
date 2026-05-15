@@ -167,7 +167,7 @@
 
   const html = computed(() => {
     if (!page.value) return ''
-    return renderMarkdown(page.value.body, page.value.path)
+    return renderMarkdown(page.value.body, page.value.path, undefined, label.value)
   })
 
   watch([html, mode], async () => {

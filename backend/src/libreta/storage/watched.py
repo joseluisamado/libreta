@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import Any
 
 from libreta.errors import (
-    InvalidPathError,
     PageNotFoundError,
     WatchedFileOutsideRootError,
     WatchedFolderNotAccessibleError,
@@ -77,14 +76,11 @@ def resolve_watched_file_sync(content_dir: Path, label: str, raw_path: str) -> t
     if not root_exists:
         raise WatchedFolderNotAccessibleError(str(watched_root))
 
-    # Validate the raw path segments (empty path = root)
+    # Validate the raw path segments (empty path = root). Sidecar dirs like
+    # ".page.md/" must remain reachable; pagefile.validate_path_segments allows
+    # them and blocks only well-known sensitive prefixes (.git, .ssh, .libreta).
     if raw_path:
-        parts = raw_path.split("/")
-        for p in parts:
-            if not p or p in {".", ".."} or p.startswith("."):
-                raise InvalidPathError(f"invalid path segment {p!r} in {raw_path!r}")
-            if "\x00" in p:
-                raise InvalidPathError("null byte in path")
+        pagefile.validate_path_segments(raw_path)
 
     candidate = (watched_root / raw_path).resolve() if raw_path else watched_root
 
