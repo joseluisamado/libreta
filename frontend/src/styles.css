@@ -214,3 +214,48 @@
   overflow-x: auto;
   text-align: center;
 }
+
+/* Per-codeblock language selector inside the Tiptap editor. Rendered as a
+   ProseMirror widget decoration just before each <pre>. The wrapper takes
+   zero vertical space; the <select> is absolutely positioned and overlays
+   the upper-right corner of the following <pre>, so the first line of code
+   stays usable. If a line of code is long enough to slide under the
+   selector, horizontal scroll keeps the content reachable. Lives in the
+   global stylesheet (not the Editor's scoped <style>) because ProseMirror
+   widget DOM does not always inherit the scope-id attribute, which made
+   the scoped rules fail to match. */
+.libreta-code-lang-select {
+  position: relative;
+  height: 0;
+  pointer-events: none;
+}
+
+.libreta-code-lang-select select {
+  position: absolute;
+  /* Anchor the selector vertically on the first line of code. The <pre>
+     has padding-top: 0.75rem (12px) and code renders at ~14px font with a
+     ~21px line box, so the first line's center sits ~22-23px below the
+     <pre>'s top edge. The widget wrapper has height: 0 and aligns with
+     the <pre>'s top, so we offset by that distance directly. */
+  top: 22px;
+  transform: translateY(-50%);
+  right: 0.35rem;
+  z-index: 2;
+  pointer-events: auto;
+  opacity: 0.55;
+  transition: opacity 120ms ease-out;
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+  border-radius: 0.25rem;
+  padding: 0.1rem 0.35rem;
+  font-size: 11px;
+  color: #475569;
+  cursor: pointer;
+}
+
+.libreta-code-lang-select select:hover,
+.libreta-code-lang-select select:focus {
+  opacity: 1;
+  border-color: #94a3b8;
+  outline: none;
+}

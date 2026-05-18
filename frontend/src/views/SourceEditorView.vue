@@ -1,5 +1,5 @@
 <script setup lang="ts">
-  import { computed, ref, watch } from 'vue'
+  import { computed, onBeforeUnmount, onErrorCaptured, onMounted, ref, watch } from 'vue'
   import { useRoute, useRouter } from 'vue-router'
   import { getSourcePage, saveSourcePage } from '@/api/client'
   import type { PageRead } from '@/api/types'
@@ -18,6 +18,44 @@
   const isDirty = ref(false)
   const saving = ref(false)
   const saveError = ref<string | null>(null)
+  // Surface any error thrown during child-component render/setup (notably the
+  // Tiptap editor and its markdown parser). Without this the EditorView pane
+  // unmounts on the throw and the user just sees a blank page with no clue.
+  const editorError = ref<string | null>(null)
+
+  onErrorCaptured((err, _instance, info) => {
+    editorError.value = `${info}: ${err instanceof Error ? err.message : String(err)}`
+    console.error('[libreta-edit] captured', info, err)
+    // Swallow so Vue does not propagate further (we have already shown it).
+    return false
+  })
+
+  function onWindowError(e: ErrorEvent): void {
+    editorError.value = `Uncaught: ${e.message}`
+  }
+  function onUnhandledRejection(e: PromiseRejectionEvent): void {
+    const reason = e.reason
+    editorError.value = `Unhandled rejection: ${
+      reason instanceof Error ? reason.message : String(reason)
+    }`
+  }
+  onMounted(() => {
+    window.addEventListener('error', onWindowError)
+    window.addEventListener('unhandledrejection', onUnhandledRejection)
+  })
+  onBeforeUnmount(() => {
+    window.removeEventListener('error', onWindowError)
+    window.removeEventListener('unhandledrejection', onUnhandledRejection)
+  })
+
+  function onEditorError(message: string): void {
+    editorError.value = message
+  }
+
+  function dismissEditorErrorAndSwitchToSource(): void {
+    if (mode.value === 'rendered') toggleViewMode()
+    editorError.value = null
+  }
 
   const { mode, toggle: toggleViewMode } = useViewMode()
 
@@ -176,6 +214,19 @@
         {{ error }}
         <RouterLink :to="readPagePath" class="underline ml-2">Back to page</RouterLink>
       </p>
+      <div
+        v-if="editorError"
+        class="mx-6 mt-4 rounded border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800"
+      >
+        <strong>Editor problem:</strong> {{ editorError }}
+        <button
+          type="button"
+          class="ml-2 underline"
+          @click="dismissEditorErrorAndSwitchToSource"
+        >
+          Switch to Source view
+        </button>
+      </div>
       <template v-else-if="page">
         <template v-if="mode === 'rendered'">
           <EditorToolbar
@@ -192,6 +243,7 @@
             class="px-8 py-6"
             @update="onUpdate"
             @diagram-saved="onDiagramSaved"
+            @editor-error="onEditorError"
           />
         </template>
         <textarea

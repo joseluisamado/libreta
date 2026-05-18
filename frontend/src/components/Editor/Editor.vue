@@ -3,13 +3,19 @@
   import { useEditor, EditorContent } from '@tiptap/vue-3'
   import StarterKit from '@tiptap/starter-kit'
   import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight'
-  import { createLowlight, common } from 'lowlight'
+  import { createLowlight } from 'lowlight'
+  // Use the full language set (instead of `common`) so fenced code blocks
+  // with less-common languages like `nix`, `dockerfile`, `toml`, `terraform`,
+  // etc. don't crash the editor on mount with "Unknown language".
+  import { all } from 'lowlight'
   import TaskList from '@tiptap/extension-task-list'
   import TaskItem from '@tiptap/extension-task-item'
   import Link from '@tiptap/extension-link'
   import { Table, TableRow, TableHeader, TableCell } from '@tiptap/extension-table'
   import Image from '@tiptap/extension-image'
-  import { mergeAttributes } from '@tiptap/core'
+  import { mergeAttributes, Extension } from '@tiptap/core'
+  import { Plugin, PluginKey } from '@tiptap/pm/state'
+  import { Decoration, DecorationSet } from '@tiptap/pm/view'
   import { Markdown } from 'tiptap-markdown'
   import 'highlight.js/styles/github.css'
   import {
@@ -20,7 +26,6 @@
     upsertSourceAsset,
   } from '@/api/client'
   import { resolveAssetUrl } from '@/markdown'
-  import type { Editor as TiptapEditor } from '@tiptap/core'
   import { getMarkdownFromStorage } from '@/markdownStorage'
   import DrawioModal from './DrawioModal.vue'
 
@@ -33,7 +38,20 @@
   const emit = defineEmits<{
     update: [markdown: string]
     'diagram-saved': []
+    'editor-error': [message: string]
   }>()
+
+  // Surfaces editor-mount / parse failures to the parent so the edit view
+  // doesn't silently render a blank pane when something goes wrong (e.g. an
+  // unsupported language fence or a malformed table that throws inside
+  // prosemirror's schema validation).
+  const editorError = ref<string | null>(null)
+  function reportEditorError(scope: string, e: unknown): void {
+    const msg = `${scope}: ${e instanceof Error ? e.message : String(e)}`
+    editorError.value = msg
+    emit('editor-error', msg)
+    console.error('[libreta-editor]', scope, e)
+  }
 
   const hasBeenSet = ref(false)
   // True while the editor is mutating its own doc programmatically (e.g.
@@ -50,6 +68,134 @@
   function isDrawioSrc(src: string): boolean {
     return /\.drawio\.svg(?:[?#]|$)/i.test(src)
   }
+
+  // Languages offered in the per-codeblock dropdown. Keep alphabetical.
+  // Any language registered with lowlight will syntax-highlight; this list
+  // is just the UX shortlist of "languages a user is likely to pick".
+  const CODE_LANGS: { value: string; label: string }[] = [
+    { value: 'bash', label: 'bash' },
+    { value: 'c', label: 'c' },
+    { value: 'cpp', label: 'c++' },
+    { value: 'csharp', label: 'c#' },
+    { value: 'css', label: 'css' },
+    { value: 'diff', label: 'diff' },
+    { value: 'dockerfile', label: 'dockerfile' },
+    { value: 'go', label: 'go' },
+    { value: 'html', label: 'html' },
+    { value: 'ini', label: 'ini' },
+    { value: 'java', label: 'java' },
+    { value: 'javascript', label: 'javascript' },
+    { value: 'json', label: 'json' },
+    { value: 'kotlin', label: 'kotlin' },
+    { value: 'latex', label: 'latex' },
+    { value: 'lua', label: 'lua' },
+    { value: 'makefile', label: 'makefile' },
+    { value: 'markdown', label: 'markdown' },
+    { value: 'mermaid', label: 'mermaid' },
+    { value: 'nix', label: 'nix' },
+    { value: 'perl', label: 'perl' },
+    { value: 'php', label: 'php' },
+    { value: 'python', label: 'python' },
+    { value: 'r', label: 'r' },
+    { value: 'ruby', label: 'ruby' },
+    { value: 'rust', label: 'rust' },
+    { value: 'scss', label: 'scss' },
+    { value: 'shell', label: 'shell' },
+    { value: 'sql', label: 'sql' },
+    { value: 'swift', label: 'swift' },
+    { value: 'terraform', label: 'terraform' },
+    { value: 'toml', label: 'toml' },
+    { value: 'typescript', label: 'typescript' },
+    { value: 'xml', label: 'xml' },
+    { value: 'yaml', label: 'yaml' },
+  ]
+
+  // Per-codeblock language selector rendered as a ProseMirror widget
+  // decoration anchored just before each codeBlock node. The widget is a
+  // detached `<select>` whose options mirror CODE_LANGS; updating it
+  // dispatches an updateAttributes transaction on the codeBlock.
+  // Widget decorations live outside the editable contenteditable area, so
+  // typing inside a code block does not interfere with the selector and
+  // vice-versa.
+  function buildLangSelect(currentLang: string, onChange: (lang: string) => void): HTMLElement {
+    const wrap = document.createElement('div')
+    wrap.className = 'libreta-code-lang-select'
+    wrap.contentEditable = 'false'
+    const select = document.createElement('select')
+    select.className =
+      'rounded border border-slate-200 bg-white px-1.5 py-0.5 text-[11px] text-slate-500 hover:border-slate-400 focus:outline-none cursor-pointer'
+    select.setAttribute('aria-label', 'Code block language')
+    const plain = document.createElement('option')
+    plain.value = ''
+    plain.textContent = 'plain'
+    select.appendChild(plain)
+    for (const l of CODE_LANGS) {
+      const opt = document.createElement('option')
+      opt.value = l.value
+      opt.textContent = l.label
+      select.appendChild(opt)
+    }
+    // Selecting an option ProseMirror doesn't know about (e.g. an exotic
+    // language a user typed in the markdown source) — add it dynamically so
+    // the current value is reflected.
+    if (currentLang && !CODE_LANGS.some((l) => l.value === currentLang)) {
+      const opt = document.createElement('option')
+      opt.value = currentLang
+      opt.textContent = currentLang
+      select.appendChild(opt)
+    }
+    select.value = currentLang
+    select.addEventListener('change', () => {
+      onChange(select.value)
+    })
+    // Prevent mousedown from stealing the editor selection. The change still
+    // fires; we just don't want ProseMirror's selection tracker to interpret
+    // the click as a doc-level event.
+    select.addEventListener('mousedown', (e) => {
+      e.stopPropagation()
+    })
+    wrap.appendChild(select)
+    return wrap
+  }
+
+  const codeBlockLangSelectorKey = new PluginKey('codeBlockLangSelector')
+
+  const CodeBlockLangSelector = Extension.create({
+    name: 'codeBlockLangSelector',
+    addProseMirrorPlugins() {
+      return [
+        new Plugin({
+          key: codeBlockLangSelectorKey,
+          props: {
+            decorations: (state) => {
+              const decorations: Decoration[] = []
+              state.doc.descendants((node, pos) => {
+                if (node.type.name !== 'codeBlock') return
+                const lang = (node.attrs.language as string | null) ?? ''
+                // Anchor at `pos` (before the codeBlock node) so the widget
+                // DOM is a sibling of <pre> in the rendered output, not a
+                // child of it. side: -1 keeps it ordered before the block.
+                const widget = Decoration.widget(
+                  pos,
+                  (view) =>
+                    buildLangSelect(lang, (newLang) => {
+                      const tr = view.state.tr.setNodeMarkup(pos, undefined, {
+                        ...node.attrs,
+                        language: newLang || null,
+                      })
+                      view.dispatch(tr)
+                    }),
+                  { side: -1, ignoreSelection: true, key: `lang-${pos}-${lang}` },
+                )
+                decorations.push(widget)
+              })
+              return DecorationSet.create(state.doc, decorations)
+            },
+          },
+        }),
+      ]
+    },
+  })
 
   const PageScopedImage = Image.extend({
     renderHTML({ HTMLAttributes }) {
@@ -74,8 +220,26 @@
         codeBlock: false,
       }),
       CodeBlockLowlight.configure({
-        lowlight: createLowlight(common),
+        lowlight: (() => {
+          const ll = createLowlight(all)
+          // Belt-and-braces: the @tiptap lowlight plugin only checks
+          // highlight.js's own registry — not lowlight's — before calling
+          // `.highlight(lang, …)`. If a user writes a fence with an unknown
+          // language, the call throws and ProseMirror's plugin init crashes,
+          // unmounting the whole editor and leaving the edit page blank.
+          // Wrap `.highlight` to fall back to plaintext rather than throw.
+          const original = ll.highlight.bind(ll)
+          ll.highlight = ((lang: string, value: string, options?: unknown) => {
+            try {
+              return original(lang, value, options as never)
+            } catch {
+              return original('plaintext', value, options as never)
+            }
+          }) as typeof ll.highlight
+          return ll
+        })(),
       }),
+      CodeBlockLangSelector,
       TaskList,
       TaskItem.configure({
         nested: true,
@@ -125,6 +289,25 @@
         return true
       },
     },
+    onCreate: ({ editor: ed }) => {
+      // tiptap-markdown logs unknown nodes / parse complaints to console;
+      // surface anything that left the doc empty when it shouldn't be so the
+      // user sees a clear message instead of a blank editor.
+      try {
+        if (props.content && props.content.trim().length > 0 && ed.isEmpty) {
+          reportEditorError(
+            'parse',
+            new Error(
+              'Editor mounted but the document came out empty. ' +
+                'The markdown source may contain syntax the editor cannot represent — ' +
+                'switch to Source view to inspect it.',
+            ),
+          )
+        }
+      } catch (e) {
+        reportEditorError('mount', e)
+      }
+    },
     onUpdate: () => {
       if (!hasBeenSet.value) return
       if (!editor.value || editor.value.isDestroyed) return
@@ -153,7 +336,11 @@
       const current = getMarkdownFromStorage(editor.value)
       if (current === newContent) return
       hasBeenSet.value = false
-      editor.value.commands.setContent(newContent)
+      try {
+        editor.value.commands.setContent(newContent)
+      } catch (e) {
+        reportEditorError('setContent', e)
+      }
       // Mark as set after a tick so that onUpdate does not fire for the initial load
       requestAnimationFrame(() => {
         hasBeenSet.value = true
@@ -177,45 +364,6 @@
   onBeforeUnmount(() => {
     editor.value?.destroy()
   })
-
-  const CODE_LANGS = [
-    { value: 'bash', label: 'bash' },
-    { value: 'c', label: 'c' },
-    { value: 'cpp', label: 'c++' },
-    { value: 'css', label: 'css' },
-    { value: 'diff', label: 'diff' },
-    { value: 'go', label: 'go' },
-    { value: 'html', label: 'html' },
-    { value: 'java', label: 'java' },
-    { value: 'javascript', label: 'javascript' },
-    { value: 'json', label: 'json' },
-    { value: 'kotlin', label: 'kotlin' },
-    { value: 'markdown', label: 'markdown' },
-    { value: 'mermaid', label: 'mermaid' },
-    { value: 'python', label: 'python' },
-    { value: 'ruby', label: 'ruby' },
-    { value: 'rust', label: 'rust' },
-    { value: 'sql', label: 'sql' },
-    { value: 'swift', label: 'swift' },
-    { value: 'toml', label: 'toml' },
-    { value: 'typescript', label: 'typescript' },
-    { value: 'xml', label: 'xml' },
-    { value: 'yaml', label: 'yaml' },
-  ]
-
-  const activeCodeBlockLang = computed(() => {
-    if (!editor.value?.isActive('codeBlock')) return ''
-    return (editor.value.getAttributes('codeBlock').language as string | undefined) ?? ''
-  })
-
-  function setCodeBlockLang(lang: string): void {
-    if (!editor.value || editor.value.isDestroyed) return
-    editor.value
-      .chain()
-      .focus()
-      .updateAttributes('codeBlock', { language: lang || null })
-      .run()
-  }
 
   const editorRoot = ref<HTMLDivElement | null>(null)
 
@@ -482,25 +630,17 @@
 
 <template>
   <div ref="editorRoot" class="libreta-editor prose max-w-none">
-    <div
-      v-if="editor && editor.isActive('codeBlock')"
-      class="code-lang-float mb-1 flex items-center gap-1"
-    >
-      <span class="text-[10px] text-slate-400">language:</span>
-      <select
-        :value="activeCodeBlockLang"
-        class="rounded border border-slate-200 bg-white px-1.5 py-0.5 text-[11px] text-slate-600 hover:border-slate-400 focus:outline-none"
-        @change="setCodeBlockLang(($event.target as HTMLSelectElement).value)"
-      >
-        <option value="">plain</option>
-        <option v-for="l in CODE_LANGS" :key="l.value" :value="l.value">{{ l.label }}</option>
-      </select>
-    </div>
     <p
       v-if="uploadError"
       class="my-2 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
     >
       Upload failed: {{ uploadError }}
+    </p>
+    <p
+      v-if="editorError"
+      class="my-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800"
+    >
+      Editor warning: {{ editorError }}
     </p>
     <EditorContent :editor="editor" />
     <DrawioModal
