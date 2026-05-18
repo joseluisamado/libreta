@@ -32,7 +32,8 @@ export interface DirChildren {
 
 export interface PageNode {
   path: string
-  title: string
+  title: string // sidebar label: H1 of the markdown body, or beautified stem fallback
+  filename: string // on-disk filename including extension (e.g. "foo.md", "diagram.pdf")
   is_directory: boolean
   children: PageNode[]
   has_more?: boolean

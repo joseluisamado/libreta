@@ -106,7 +106,8 @@ class DirChildren(BaseModel):
 
 class PageNode(BaseModel):
     path: str
-    title: str
+    title: str  # sidebar label: markdown H1, or beautified stem fallback
+    filename: str  # actual on-disk filename including extension (e.g. "foo.md")
     is_directory: bool
     children: list[PageNode] = Field(default_factory=list)
     has_more: bool = False

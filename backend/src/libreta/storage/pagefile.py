@@ -42,13 +42,43 @@ def _as_datetime(value: Any) -> datetime | None:
         return None
 
 
-def read_title_only(file: Path, fallback: str) -> str:
+def beautify_stem(stem: str) -> str:
+    """Turn a filename stem into a human-readable label for sidebar / listings.
+
+    Hyphens and underscores become spaces; case is preserved (NOT title-cased,
+    since title-casing mangles acronyms like ``APT`` → ``Apt``). Strips runs
+    of whitespace so ``foo---bar`` reads as ``foo bar``, not ``foo   bar``.
+    """
+    out = stem.replace("-", " ").replace("_", " ")
+    return " ".join(out.split())
+
+
+def read_h1_or_fallback(file: Path, fallback: str) -> str:
+    """Sidebar / tree label for a markdown file.
+
+    Reads the first H1 (``# `` heading) from the body. If absent or the file
+    is unreadable, returns *fallback*. Frontmatter ``title:`` is deliberately
+    NOT consulted here — the sidebar should reflect what the user sees when
+    they open the file, which is the body's H1.
+    """
     try:
         post = frontmatter.load(file)
-        title = post.metadata.get("title")
-        return str(title) if title else fallback
+        body = post.content or ""
     except (OSError, ValueError):
         return fallback
+    for raw_line in body.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        # Match ATX H1: "# Heading" (one leading hash, then space, then text).
+        # H2+ are skipped; setext headings (=== underline) are uncommon in
+        # this codebase and the cost of supporting them isn't worth it.
+        if line.startswith("# ") and not line.startswith("## "):
+            return line[2:].strip() or fallback
+        # Stop at first non-blank, non-H1 line — if the doc doesn't open
+        # with an H1, treat it as having no title.
+        return fallback
+    return fallback
 
 
 # ---------------------------------------------------------------------------
@@ -307,14 +337,16 @@ def _build_tree(
         md_file = md_names.get(name)
         sub_dir = dir_names.get(name)
         child_url = f"{url_prefix}/{name}" if url_prefix else name
-        humanised = name.replace("-", " ").replace("_", " ").title()
+        humanised = beautify_stem(name)
+        md_filename = md_file.name if md_file else f"{name}.md"
 
         if hit_max and sub_dir:
-            title = read_title_only(md_file, humanised) if md_file else humanised
+            title = read_h1_or_fallback(md_file, humanised) if md_file else humanised
             nodes.append(
                 PageNode(
                     path=child_url,
                     title=title,
+                    filename=md_filename if md_file else name,
                     is_directory=True,
                     children=[],
                     has_more=True,
@@ -326,11 +358,12 @@ def _build_tree(
             if sub_dir:
                 children, sub_other = _build_tree(sub_dir, child_url, max_depth, depth + 1)
             if md_file:
-                title = read_title_only(md_file, humanised)
+                title = read_h1_or_fallback(md_file, humanised)
                 nodes.append(
                     PageNode(
                         path=child_url,
                         title=title,
+                        filename=md_filename,
                         is_directory=bool(sub_dir),
                         children=children,
                         other_files=sub_other,
@@ -341,6 +374,7 @@ def _build_tree(
                     PageNode(
                         path=child_url,
                         title=humanised,
+                        filename=name,
                         is_directory=True,
                         children=children,
                         other_files=sub_other,
@@ -352,7 +386,8 @@ def _build_tree(
         nodes.append(
             PageNode(
                 path=child_url,
-                title=pdf.stem.replace("-", " ").replace("_", " "),
+                title=beautify_stem(pdf.stem),
+                filename=pdf.name,
                 is_directory=False,
                 children=[],
                 kind="pdf",

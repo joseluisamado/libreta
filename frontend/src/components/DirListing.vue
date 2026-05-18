@@ -108,16 +108,7 @@
             class="w-4 shrink-0 mr-1.5 text-[10px] font-semibold text-sky-500 text-center"
             >MD</span
           >
-          <span class="truncate"
-            >{{ child.title
-            }}{{
-              !child.is_directory && !child.children.length
-                ? child.kind === 'pdf'
-                  ? '.pdf'
-                  : '.md'
-                : ''
-            }}</span
-          >
+          <span class="truncate">{{ child.filename }}</span>
         </RouterLink>
         <button
           type="button"
