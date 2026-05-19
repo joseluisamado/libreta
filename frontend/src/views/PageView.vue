@@ -388,9 +388,7 @@
                   'text-orange-500': file.kind === 'drawio',
                   'text-slate-500': file.kind === 'binary',
                 }"
-                >{{
-                  file.kind === 'image' ? 'IMG' : file.kind === 'drawio' ? 'DRAW' : 'BIN'
-                }}</span
+                >{{ file.kind === 'image' ? 'IMG' : file.kind === 'drawio' ? 'DRAW' : 'BIN' }}</span
               >
               <span class="truncate">{{ file.name }}</span>
             </a>

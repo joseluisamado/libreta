@@ -10,6 +10,7 @@
   import { useWatchedStore } from '@/stores/watched'
   import type { OtherFile, PageNode, PageRead } from '@/api/types'
   import { renderMarkdown, renderMermaidIn } from '@/markdown'
+  import { isTextPath } from '@/textFiles'
   import { useReadingWidth } from '@/composables/usePrefs'
   import { useViewMode } from '@/composables/useViewMode'
   import Breadcrumbs from '@/components/Breadcrumbs.vue'
@@ -39,6 +40,13 @@
   async function load(): Promise<void> {
     if (path.value.toLowerCase().endsWith('.pdf')) {
       router.replace(`/pdf-watch/${label.value}/${path.value}`)
+      return
+    }
+    if (isTextPath(path.value)) {
+      router.replace({
+        path: `/text-watch/${label.value}/${path.value}`,
+        hash: route.hash,
+      })
       return
     }
     page.value = null

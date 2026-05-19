@@ -402,7 +402,7 @@
       />
     </aside>
 
-    <main class="flex-1 overflow-y-auto overflow-x-hidden min-w-0">
+    <main id="main-scroll" class="flex-1 overflow-y-auto overflow-x-hidden min-w-0">
       <RouterView />
     </main>
   </div>

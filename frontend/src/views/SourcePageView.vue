@@ -10,6 +10,7 @@
   } from '@/api/client'
   import type { OtherFile, PageNode, PageRead } from '@/api/types'
   import { renderMarkdown, renderMermaidIn } from '@/markdown'
+  import { isTextPath } from '@/textFiles'
   import { useReadingWidth } from '@/composables/usePrefs'
   import { useViewMode } from '@/composables/useViewMode'
   import { useSourcesStore } from '@/stores/sources'
@@ -40,6 +41,13 @@
   async function load(): Promise<void> {
     if (path.value.toLowerCase().endsWith('.pdf')) {
       router.replace(`/pdf-source/${sourceId.value}/${path.value}`)
+      return
+    }
+    if (isTextPath(path.value)) {
+      router.replace({
+        path: `/text-source/${sourceId.value}/${path.value}`,
+        hash: route.hash,
+      })
       return
     }
     page.value = null

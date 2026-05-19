@@ -392,10 +392,16 @@
         if (myToken !== renderToken) return
         try {
           const page = await doc.getPage(i)
-          if (myToken !== renderToken) { page.cleanup(); return }
+          if (myToken !== renderToken) {
+            page.cleanup()
+            return
+          }
           const baseViewport = page.getViewport({ scale: 1 })
           const intr = intrinsicSizes[i - 1]
-          if (!intr) { page.cleanup(); continue }
+          if (!intr) {
+            page.cleanup()
+            continue
+          }
           if (intr.w === baseViewport.width && intr.h === baseViewport.height) {
             page.cleanup()
             continue
@@ -593,9 +599,15 @@
     const myToken = renderToken
     try {
       const page = await activeDoc.getPage(pageNum)
-      if (myToken !== renderToken) { page.cleanup(); return }
+      if (myToken !== renderToken) {
+        page.cleanup()
+        return
+      }
       const existingCanvas = ph.querySelector('canvas')
-      if (!existingCanvas) { page.cleanup(); return }
+      if (!existingCanvas) {
+        page.cleanup()
+        return
+      }
       const scale = renderedScales.get(pageNum) ?? targetScaleFor(pageNum)
       const viewport = page.getViewport({ scale })
       const textLayerDiv = document.createElement('div')
@@ -610,7 +622,10 @@
         viewport,
       })
       await textLayer.render()
-      if (myToken !== renderToken) { page.cleanup(); return }
+      if (myToken !== renderToken) {
+        page.cleanup()
+        return
+      }
       for (const old of Array.from(ph.querySelectorAll('.textLayer'))) ph.removeChild(old)
       ph.insertBefore(textLayerDiv, existingCanvas.nextSibling)
       textLayerPages.add(pageNum)
@@ -798,7 +813,6 @@
       document.documentElement.style.overflow = ''
     }
   })
-
 </script>
 
 <template>
