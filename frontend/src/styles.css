@@ -108,8 +108,33 @@
   margin-top: 0.25em;
 }
 .prose li > input[type='checkbox'] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 1em;
+  height: 1em;
   margin-right: 0.4em;
-  vertical-align: middle;
+  vertical-align: -0.15em;
+  border: 1px solid #8c959f;
+  border-radius: 3px;
+  background-color: #fff;
+  position: relative;
+}
+.prose li > input[type='checkbox'][checked],
+.prose li > input[type='checkbox'][checked]:disabled {
+  background-color: #1f6feb;
+  border-color: #1f6feb;
+  opacity: 1;
+}
+.prose li > input[type='checkbox'][checked]::after {
+  content: '';
+  position: absolute;
+  left: 0.25em;
+  top: 0.05em;
+  width: 0.3em;
+  height: 0.6em;
+  border: solid #fff;
+  border-width: 0 0.15em 0.15em 0;
+  transform: rotate(45deg);
 }
 
 .prose blockquote {

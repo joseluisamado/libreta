@@ -241,7 +241,67 @@
       }),
       CodeBlockLangSelector,
       TaskList,
-      TaskItem.configure({
+      // The upstream TaskItem nodeView wires its checkbox `change` listener
+      // through a chained command that captures `getPos` at dispatch time.
+      // Under Vue + node-view re-renders that position is sometimes stale by
+      // the time the transaction runs, producing a "RangeError: Applying a
+      // mismatched transaction" and silently dropping the toggle. We replace
+      // the nodeView with one that resolves the position immediately, guards
+      // against an invalid lookup, and dispatches a single fresh transaction.
+      TaskItem.extend({
+        addNodeView() {
+          return ({ node, getPos, editor: ed, HTMLAttributes }) => {
+            const li = document.createElement('li')
+            const label = document.createElement('label')
+            const span = document.createElement('span')
+            const checkbox = document.createElement('input')
+            const content = document.createElement('div')
+            label.contentEditable = 'false'
+            checkbox.type = 'checkbox'
+            checkbox.checked = node.attrs.checked === true
+            li.dataset['checked'] = String(node.attrs.checked === true)
+            li.dataset['type'] = 'taskItem'
+            for (const [k, v] of Object.entries(HTMLAttributes || {})) {
+              if (typeof v === 'string') li.setAttribute(k, v)
+            }
+            checkbox.addEventListener('mousedown', (e) => e.preventDefault())
+            checkbox.addEventListener('change', (e) => {
+              const checked = (e.target as HTMLInputElement).checked
+              if (!ed.isEditable) {
+                checkbox.checked = !checked
+                return
+              }
+              const pos = typeof getPos === 'function' ? getPos() : null
+              if (typeof pos !== 'number') {
+                checkbox.checked = !checked
+                return
+              }
+              const current = ed.state.doc.nodeAt(pos)
+              if (!current || current.type.name !== 'taskItem') {
+                checkbox.checked = !checked
+                return
+              }
+              const tr = ed.state.tr.setNodeMarkup(pos, undefined, {
+                ...current.attrs,
+                checked,
+              })
+              ed.view.dispatch(tr)
+            })
+            label.append(checkbox, span)
+            li.append(label, content)
+            return {
+              dom: li,
+              contentDOM: content,
+              update: (updated) => {
+                if (updated.type.name !== 'taskItem') return false
+                checkbox.checked = updated.attrs.checked === true
+                li.dataset['checked'] = String(updated.attrs.checked === true)
+                return true
+              },
+            }
+          }
+        },
+      }).configure({
         nested: true,
       }),
       Link.configure({
