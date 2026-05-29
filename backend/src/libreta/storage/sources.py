@@ -375,18 +375,37 @@ def fetch_and_ff_sync(
         logger.warning("source %s: diverged from remote, manual merge needed", source_id)
         return
 
-    # SAFE strategy lets libgit2 itself be the dirty-check: if any tracked
-    # file in the FF diff has uncommitted local changes, the checkout aborts
-    # without touching anything. This avoids a pre-flight full-tree scan
-    # (which on slow-storage hosts hashed every tracked file's contents).
-    local_ref.set_target(remote_commit.id)
+    # Materialise the remote tree into the index + working tree FIRST, then
+    # advance the ref. Order matters: checkout_tree(<target>) diffs the target
+    # against the current HEAD/workdir and writes the files that differ. The
+    # old code did set_target() first and then checkout_head(), which diffs the
+    # *already-advanced* HEAD against the workdir — for purely-added paths that
+    # comparison can resolve to "nothing to do", silently leaving new files out
+    # of the index and working tree (git status: INDEX_DELETED) while the ref
+    # still moved. checkout_tree against the explicit target avoids that.
+    #
+    # SAFE strategy lets libgit2 itself be the dirty-check: if any tracked file
+    # in the FF diff has uncommitted local *modifications*, the checkout aborts
+    # without touching anything. This avoids a pre-flight full-tree scan (which
+    # on slow-storage hosts hashed every tracked file's contents).
+    #
+    # RECREATE_MISSING is essential here. Without it, SAFE treats a tracked file
+    # that is missing from the working tree as a deliberate local deletion and
+    # skips it — so it never gets written. The old code (set_target + then
+    # checkout_head) could leave new files in HEAD but absent from the index and
+    # working tree (git status: INDEX_DELETED); a plain SAFE checkout then sees
+    # those paths as "locally deleted, don't touch" and the repo stays stuck on
+    # every subsequent sync. RECREATE_MISSING makes the fast-forward restore
+    # files that should exist at the target commit, while SAFE still protects
+    # genuine uncommitted edits to existing files.
+    strategy = pygit2.enums.CheckoutStrategy.SAFE | pygit2.enums.CheckoutStrategy.RECREATE_MISSING
     try:
-        repo.checkout_head(strategy=pygit2.enums.CheckoutStrategy.SAFE)  # type: ignore[no-untyped-call]
+        repo.checkout_tree(remote_commit.tree, strategy=strategy)  # type: ignore[no-untyped-call]
     except pygit2.GitError as exc:
-        # Roll back the ref so HEAD still matches the working tree.
-        local_ref.set_target(local_commit.id)
         logger.warning("source %s: cannot fast-forward, local changes in path: %s", source_id, exc)
         return
+    # Only advance the ref once the working tree + index reflect the new commit.
+    local_ref.set_target(remote_commit.id)
     logger.info("source %s: fast-forwarded to %s", source_id, str(remote_commit.id)[:7])
 
 

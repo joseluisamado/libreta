@@ -14,6 +14,49 @@ Living document. Update as work progresses. Latest at the top.
 
 ---
 
+## 2026-05-29 — Fix: fast-forward silently dropped newly-added files
+
+**Symptom**: a user added `.md` files upstream, clicked "sync", and the new
+files never appeared in Libreta — no error; `last_sync_error` stayed null.
+
+**Root cause**: a regression introduced by the 2026-05-13 SAFE-checkout change.
+`fetch_and_ff_sync` did `local_ref.set_target(remote_commit.id)` (advance the
+branch ref) **before** `repo.checkout_head(strategy=SAFE)`. With the ref already
+moved, `checkout_head` diffs the *new* HEAD against the working tree; for
+purely-added paths that comparison can resolve to "nothing to do", so the new
+files were left out of both the index and the working tree while the ref still
+pointed at the commit that contained them. Result: files present in HEAD's tree
+but `git status: INDEX_DELETED`, invisible to the listing API (which reads the
+working tree per R2). Worse, once a repo was in that state it could not
+self-heal: a plain SAFE checkout treats the missing-from-workdir paths as
+deliberate local deletions and skips restoring them, so every later sync stayed
+stuck.
+
+**Fix** (`storage/sources.py` `fetch_and_ff_sync`):
+- Check out the explicit target tree (`checkout_tree(remote_commit.tree, …)`)
+  and advance the ref only afterwards, so the working tree + index always
+  reflect the new commit before HEAD moves.
+- Use `SAFE | RECREATE_MISSING`. RECREATE_MISSING makes the fast-forward restore
+  tracked files that are missing from the working tree (healing any repo already
+  left in the INDEX_DELETED state), while SAFE still aborts on genuine
+  uncommitted *modifications* to existing files — same protection as before.
+
+**Live repair**: the deployed `work` repo was stuck in the INDEX_DELETED state;
+its index was resynced to HEAD and the tree force-checked-out. Working tree now
+clean; the 5 missing files (incl. the `Ch2/Ch4/Ch7 … — Summary & Gotchas.md`
+set) are back and visible via the API.
+
+**Tests**: new `backend/tests/test_sources_sync.py` (3 cases) — pure-add FF
+materialises files on disk + index (reproduces the original bug; fails without
+the fix), self-heal from an INDEX_DELETED repo, and "uncommitted local edit
+blocks the FF without moving the ref". Full suite 98/98, ruff + mypy clean.
+
+**Note**: this is unrelated to the case-sensitivity red herring — the user's URL
+used `EPSO Books` but the on-disk dir is `EPSO books`; the backend correctly
+404s the wrong case and the sidebar always links the real on-disk name.
+
+---
+
 ## 2026-05-13 — Homelab deploy hardening
 
 **What changed**: first real-hardware deploy (NanoPi-class ARM SBC, 4 cores / 2 GB RAM, ~2 GB content across two git sources) surfaced a string of latency and footprint issues. None of them showed on the dev Mac. All fixed in this pass; detailed list in `docs/PERFORMANCE.md` "Low-spec / homelab notes".
