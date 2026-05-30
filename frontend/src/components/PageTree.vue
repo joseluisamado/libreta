@@ -236,7 +236,7 @@
             class="text-[10px] font-semibold text-sky-500 shrink-0"
             >MD</span
           >
-          <span class="truncate">{{ node.title }}</span>
+          <span class="truncate">{{ node.filename }}</span>
         </RouterLink>
       </div>
       <PageTree
