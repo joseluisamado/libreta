@@ -119,6 +119,52 @@ def test_remove_nonexistent_label(client_with_watchers: TestClient) -> None:
     assert r.status_code == 204
 
 
+def test_update_folder_path_and_label(
+    client_with_watchers: TestClient, watched_fixture: Path, tmp_path: Path
+) -> None:
+    client_with_watchers.post(
+        "/api/v1/watch/folders",
+        json={"label": "mywiki", "path": str(watched_fixture)},
+    )
+    new_path = tmp_path / "moved"
+    new_path.mkdir()
+    r = client_with_watchers.put(
+        "/api/v1/watch/folders/mywiki",
+        json={"label": "renamed", "path": str(new_path)},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["label"] == "renamed"
+    assert body["path"] == str(new_path.resolve())
+
+    listed = client_with_watchers.get("/api/v1/watch/folders").json()
+    assert [e["label"] for e in listed] == ["renamed"]
+
+
+def test_update_folder_label_collision_rejected(
+    client_with_watchers: TestClient, watched_fixture: Path
+) -> None:
+    for lbl in ("a", "b"):
+        client_with_watchers.post(
+            "/api/v1/watch/folders",
+            json={"label": lbl, "path": str(watched_fixture)},
+        )
+    # Renaming "a" onto the existing "b" must fail.
+    r = client_with_watchers.put(
+        "/api/v1/watch/folders/a",
+        json={"label": "b", "path": str(watched_fixture)},
+    )
+    assert r.status_code == 409
+
+
+def test_update_nonexistent_folder(client_with_watchers: TestClient, watched_fixture: Path) -> None:
+    r = client_with_watchers.put(
+        "/api/v1/watch/folders/nope",
+        json={"label": "nope", "path": str(watched_fixture)},
+    )
+    assert r.status_code == 404
+
+
 # ---------------------------------------------------------------------------
 # Tree
 # ---------------------------------------------------------------------------

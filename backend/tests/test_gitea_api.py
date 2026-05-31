@@ -64,6 +64,59 @@ def test_server_crud(client: TestClient) -> None:
     assert client.get("/api/v1/sources/gitea-servers").json() == []
 
 
+def test_update_server_metadata_keeps_token(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    server_id = _add_server(client)
+    # Edit label/username with a blank token — the stored token must persist.
+    r = client.put(
+        f"/api/v1/sources/gitea-servers/{server_id}",
+        json={
+            "label": "Renamed",
+            "base_url": "https://git.example.com",
+            "username": "bob",
+            "token": None,
+        },
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["label"] == "Renamed"
+    assert r.json()["username"] == "bob"
+
+    # Discovery still works, proving the token survived the edit.
+    seen = _patch_discovery(monkeypatch, [])
+    client.post(
+        f"/api/v1/sources/gitea-servers/{server_id}/discover",
+        json={"owner": "team"},
+    )
+    assert seen == ["tok-123"]
+
+
+def test_update_server_rotates_token(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    server_id = _add_server(client)
+    r = client.put(
+        f"/api/v1/sources/gitea-servers/{server_id}",
+        json={
+            "label": "Work",
+            "base_url": "https://git.example.com",
+            "username": "alice",
+            "token": "tok-rotated",
+        },
+    )
+    assert r.status_code == 200, r.text
+
+    # The new token is the one discovery now uses.
+    async def fake(base_url: str, owner: str, token: str) -> list[GiteaRepo]:
+        assert token == "tok-rotated"
+        return []
+
+    monkeypatch.setattr(sources_api, "discover_repos", fake)
+    resp = client.post(
+        f"/api/v1/sources/gitea-servers/{server_id}/discover",
+        json={"owner": "team"},
+    )
+    assert resp.status_code == 200, resp.text
+
+
 def _patch_discovery(monkeypatch: pytest.MonkeyPatch, repos: list[GiteaRepo]) -> list[str]:
     """Patch the api module's discover_repos; capture the tokens it was called with."""
     seen_tokens: list[str] = []

@@ -9,6 +9,7 @@ from libreta.deps import get_settings
 from libreta.errors import (
     PageNotFoundError,
     WatchedFolderAlreadyExistsError,
+    WatchedLabelNotFoundError,
 )
 from libreta.models import (
     DirChildren,
@@ -17,6 +18,7 @@ from libreta.models import (
     PageWrite,
     WatchedFolderCreate,
     WatchedFolderResponse,
+    WatchedFolderUpdate,
 )
 from libreta.storage import pagefile
 from libreta.storage.watched import (
@@ -64,6 +66,32 @@ async def add_watched_folder(
     config.append({"label": body.label, "path": str(folder_path)})
     await save_watched_config(settings.content_dir, config)
     return WatchedFolderResponse(label=body.label, path=str(folder_path), exists=exists)
+
+
+@router.put("/folders/{label}", response_model=WatchedFolderResponse)
+async def update_watched_folder(
+    label: str,
+    body: WatchedFolderUpdate,
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> WatchedFolderResponse:
+    """Edit a watched folder's label and/or path.
+
+    The label is the config key, so a rename re-keys the entry. Renaming to a
+    label already used by another folder is rejected.
+    """
+    config = await load_watched_config(settings.content_dir)
+    idx = next((i for i, e in enumerate(config) if e["label"] == label), None)
+    if idx is None:
+        raise WatchedLabelNotFoundError(label)
+    if body.label != label and any(e["label"] == body.label for e in config):
+        raise WatchedFolderAlreadyExistsError(body.label)
+
+    folder_path = Path(body.path).expanduser().resolve()
+    config[idx] = {"label": body.label, "path": str(folder_path)}
+    await save_watched_config(settings.content_dir, config)
+    return WatchedFolderResponse(
+        label=body.label, path=str(folder_path), exists=folder_path.exists()
+    )
 
 
 @router.delete("/folders/{label}", status_code=204)

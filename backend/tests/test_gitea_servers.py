@@ -58,6 +58,37 @@ def test_load_credentials_roundtrip(tmp_path: Path) -> None:
     assert (username, token) == ("alice", "secret")
 
 
+def test_update_blank_token_keeps_stored(tmp_path: Path) -> None:
+    resp = store.add_server_sync(tmp_path, "Work", "https://git.example.com", "alice", "secret")
+    store.update_server_sync(tmp_path, resp.id, "Renamed", "https://git.example.com", "bob", None)
+    # Metadata changed...
+    listed = store.list_servers_sync(tmp_path)[0]
+    assert (listed.label, listed.username) == ("Renamed", "bob")
+    # ...but the token file is untouched.
+    _user, token = store.load_credentials_sync(tmp_path, resp.id)
+    assert token == "secret"
+
+
+def test_update_rotates_token_when_given(tmp_path: Path) -> None:
+    resp = store.add_server_sync(tmp_path, "Work", "https://git.example.com", "alice", "old")
+    store.update_server_sync(tmp_path, resp.id, "Work", "https://git.example.com", "alice", "new")
+    _user, token = store.load_credentials_sync(tmp_path, resp.id)
+    assert token == "new"
+
+
+def test_update_collision_rejected(tmp_path: Path) -> None:
+    a = store.add_server_sync(tmp_path, "A", "https://git.example.com", "alice", "t")
+    store.add_server_sync(tmp_path, "B", "https://git.example.com", "bob", "t")
+    # Editing A to collide with B's (url, user) pair must fail.
+    with pytest.raises(GiteaServerAlreadyExistsError):
+        store.update_server_sync(tmp_path, a.id, "A", "https://git.example.com", "bob", None)
+
+
+def test_update_missing_server_raises(tmp_path: Path) -> None:
+    with pytest.raises(GiteaServerNotFoundError):
+        store.update_server_sync(tmp_path, "nope", "X", "https://git.example.com", "u", None)
+
+
 def test_remove_deletes_token_file(tmp_path: Path) -> None:
     resp = store.add_server_sync(tmp_path, "Work", "https://git.example.com", "alice", "t")
     token_file = tmp_path / resp.id

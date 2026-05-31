@@ -9,9 +9,11 @@ import {
   getSourceChildren,
   getSshKeys,
   addSshKey,
+  updateSshKey,
   deleteSshKey,
   getGiteaServers,
   addGiteaServer,
+  updateGiteaServer,
   deleteGiteaServer,
   discoverGiteaRepos,
   importGiteaRepos,
@@ -20,6 +22,7 @@ import type {
   GiteaRepo,
   GiteaServer,
   GiteaServerCreate,
+  GiteaServerUpdate,
   GitSource,
   GitSourceCreate,
   GitSourceUpdate,
@@ -146,6 +149,17 @@ export const useSourcesStore = defineStore('sources', {
         throw e
       }
     },
+    async updateSshKey(id: string, label: string): Promise<void> {
+      this.error = null
+      try {
+        const updated = await updateSshKey(id, { label })
+        const idx = this.sshKeys.findIndex((k) => k.id === id)
+        if (idx !== -1) this.sshKeys[idx] = updated
+      } catch (e) {
+        this.error = e instanceof Error ? e.message : String(e)
+        throw e
+      }
+    },
     async removeSshKey(id: string): Promise<void> {
       this.error = null
       try {
@@ -167,6 +181,17 @@ export const useSourcesStore = defineStore('sources', {
       try {
         const server = await addGiteaServer(data)
         this.giteaServers.push(server)
+      } catch (e) {
+        this.error = e instanceof Error ? e.message : String(e)
+        throw e
+      }
+    },
+    async updateGiteaServer(id: string, data: GiteaServerUpdate): Promise<void> {
+      this.error = null
+      try {
+        const updated = await updateGiteaServer(id, data)
+        const idx = this.giteaServers.findIndex((s) => s.id === id)
+        if (idx !== -1) this.giteaServers[idx] = updated
       } catch (e) {
         this.error = e instanceof Error ? e.message : String(e)
         throw e

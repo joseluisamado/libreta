@@ -97,6 +97,11 @@ export interface WatchedFolderCreate {
   path: string
 }
 
+export interface WatchedFolderUpdate {
+  label: string
+  path: string
+}
+
 // ---- Git sources -------------------------------------------------------
 
 export interface GitSource {
@@ -161,6 +166,10 @@ export interface SshKeyCreate {
   private_key: string
 }
 
+export interface SshKeyUpdate {
+  label: string
+}
+
 // ---- Gitea servers (remembered credential groups) -----------------------
 
 export interface GiteaServer {
@@ -175,6 +184,14 @@ export interface GiteaServerCreate {
   base_url: string
   username: string
   token: string
+}
+
+export interface GiteaServerUpdate {
+  label: string
+  base_url: string
+  username: string
+  // Blank/omitted keeps the stored token; a value rotates it.
+  token?: string | null
 }
 
 export interface GiteaRepo {

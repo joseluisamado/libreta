@@ -115,6 +115,45 @@ def add_server_sync(
     return GiteaServerResponse(id=server_id, label=label, base_url=base_url, username=username)
 
 
+def update_server_sync(
+    servers_dir: Path,
+    server_id: str,
+    label: str,
+    base_url: str,
+    username: str,
+    token: str | None,
+) -> GiteaServerResponse:
+    """Update a server's metadata; rotate the token only if *token* is given.
+
+    A None/empty token leaves the stored token file untouched (the token is
+    never returned, so the edit form can't echo it back — blank means keep).
+    """
+    base_url = _normalize_base_url(base_url)
+    index = _load_index_sync(servers_dir)
+    entry = next((e for e in index if e["id"] == server_id), None)
+    if entry is None:
+        raise GiteaServerNotFoundError(server_id)
+    # Guard the same uniqueness invariant add_server enforces.
+    if any(
+        e["id"] != server_id and e["base_url"] == base_url and e["username"] == username
+        for e in index
+    ):
+        raise GiteaServerAlreadyExistsError(
+            f"server {base_url} for user {username!r} already exists"
+        )
+    entry["label"] = label
+    entry["base_url"] = base_url
+    entry["username"] = username
+    _save_index_sync(servers_dir, index)
+
+    if token:
+        token_file = _token_file(servers_dir, server_id)
+        token_file.write_text(token, encoding="utf-8")
+        os.chmod(token_file, stat.S_IRUSR | stat.S_IWUSR)
+
+    return GiteaServerResponse(id=server_id, label=label, base_url=base_url, username=username)
+
+
 def remove_server_sync(servers_dir: Path, server_id: str) -> None:
     index = _load_index_sync(servers_dir)
     if not any(e["id"] == server_id for e in index):
@@ -166,6 +205,19 @@ async def add_server(
     token: str,
 ) -> GiteaServerResponse:
     return await asyncio.to_thread(add_server_sync, servers_dir, label, base_url, username, token)
+
+
+async def update_server(
+    servers_dir: Path,
+    server_id: str,
+    label: str,
+    base_url: str,
+    username: str,
+    token: str | None,
+) -> GiteaServerResponse:
+    return await asyncio.to_thread(
+        update_server_sync, servers_dir, server_id, label, base_url, username, token
+    )
 
 
 async def remove_server(servers_dir: Path, server_id: str) -> None:

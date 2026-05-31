@@ -1,8 +1,8 @@
 <script setup lang="ts">
-  import { ref, onMounted } from 'vue'
+  import { ref, computed, onMounted } from 'vue'
   import { useSourcesStore } from '@/stores/sources'
   import { useWatchedStore } from '@/stores/watched'
-  import type { GitSourceCreate, GiteaRepo, GiteaServerCreate } from '@/api/types'
+  import type { GitSource, GitSourceCreate, GiteaRepo, GiteaServerCreate } from '@/api/types'
 
   const store = useSourcesStore()
   const watched = useWatchedStore()
@@ -224,6 +224,22 @@
     selectedRepos.value = next
   }
 
+  // Repos that can actually be selected (not already-added).
+  const selectableRepos = computed(() => discoveredRepos.value.filter((r) => !r.already_added))
+  const allSelectableSelected = computed(
+    () =>
+      selectableRepos.value.length > 0 &&
+      selectableRepos.value.every((r) => selectedRepos.value.has(r.full_name)),
+  )
+
+  function toggleSelectAll(): void {
+    if (allSelectableSelected.value) {
+      selectedRepos.value = new Set()
+    } else {
+      selectedRepos.value = new Set(selectableRepos.value.map((r) => r.full_name))
+    }
+  }
+
   async function runImport(serverId: string): Promise<void> {
     if (!selectedRepos.value.size) return
     importBusy.value = true
@@ -237,6 +253,120 @@
       discoverError.value = e instanceof Error ? e.message : String(e)
     } finally {
       importBusy.value = false
+    }
+  }
+
+  // ---- Edit: git source ------------------------------------------------
+  // Only the safely-mutable fields are exposed (id and remote_url are the
+  // source's identity / clone target — changing them is a remove + re-add).
+  const editSourceId = ref<string | null>(null)
+  const editSourceForm = ref({ label: '', branch: '', sync_interval_minutes: 5 })
+  const editSourceError = ref<string | null>(null)
+
+  function startEditSource(src: GitSource): void {
+    editSourceId.value = src.id
+    editSourceForm.value = {
+      label: src.label,
+      branch: src.branch,
+      sync_interval_minutes: src.sync_interval_minutes,
+    }
+    editSourceError.value = null
+  }
+
+  async function saveEditSource(): Promise<void> {
+    if (!editSourceId.value) return
+    editSourceError.value = null
+    try {
+      await store.updateSource(editSourceId.value, { ...editSourceForm.value })
+      editSourceId.value = null
+    } catch (e) {
+      editSourceError.value = e instanceof Error ? e.message : String(e)
+    }
+  }
+
+  // ---- Edit: watched folder -------------------------------------------
+  const editWatchLabel = ref<string | null>(null)
+  const editWatchForm = ref({ label: '', path: '' })
+  const editWatchError = ref<string | null>(null)
+
+  function startEditWatch(label: string, path: string): void {
+    editWatchLabel.value = label
+    editWatchForm.value = { label, path }
+    editWatchError.value = null
+  }
+
+  async function saveEditWatch(): Promise<void> {
+    if (editWatchLabel.value === null) return
+    editWatchError.value = null
+    const { label, path } = editWatchForm.value
+    if (!label.trim() || !path.trim()) {
+      editWatchError.value = 'Label and path are required.'
+      return
+    }
+    try {
+      await watched.updateFolder(editWatchLabel.value, label.trim(), path.trim())
+      editWatchLabel.value = null
+    } catch (e) {
+      editWatchError.value = e instanceof Error ? e.message : String(e)
+    }
+  }
+
+  // ---- Edit: SSH key (label only) -------------------------------------
+  const editKeyId = ref<string | null>(null)
+  const editKeyLabel = ref('')
+  const editKeyError = ref<string | null>(null)
+
+  function startEditKey(id: string, label: string): void {
+    editKeyId.value = id
+    editKeyLabel.value = label
+    editKeyError.value = null
+  }
+
+  async function saveEditKey(): Promise<void> {
+    if (!editKeyId.value) return
+    editKeyError.value = null
+    if (!editKeyLabel.value.trim()) {
+      editKeyError.value = 'Label is required.'
+      return
+    }
+    try {
+      await store.updateSshKey(editKeyId.value, editKeyLabel.value.trim())
+      editKeyId.value = null
+    } catch (e) {
+      editKeyError.value = e instanceof Error ? e.message : String(e)
+    }
+  }
+
+  // ---- Edit: Gitea server (token optional — blank keeps current) ------
+  const editGiteaId = ref<string | null>(null)
+  const editGiteaForm = ref({ label: '', base_url: '', username: '', token: '' })
+  const editGiteaError = ref<string | null>(null)
+
+  function startEditGitea(id: string, label: string, baseUrl: string, username: string): void {
+    editGiteaId.value = id
+    editGiteaForm.value = { label, base_url: baseUrl, username, token: '' }
+    editGiteaError.value = null
+  }
+
+  async function saveEditGitea(): Promise<void> {
+    if (!editGiteaId.value) return
+    editGiteaError.value = null
+    const { label, base_url, username, token } = editGiteaForm.value
+    if (!label.trim() || !base_url.trim() || !username.trim()) {
+      editGiteaError.value = 'Label, base URL and username are required.'
+      return
+    }
+    try {
+      await store.updateGiteaServer(editGiteaId.value, {
+        label: label.trim(),
+        base_url: base_url.trim(),
+        username: username.trim(),
+        // Blank token => keep the stored one.
+        token: token.trim() || null,
+      })
+      editGiteaId.value = null
+    } catch (e) {
+      editGiteaError.value = e instanceof Error ? e.message : String(e)
     }
   }
 
@@ -378,7 +508,58 @@
           :key="src.id"
           class="p-4 border border-slate-200 rounded-lg"
         >
-          <div class="flex items-start justify-between">
+          <!-- Edit mode -->
+          <div v-if="editSourceId === src.id">
+            <p v-if="editSourceError" class="text-red-600 text-sm mb-2">{{ editSourceError }}</p>
+            <p class="text-xs text-slate-400 mb-2 font-mono">{{ src.remote_url }}</p>
+            <div class="grid grid-cols-2 gap-3 mb-3">
+              <div class="col-span-2">
+                <label class="block text-xs text-slate-500 mb-1">Label</label>
+                <input
+                  v-model.trim="editSourceForm.label"
+                  type="text"
+                  class="w-full border border-slate-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+                />
+              </div>
+              <div>
+                <label class="block text-xs text-slate-500 mb-1">Branch</label>
+                <input
+                  v-model.trim="editSourceForm.branch"
+                  type="text"
+                  class="w-full border border-slate-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+                />
+              </div>
+              <div>
+                <label class="block text-xs text-slate-500 mb-1">Sync interval (minutes)</label>
+                <input
+                  v-model.number="editSourceForm.sync_interval_minutes"
+                  type="number"
+                  min="1"
+                  max="1440"
+                  class="w-full border border-slate-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+                />
+              </div>
+            </div>
+            <div class="flex gap-2">
+              <button
+                type="button"
+                class="px-4 py-1.5 text-sm rounded bg-blue-600 text-white hover:bg-blue-700 cursor-pointer"
+                @click="saveEditSource"
+              >
+                Save
+              </button>
+              <button
+                type="button"
+                class="px-4 py-1.5 text-sm rounded border border-slate-300 text-slate-600 hover:bg-slate-50 cursor-pointer"
+                @click="editSourceId = null"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+
+          <!-- Read mode -->
+          <div v-else class="flex items-start justify-between">
             <div>
               <p class="font-medium text-sm">{{ src.label }}</p>
               <p class="text-xs text-slate-500 mt-0.5">{{ src.remote_url }}</p>
@@ -407,6 +588,13 @@
                 @click="syncSource(src.id)"
               >
                 Sync
+              </button>
+              <button
+                type="button"
+                class="text-xs px-2 py-1 rounded border border-slate-300 text-slate-600 hover:bg-slate-50 cursor-pointer"
+                @click="startEditSource(src)"
+              >
+                Edit
               </button>
               <button
                 type="button"
@@ -498,7 +686,64 @@
           :key="gs.id"
           class="p-4 border border-slate-200 rounded-lg"
         >
-          <div class="flex items-start justify-between">
+          <!-- Edit mode -->
+          <div v-if="editGiteaId === gs.id">
+            <p v-if="editGiteaError" class="text-red-600 text-sm mb-2">{{ editGiteaError }}</p>
+            <div class="grid grid-cols-2 gap-3 mb-3">
+              <div>
+                <label class="block text-xs text-slate-500 mb-1">Label</label>
+                <input
+                  v-model.trim="editGiteaForm.label"
+                  type="text"
+                  class="w-full border border-slate-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+                />
+              </div>
+              <div>
+                <label class="block text-xs text-slate-500 mb-1">Base URL</label>
+                <input
+                  v-model.trim="editGiteaForm.base_url"
+                  type="text"
+                  class="w-full border border-slate-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+                />
+              </div>
+              <div>
+                <label class="block text-xs text-slate-500 mb-1">Username</label>
+                <input
+                  v-model.trim="editGiteaForm.username"
+                  type="text"
+                  class="w-full border border-slate-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+                />
+              </div>
+              <div>
+                <label class="block text-xs text-slate-500 mb-1">Access token</label>
+                <input
+                  v-model="editGiteaForm.token"
+                  type="password"
+                  placeholder="leave blank to keep current"
+                  class="w-full border border-slate-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+                />
+              </div>
+            </div>
+            <div class="flex gap-2">
+              <button
+                type="button"
+                class="px-4 py-1.5 text-sm rounded bg-blue-600 text-white hover:bg-blue-700 cursor-pointer"
+                @click="saveEditGitea"
+              >
+                Save
+              </button>
+              <button
+                type="button"
+                class="px-4 py-1.5 text-sm rounded border border-slate-300 text-slate-600 hover:bg-slate-50 cursor-pointer"
+                @click="editGiteaId = null"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+
+          <!-- Read mode -->
+          <div v-else class="flex items-start justify-between">
             <div>
               <p class="font-medium text-sm">{{ gs.label }}</p>
               <p class="text-xs text-slate-500 mt-0.5">{{ gs.base_url }}</p>
@@ -511,6 +756,13 @@
                 @click="toggleDiscover(gs.id)"
               >
                 {{ discoverServerId === gs.id ? 'Close' : 'Browse repos' }}
+              </button>
+              <button
+                type="button"
+                class="text-xs px-2 py-1 rounded border border-slate-300 text-slate-600 hover:bg-slate-50 cursor-pointer"
+                @click="startEditGitea(gs.id, gs.label, gs.base_url, gs.username)"
+              >
+                Edit
               </button>
               <button
                 type="button"
@@ -544,6 +796,23 @@
               >
                 {{ discoverBusy ? 'Listing…' : 'List repos' }}
               </button>
+            </div>
+
+            <div
+              v-if="discoveredRepos.length"
+              class="flex items-center justify-between mb-2 pb-2 border-b border-slate-100"
+            >
+              <button
+                type="button"
+                :disabled="!selectableRepos.length"
+                class="text-xs px-2 py-1 rounded border border-slate-300 text-slate-600 hover:bg-slate-50 cursor-pointer disabled:opacity-50"
+                @click="toggleSelectAll"
+              >
+                {{ allSelectableSelected ? 'Deselect all' : 'Select all' }}
+              </button>
+              <span class="text-xs text-slate-400">
+                {{ selectedRepos.size }} of {{ selectableRepos.length }} selected
+              </span>
             </div>
 
             <div v-if="discoveredRepos.length" class="space-y-1 mb-3 max-h-72 overflow-y-auto">
@@ -637,21 +906,72 @@
         <div
           v-for="f in watched.folders"
           :key="f.label"
-          class="p-4 border border-slate-200 rounded-lg flex items-center justify-between"
+          class="p-4 border border-slate-200 rounded-lg"
         >
-          <div>
-            <p class="font-medium text-sm">{{ f.label }}</p>
-            <p class="text-xs text-slate-400 mt-0.5 truncate max-w-lg" :title="f.path">
-              {{ f.path }}
-            </p>
+          <!-- Edit mode -->
+          <div v-if="editWatchLabel === f.label">
+            <p v-if="editWatchError" class="text-red-600 text-sm mb-2">{{ editWatchError }}</p>
+            <div class="grid grid-cols-2 gap-3 mb-3">
+              <div>
+                <label class="block text-xs text-slate-500 mb-1">Label</label>
+                <input
+                  v-model.trim="editWatchForm.label"
+                  type="text"
+                  class="w-full border border-slate-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+                />
+              </div>
+              <div class="col-span-2">
+                <label class="block text-xs text-slate-500 mb-1">Path</label>
+                <input
+                  v-model.trim="editWatchForm.path"
+                  type="text"
+                  class="w-full border border-slate-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+                />
+              </div>
+            </div>
+            <div class="flex gap-2">
+              <button
+                type="button"
+                class="px-4 py-1.5 text-sm rounded bg-blue-600 text-white hover:bg-blue-700 cursor-pointer"
+                @click="saveEditWatch"
+              >
+                Save
+              </button>
+              <button
+                type="button"
+                class="px-4 py-1.5 text-sm rounded border border-slate-300 text-slate-600 hover:bg-slate-50 cursor-pointer"
+                @click="editWatchLabel = null"
+              >
+                Cancel
+              </button>
+            </div>
           </div>
-          <button
-            type="button"
-            class="text-xs px-2 py-1 rounded border border-red-200 text-red-600 hover:bg-red-50 cursor-pointer shrink-0 ml-4"
-            @click="removeWatch(f.label)"
-          >
-            Remove
-          </button>
+
+          <!-- Read mode -->
+          <div v-else class="flex items-center justify-between">
+            <div>
+              <p class="font-medium text-sm">{{ f.label }}</p>
+              <p class="text-xs text-slate-400 mt-0.5 truncate max-w-lg" :title="f.path">
+                {{ f.path }}
+              </p>
+            </div>
+            <div class="flex gap-2 shrink-0 ml-4">
+              <button
+                type="button"
+                class="text-xs px-2 py-1 rounded border border-slate-300 text-slate-600 hover:bg-slate-50 cursor-pointer"
+                @click="startEditWatch(f.label, f.path)"
+              >
+                Edit
+              </button>
+              <button
+                type="button"
+                class="text-xs px-2 py-1 rounded border border-red-200 text-red-600 hover:bg-red-50 cursor-pointer"
+                @click="removeWatch(f.label)"
+              >
+                Remove
+              </button>
+            </div>
+          </div>
         </div>
       </div>
       <p v-else class="text-sm text-slate-400">No watched folders configured yet.</p>
@@ -704,22 +1024,60 @@
 
       <!-- Key list -->
       <div v-if="store.sshKeys.length" class="space-y-2">
-        <div
-          v-for="k in store.sshKeys"
-          :key="k.id"
-          class="flex items-center justify-between p-3 border border-slate-200 rounded-lg"
-        >
-          <div>
-            <p class="text-sm font-medium">{{ k.label }}</p>
-            <p class="text-xs text-slate-400 font-mono">{{ k.fingerprint }}</p>
+        <div v-for="k in store.sshKeys" :key="k.id" class="p-3 border border-slate-200 rounded-lg">
+          <!-- Edit mode (label only) -->
+          <div v-if="editKeyId === k.id">
+            <p v-if="editKeyError" class="text-red-600 text-sm mb-2">{{ editKeyError }}</p>
+            <div class="flex gap-2 items-end">
+              <div class="flex-1">
+                <label class="block text-xs text-slate-500 mb-1">Label</label>
+                <input
+                  v-model.trim="editKeyLabel"
+                  type="text"
+                  class="w-full border border-slate-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+                  @keyup.enter="saveEditKey"
+                />
+              </div>
+              <button
+                type="button"
+                class="px-4 py-1.5 text-sm rounded bg-blue-600 text-white hover:bg-blue-700 cursor-pointer"
+                @click="saveEditKey"
+              >
+                Save
+              </button>
+              <button
+                type="button"
+                class="px-4 py-1.5 text-sm rounded border border-slate-300 text-slate-600 hover:bg-slate-50 cursor-pointer"
+                @click="editKeyId = null"
+              >
+                Cancel
+              </button>
+            </div>
           </div>
-          <button
-            type="button"
-            class="text-xs px-2 py-1 rounded border border-red-200 text-red-600 hover:bg-red-50 cursor-pointer"
-            @click="removeKey(k.id, k.label)"
-          >
-            Remove
-          </button>
+
+          <!-- Read mode -->
+          <div v-else class="flex items-center justify-between">
+            <div>
+              <p class="text-sm font-medium">{{ k.label }}</p>
+              <p class="text-xs text-slate-400 font-mono">{{ k.fingerprint }}</p>
+            </div>
+            <div class="flex gap-2 shrink-0 ml-4">
+              <button
+                type="button"
+                class="text-xs px-2 py-1 rounded border border-slate-300 text-slate-600 hover:bg-slate-50 cursor-pointer"
+                @click="startEditKey(k.id, k.label)"
+              >
+                Edit
+              </button>
+              <button
+                type="button"
+                class="text-xs px-2 py-1 rounded border border-red-200 text-red-600 hover:bg-red-50 cursor-pointer"
+                @click="removeKey(k.id, k.label)"
+              >
+                Remove
+              </button>
+            </div>
+          </div>
         </div>
       </div>
       <p v-else class="text-sm text-slate-400">No SSH keys configured.</p>

@@ -14,6 +14,35 @@ Living document. Update as work progresses. Latest at the top.
 
 ---
 
+## 2026-05-31 — Feat: edit support across admin components + repo select-all
+
+**Admin edit affordances**: every admin component is now editable in place,
+not just add/delete.
+- **Git sources**: inline edit of label / branch / sync interval (id and
+  remote_url are identity/clone-target, so they stay remove+re-add). Reuses
+  the existing `PUT /sources/{id}`.
+- **Gitea servers**: new `PUT /sources/gitea-servers/{id}`. The token field is
+  optional on edit — blank keeps the stored token, a value rotates it (the
+  token is never returned, so the form can't pre-fill it; blank must mean
+  unchanged). Uniqueness (base_url, username) re-checked on edit.
+- **Watched folders**: new `PUT /watch/folders/{label}` supporting both label
+  and path. The label is the config key, so a rename re-keys the entry and is
+  rejected on collision with another folder.
+- **SSH keys**: new `PUT /sources/keys/{id}` — label-only (key material is
+  write-only/immutable).
+
+**Repo picker**: select-all / deselect-all toggle plus an "N of M selected"
+count in the Gitea browse-repos panel; "all selected" ignores already-added
+rows.
+
+**Tests**: store-level (gitea update keep/rotate/collision/missing, ssh rename),
+API-level (gitea server PUT keeps vs rotates token, watched PUT path+label,
+label collision → 409, missing → 404). Backend 128 green, frontend 65 green.
+Verified live against the homelab Gitea: server rename kept the token (discover
+still worked).
+
+---
+
 ## 2026-05-31 — Feat: Gitea servers + bulk repo import
 
 **Motivation**: adding sources one-at-a-time from the same Gitea server was

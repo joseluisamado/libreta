@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import {
   getWatchedFolders,
   addWatchedFolder,
+  updateWatchedFolder,
   removeWatchedFolder,
   getWatchedTree,
   getWatchedChildren,
@@ -60,6 +61,19 @@ export const useWatchedStore = defineStore('watched', {
         await addWatchedFolder({ label, path })
         await this.loadFolders()
         await this.loadTree(label)
+      } catch (e) {
+        this.error = e instanceof Error ? e.message : String(e)
+        throw e
+      }
+    },
+    async updateFolder(label: string, newLabel: string, path: string): Promise<void> {
+      this.error = null
+      try {
+        await updateWatchedFolder(label, { label: newLabel, path })
+        // The label may have changed (it's the key), so reload from scratch
+        // and drop any cached tree under the old key.
+        if (newLabel !== label) delete this.trees[label]
+        await this.loadFolders()
       } catch (e) {
         this.error = e instanceof Error ? e.message : String(e)
         throw e

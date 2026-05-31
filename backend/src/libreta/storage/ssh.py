@@ -99,6 +99,17 @@ def add_key_sync(keys_dir: Path, label: str, private_key_pem: str) -> SshKeyResp
     return SshKeyResponse(id=key_id, label=label, fingerprint=fingerprint)
 
 
+def update_key_label_sync(keys_dir: Path, key_id: str, label: str) -> SshKeyResponse:
+    """Rename a key's label. Key material is immutable (write-only)."""
+    index = _load_index_sync(keys_dir)
+    entry = next((e for e in index if e["id"] == key_id), None)
+    if entry is None:
+        raise SshKeyNotFoundError(key_id)
+    entry["label"] = label
+    _save_index_sync(keys_dir, index)
+    return SshKeyResponse(id=key_id, label=label, fingerprint=entry["fingerprint"])
+
+
 def remove_key_sync(keys_dir: Path, key_id: str) -> None:
     index = _load_index_sync(keys_dir)
     if not any(e["id"] == key_id for e in index):
@@ -219,6 +230,10 @@ async def list_keys(keys_dir: Path) -> list[SshKeyResponse]:
 
 async def add_key(keys_dir: Path, label: str, private_key_pem: str) -> SshKeyResponse:
     return await asyncio.to_thread(add_key_sync, keys_dir, label, private_key_pem)
+
+
+async def update_key_label(keys_dir: Path, key_id: str, label: str) -> SshKeyResponse:
+    return await asyncio.to_thread(update_key_label_sync, keys_dir, key_id, label)
 
 
 async def remove_key(keys_dir: Path, key_id: str) -> None:

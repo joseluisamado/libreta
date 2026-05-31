@@ -67,6 +67,11 @@ class SshKeyCreate(BaseModel):
     private_key: str = Field(min_length=1)
 
 
+class SshKeyUpdate(BaseModel):
+    # Only the label is editable; key material is write-only and never returned.
+    label: str = Field(min_length=1, max_length=128)
+
+
 class SshKeyResponse(BaseModel):
     id: str
     label: str
@@ -86,6 +91,16 @@ class GiteaServerCreate(BaseModel):
     base_url: str = Field(min_length=1)
     username: str = Field(min_length=1, max_length=128)
     token: str = Field(min_length=1)
+
+
+class GiteaServerUpdate(BaseModel):
+    label: str = Field(min_length=1, max_length=128)
+    base_url: str = Field(min_length=1)
+    username: str = Field(min_length=1, max_length=128)
+    # Optional on edit: a blank/omitted token keeps the stored one. Supplying
+    # a value rotates it. The token is never returned, so the form can't
+    # pre-fill it — leaving it empty must therefore mean "unchanged".
+    token: str | None = None
 
 
 class GiteaServerResponse(BaseModel):
@@ -230,6 +245,13 @@ class WatchedFolderResponse(BaseModel):
 
 
 class WatchedFolderCreate(BaseModel):
+    label: str = Field(min_length=1, max_length=64, pattern=r"^[a-zA-Z0-9][a-zA-Z0-9_-]*$")
+    path: str = Field(min_length=1)
+
+
+class WatchedFolderUpdate(BaseModel):
+    # Both fields editable. Changing the label re-keys the config entry; the
+    # endpoint rejects a collision with another existing label.
     label: str = Field(min_length=1, max_length=64, pattern=r"^[a-zA-Z0-9][a-zA-Z0-9_-]*$")
     path: str = Field(min_length=1)
 

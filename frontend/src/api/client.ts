@@ -6,6 +6,7 @@ import type {
   GiteaRepo,
   GiteaServer,
   GiteaServerCreate,
+  GiteaServerUpdate,
   GitSource,
   GitSourceCreate,
   GitSourceUpdate,
@@ -19,8 +20,10 @@ import type {
   SearchResult,
   SshKey,
   SshKeyCreate,
+  SshKeyUpdate,
   WatchedFolder,
   WatchedFolderCreate,
+  WatchedFolderUpdate,
 } from './types'
 
 const BASE = '/api/v1'
@@ -198,6 +201,17 @@ export function addWatchedFolder(data: WatchedFolderCreate): Promise<WatchedFold
   })
 }
 
+export function updateWatchedFolder(
+  label: string,
+  data: WatchedFolderUpdate,
+): Promise<WatchedFolder> {
+  return request<WatchedFolder>(`/watch/folders/${enc(label)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+}
+
 export function removeWatchedFolder(label: string): Promise<void> {
   return requestNoContent(`/watch/folders/${enc(label)}`, { method: 'DELETE' })
 }
@@ -239,6 +253,14 @@ export function getSshKeys(): Promise<SshKey[]> {
 export function addSshKey(data: SshKeyCreate): Promise<SshKey> {
   return request<SshKey>('/sources/keys', {
     method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+}
+
+export function updateSshKey(keyId: string, data: SshKeyUpdate): Promise<SshKey> {
+  return request<SshKey>(`/sources/keys/${keyId}`, {
+    method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   })
@@ -300,6 +322,14 @@ export function getGiteaServers(): Promise<GiteaServer[]> {
 export function addGiteaServer(data: GiteaServerCreate): Promise<GiteaServer> {
   return request<GiteaServer>('/sources/gitea-servers', {
     method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+}
+
+export function updateGiteaServer(serverId: string, data: GiteaServerUpdate): Promise<GiteaServer> {
+  return request<GiteaServer>(`/sources/gitea-servers/${serverId}`, {
+    method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   })

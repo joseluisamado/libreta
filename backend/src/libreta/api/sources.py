@@ -20,6 +20,7 @@ from libreta.models import (
     GiteaRepo,
     GiteaServerCreate,
     GiteaServerResponse,
+    GiteaServerUpdate,
     GitSourceCreate,
     GitSourceResponse,
     GitSourceUpdate,
@@ -30,6 +31,7 @@ from libreta.models import (
     PendingCommit,
     SshKeyCreate,
     SshKeyResponse,
+    SshKeyUpdate,
 )
 from libreta.services.gitea import discover_repos
 from libreta.services.sync import enqueue_push
@@ -68,6 +70,16 @@ async def add_ssh_key(
     return await ssh_store.add_key(settings.ssh_keys_dir, body.label, body.private_key)
 
 
+@router.put("/keys/{key_id}", response_model=SshKeyResponse)
+async def update_ssh_key(
+    key_id: str,
+    body: SshKeyUpdate,
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> SshKeyResponse:
+    """Rename an SSH key. The key material itself is immutable."""
+    return await ssh_store.update_key_label(settings.ssh_keys_dir, key_id, body.label)
+
+
 @router.delete("/keys/{key_id}", status_code=204)
 async def delete_ssh_key(
     key_id: str,
@@ -95,6 +107,23 @@ async def add_gitea_server(
 ) -> GiteaServerResponse:
     return await gitea_store.add_server(
         settings.gitea_servers_dir, body.label, body.base_url, body.username, body.token
+    )
+
+
+@router.put("/gitea-servers/{server_id}", response_model=GiteaServerResponse)
+async def update_gitea_server(
+    server_id: str,
+    body: GiteaServerUpdate,
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> GiteaServerResponse:
+    """Edit a Gitea server. A blank/omitted token keeps the stored one."""
+    return await gitea_store.update_server(
+        settings.gitea_servers_dir,
+        server_id,
+        body.label,
+        body.base_url,
+        body.username,
+        body.token,
     )
 
 
