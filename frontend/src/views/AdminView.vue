@@ -1,5 +1,5 @@
 <script setup lang="ts">
-  import { ref, computed, onMounted } from 'vue'
+  import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
   import { useSourcesStore } from '@/stores/sources'
   import { useWatchedStore } from '@/stores/watched'
   import type { GitSource, GitSourceCreate, GiteaRepo, GiteaServerCreate } from '@/api/types'
@@ -389,17 +389,49 @@
     }
   }
 
-  onMounted(() => {
+  function loadAll(): void {
     store.loadSources()
     store.loadSshKeys()
     store.loadGiteaServers()
     watched.loadFolders()
+  }
+
+  // Refetch when the tab/page becomes visible again. Without this, a list
+  // that failed to load while the api was momentarily down (e.g. a container
+  // restart with the Admin page already open) stays empty until a manual
+  // reload — which looks like "my server disappeared" even though it's still
+  // persisted on disk. The store swallows load errors, so a visible empty
+  // list and a fetch failure are otherwise indistinguishable.
+  function onVisible(): void {
+    if (document.visibilityState === 'visible') loadAll()
+  }
+
+  onMounted(() => {
+    loadAll()
+    document.addEventListener('visibilitychange', onVisible)
+    window.addEventListener('focus', loadAll)
+  })
+
+  onBeforeUnmount(() => {
+    document.removeEventListener('visibilitychange', onVisible)
+    window.removeEventListener('focus', loadAll)
   })
 </script>
 
 <template>
   <div class="max-w-3xl mx-auto px-8 py-8">
     <h1 class="text-2xl font-bold mb-8">Admin</h1>
+
+    <!-- A failed list fetch (e.g. api momentarily down) would otherwise leave
+         the lists silently empty. Surface it so it's not mistaken for data
+         loss; it clears on the next successful load (mount / tab refocus). -->
+    <div
+      v-if="store.error || watched.error"
+      class="mb-6 p-3 rounded-lg border border-amber-200 bg-amber-50 text-sm text-amber-700"
+    >
+      Couldn't load some settings: {{ store.error || watched.error }}. Retrying when the tab
+      regains focus.
+    </div>
 
     <!-- ==================== Git Sources ==================== -->
     <section class="mb-10">
