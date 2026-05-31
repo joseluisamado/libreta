@@ -8,11 +8,13 @@ working tree (git status: ``INDEX_DELETED``).
 
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 
 import pygit2
 
-from libreta.storage.sources import fetch_and_ff_sync
+from libreta.storage import sources as src_store
+from libreta.storage.sources import clone_source_sync, fetch_and_ff_sync
 
 
 def _commit_all(repo: pygit2.Repository, message: str) -> pygit2.Oid:
@@ -253,3 +255,75 @@ def test_clone_lands_on_configured_non_default_branch(tmp_path: Path) -> None:
     # The docs-only file is present (HEAD really moved to docs), tree is clean.
     assert (local / "guide.md").exists()
     assert repo.status() == {}
+
+
+def test_concurrent_clone_of_same_source_does_not_race(tmp_path: Path) -> None:
+    """Two clones of the same source must not run at once — the second must
+    skip rather than rmtree the first's in-flight directory. Regression for the
+    homelab failure where a slow clone outlived the sync interval and the next
+    tick deleted the working directory mid-clone ('failed to create locked
+    file ...lock')."""
+    remote = _make_remote(tmp_path)
+    repos_dir = tmp_path / "repos"
+    ssh_keys_dir = tmp_path / "ssh"
+    gitea_dir = tmp_path / "gitea"
+    repos_dir.mkdir()
+    ssh_keys_dir.mkdir()
+    gitea_dir.mkdir()
+
+    entry = {
+        "id": "work",
+        "remote_url": str(remote),
+        "branch": "main",
+        "ssh_key_id": None,
+        "http_username": None,
+        "http_password": None,
+    }
+
+    # Hold the source's sync lock as if a clone were already in flight, then
+    # confirm a second clone returns immediately without touching the dir.
+    lock = src_store._get_sync_lock("work")
+    assert lock.acquire(blocking=False)
+    try:
+        clone_source_sync(repos_dir, ssh_keys_dir, gitea_dir, entry)
+        # The guarded call skipped — nothing was cloned.
+        assert not (repos_dir / "work" / ".git").exists()
+    finally:
+        lock.release()
+
+    # With the lock free, the clone proceeds normally.
+    clone_source_sync(repos_dir, ssh_keys_dir, gitea_dir, entry)
+    assert (repos_dir / "work" / "intro.md").exists()
+
+
+def test_sync_lock_released_after_failed_clone(tmp_path: Path) -> None:
+    """A clone that raises must still release the per-source lock, or the
+    source would be wedged 'in progress' forever and never retry."""
+    repos_dir = tmp_path / "repos"
+    ssh_keys_dir = tmp_path / "ssh"
+    gitea_dir = tmp_path / "gitea"
+    repos_dir.mkdir()
+    ssh_keys_dir.mkdir()
+    gitea_dir.mkdir()
+
+    entry = {
+        "id": "bad",
+        "remote_url": str(tmp_path / "does-not-exist"),
+        "branch": "main",
+        "ssh_key_id": None,
+        "http_username": None,
+        "http_password": None,
+    }
+
+    # First fetch attempts a clone of a bogus remote and fails (swallowed by
+    # the caller in production; here it raises out of the locked impl).
+    try:
+        fetch_and_ff_sync(repos_dir, ssh_keys_dir, gitea_dir, entry)
+    except Exception:
+        pass
+
+    # The lock must be free again and the in-progress flag cleared.
+    lock = src_store._get_sync_lock("bad")
+    assert lock.acquire(blocking=False), "sync lock not released after a failed clone"
+    lock.release()
+    assert not src_store.sync_in_progress("bad")

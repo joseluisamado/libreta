@@ -135,7 +135,10 @@
   let currentInterval = SLOW_POLL_MS
 
   function shouldPollFast(): boolean {
-    return sourcesStore.sources.some((s) => s.pending_count > 0)
+    // Poll fast while a push is draining (pending_count) OR while any source is
+    // cloning, so the "cloning…" indicator updates and clears promptly when a
+    // (possibly minutes-long) clone finishes.
+    return sourcesStore.sources.some((s) => s.pending_count > 0 || s.cloning)
   }
 
   function scheduleNextPoll(): void {
@@ -180,7 +183,7 @@
   // have flipped — e.g. a save just bumped a clean source to pending=1.
   // Re-evaluate after every store update.
   watch(
-    () => sourcesStore.sources.map((s) => s.pending_count).join(','),
+    () => sourcesStore.sources.map((s) => `${s.pending_count}:${s.cloning}`).join(','),
     (now, prev) => {
       if (now === prev) return
       const wantFast = shouldPollFast()

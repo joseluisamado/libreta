@@ -44,6 +44,10 @@ class GitSourceResponse(BaseModel):
     sync_interval_minutes: int
     local_path: str
     cloned: bool
+    # True while a clone/fetch is actively running for this source. Lets the UI
+    # show "cloning…" (vs the static "not cloned yet") so the user waits instead
+    # of re-triggering — important for large repos that take minutes to clone.
+    cloning: bool = False
     last_synced_at: datetime | None
     last_sync_error: str | None
     # Number of local commits ahead of origin/<branch>. Populated by the

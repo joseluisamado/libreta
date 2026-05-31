@@ -627,8 +627,15 @@
                 </template>
                 <template v-else> Not synced yet </template>
               </p>
-              <p v-if="!src.cloned" class="text-xs text-slate-400 mt-0.5 italic">
-                Cloning in progress…
+              <p v-if="src.cloning" class="text-xs text-sky-600 mt-0.5 italic flex items-center gap-1">
+                <span class="inline-block w-2 h-2 rounded-full bg-sky-400 animate-pulse"></span>
+                Cloning… large repos can take a few minutes — no need to re-add.
+              </p>
+              <p
+                v-else-if="!src.cloned && !src.last_sync_error"
+                class="text-xs text-slate-400 mt-0.5 italic"
+              >
+                Not cloned yet — will start on the next sync.
               </p>
             </div>
             <div class="flex gap-2 shrink-0 ml-4">

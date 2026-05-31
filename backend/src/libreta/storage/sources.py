@@ -50,11 +50,38 @@ _locks: dict[str, asyncio.Lock] = {}
 # Protects the load-modify-save cycle on sources.json.
 _config_lock = threading.Lock()
 
+# Per-source *threading* locks guarding the fetch/clone path. Clones run in
+# worker threads (asyncio.to_thread), and a slow clone on weak hardware can
+# outlive the sync interval — so the next periodic tick (or a manual trigger)
+# would otherwise start a second clone of the same source and rmtree the first
+# one's directory out from under it ("failed to create locked file ...lock").
+# These locks serialise per source; sync acquires them non-blocking and skips
+# when one is already held.
+_sync_locks: dict[str, threading.Lock] = {}
+_sync_locks_guard = threading.Lock()
+
+# Source ids with a clone/fetch currently in flight, so the API can report
+# "cloning" distinctly from "not cloned yet" and the UI can show progress.
+_in_progress: set[str] = set()
+
 
 def _get_lock(source_id: str) -> asyncio.Lock:
     if source_id not in _locks:
         _locks[source_id] = asyncio.Lock()
     return _locks[source_id]
+
+
+def _get_sync_lock(source_id: str) -> threading.Lock:
+    with _sync_locks_guard:
+        lock = _sync_locks.get(source_id)
+        if lock is None:
+            lock = threading.Lock()
+            _sync_locks[source_id] = lock
+        return lock
+
+
+def sync_in_progress(source_id: str) -> bool:
+    return source_id in _in_progress
 
 
 # ---------------------------------------------------------------------------
@@ -138,16 +165,22 @@ def _pending_count_sync(local: Path, branch: str) -> int:
 
 
 def _entry_to_response(entry: dict[str, Any], repos_dir: Path) -> GitSourceResponse:
-    local = _local_path(repos_dir, entry["id"])
-    cloned = (local / ".git").exists()
+    source_id = entry["id"]
+    local = _local_path(repos_dir, source_id)
+    branch = entry.get("branch", "main")
+    # "cloned" means a *completed* clone (the branch ref exists), not merely a
+    # .git directory — an in-progress or failed clone has .git but no usable
+    # ref. Pairing this with `cloning` lets the UI distinguish cloning-now from
+    # not-yet-cloned from broken.
+    cloned = (local / ".git").exists() and not _is_incomplete_clone(local, branch)
+    cloning = sync_in_progress(source_id)
     last_sync: datetime | None = None
     raw_ts = entry.get("last_synced_at")
     if raw_ts:
         with contextlib.suppress(ValueError):
             last_sync = datetime.fromisoformat(str(raw_ts))
-    branch = entry.get("branch", "main")
     return GitSourceResponse(
-        id=entry["id"],
+        id=source_id,
         label=entry["label"],
         remote_url=entry["remote_url"],
         branch=branch,
@@ -157,6 +190,7 @@ def _entry_to_response(entry: dict[str, Any], repos_dir: Path) -> GitSourceRespo
         sync_interval_minutes=entry.get("sync_interval_minutes", 15),
         local_path=str(local),
         cloned=cloned,
+        cloning=cloning,
         last_synced_at=last_sync,
         last_sync_error=entry.get("last_sync_error"),
         pending_count=_pending_count_sync(local, branch),
@@ -347,6 +381,34 @@ def clone_source_sync(
     gitea_servers_dir: Path,
     entry: dict[str, Any],
 ) -> None:
+    """Clone a source, serialised per source (non-blocking).
+
+    The public entry point used by the add/import background task. Skips if a
+    clone/fetch is already running for this source — so importing several repos
+    at once, or a retried add, can't start overlapping clones of the same id
+    that would rmtree each other. The internal fetch path calls
+    `_clone_source_locked` directly, already holding the lock.
+    """
+    source_id: str = entry["id"]
+    lock = _get_sync_lock(source_id)
+    if not lock.acquire(blocking=False):
+        logger.info("source %s: clone skipped, sync already in progress", source_id)
+        return
+    _in_progress.add(source_id)
+    try:
+        _clone_source_locked(repos_dir, ssh_keys_dir, gitea_servers_dir, entry)
+    finally:
+        _in_progress.discard(source_id)
+        lock.release()
+
+
+def _clone_source_locked(
+    repos_dir: Path,
+    ssh_keys_dir: Path,
+    gitea_servers_dir: Path,
+    entry: dict[str, Any],
+) -> None:
+    """Clone implementation; the per-source sync lock must be held."""
     source_id: str = entry["id"]
     remote_url: str = entry["remote_url"]
     branch: str = entry.get("branch", "main")
@@ -416,7 +478,38 @@ def fetch_and_ff_sync(
     gitea_servers_dir: Path,
     entry: dict[str, Any],
 ) -> None:
-    """Fetch from remote and fast-forward the local branch if clean."""
+    """Fetch/clone a source, serialised per source.
+
+    Acquires the per-source sync lock non-blocking: if a clone/fetch for this
+    source is already running (common when a large repo's clone outlives the
+    sync interval), this call returns immediately instead of starting a second
+    one that would race and rmtree the first's directory. The in-flight flag
+    lets the API report "cloning" so the UI can show progress and the user
+    doesn't re-trigger.
+    """
+    source_id: str = entry["id"]
+    lock = _get_sync_lock(source_id)
+    if not lock.acquire(blocking=False):
+        logger.info("source %s: sync already in progress, skipping", source_id)
+        return
+    _in_progress.add(source_id)
+    try:
+        _fetch_and_ff_locked(repos_dir, ssh_keys_dir, gitea_servers_dir, entry)
+    finally:
+        _in_progress.discard(source_id)
+        lock.release()
+
+
+def _fetch_and_ff_locked(
+    repos_dir: Path,
+    ssh_keys_dir: Path,
+    gitea_servers_dir: Path,
+    entry: dict[str, Any],
+) -> None:
+    """Fetch from remote and fast-forward the local branch if clean.
+
+    Must be called with the per-source sync lock held (see fetch_and_ff_sync).
+    """
     source_id: str = entry["id"]
     branch: str = entry.get("branch", "main")
     key_id: str | None = entry.get("ssh_key_id")
@@ -425,9 +518,10 @@ def fetch_and_ff_sync(
 
     if not (local / ".git").exists() or _is_incomplete_clone(local, branch):
         # Missing or a broken husk from a clone that failed partway — (re)clone.
-        # clone_source_sync removes the husk first, so this self-heals a source
-        # stuck empty after an interrupted import.
-        clone_source_sync(repos_dir, ssh_keys_dir, gitea_servers_dir, entry)
+        # Call the locked impl directly: we already hold this source's sync
+        # lock, and the lock is not reentrant (going through clone_source_sync
+        # would non-blocking-skip and silently do nothing).
+        _clone_source_locked(repos_dir, ssh_keys_dir, gitea_servers_dir, entry)
         return
 
     callbacks = make_callbacks(ssh_keys_dir, key_id, http_username, http_password)

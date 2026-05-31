@@ -117,6 +117,9 @@ export interface GitSource {
   sync_interval_minutes: number
   local_path: string
   cloned: boolean
+  // True while a clone/fetch is actively running. Distinct from !cloned
+  // (which also covers a failed/never-started clone).
+  cloning: boolean
   last_synced_at: string | null
   last_sync_error: string | null
   // Number of local commits ahead of origin/<branch>. The sidebar dot turns

@@ -140,6 +140,7 @@
   }
 
   function statusDot(src: GitSource): string {
+    if (src.cloning) return 'bg-sky-400 animate-pulse'
     if (!src.cloned) return 'bg-slate-300'
     if (src.last_sync_error) return 'bg-red-500'
     if (src.pending_count > 0) return 'bg-amber-400'
@@ -147,7 +148,8 @@
   }
 
   function statusTitle(src: GitSource): string {
-    if (!src.cloned) return 'Not cloned yet'
+    if (src.cloning) return 'Cloning… (large repos can take a few minutes)'
+    if (!src.cloned) return src.last_sync_error ? `Clone failed: ${src.last_sync_error}` : 'Not cloned yet'
     if (src.last_sync_error) return `Sync error: ${src.last_sync_error}`
     if (src.pending_count > 0) {
       return `${src.pending_count} local commit(s) not yet pushed`
