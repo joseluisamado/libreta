@@ -35,6 +35,21 @@
     { immediate: true },
   )
 
+  // A freshly-added source is cloned in the background. The first tree fetch
+  // (at mount) hits a still-empty working tree and caches []; the `!trees[id]`
+  // guard above then prevents any reload, so the sidebar stays empty until a
+  // full page refresh. Watch the `cloned` flag — flipped false→true by the
+  // App-level sources poll once the clone lands — and reload the tree then, so
+  // content appears without a manual refresh.
+  watch(
+    () => props.source.cloned,
+    (isCloned, was) => {
+      if (isCloned && !was && expanded.value) {
+        store.loadTree(props.source.id)
+      }
+    },
+  )
+
   watch(expanded, (v) => {
     try {
       window.localStorage.setItem(`libreta:source-expanded-${props.source.id}`, String(v))

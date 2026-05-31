@@ -14,6 +14,27 @@ Living document. Update as work progresses. Latest at the top.
 
 ---
 
+## 2026-05-31 — Fix: new-source tree refresh + remove repos from browse panel
+
+Two follow-ups to the Gitea/sources admin work:
+
+- **Sidebar content appeared only after a manual refresh.** A freshly-added
+  source clones in the background; the sidebar panel's first tree fetch hit a
+  still-empty working tree, cached `[]`, and its `!trees[id]` guard then blocked
+  any reload. Added a watcher on the source's `cloned` flag (flipped false→true
+  by the App-level sources poll) that reloads the tree when the clone lands, so
+  content shows without a refresh. (`SourceSidebarPanel.vue`)
+- **Imported repos couldn't be removed from the browse-repos list.** They showed
+  greyed-out with no action. The list now renders a Remove button on
+  already-added rows (matched to their source by clone_url == remote_url);
+  removing flips the row back to importable in place. Backend already supported
+  the delete — this is UI only. (`AdminView.vue`)
+
+Verified live against the homelab Gitea: import → already_added=true → remove →
+already_added=false. Frontend 65 green, typecheck clean.
+
+---
+
 ## 2026-05-31 — Feat: edit support across admin components + repo select-all
 
 **Admin edit affordances**: every admin component is now editable in place,

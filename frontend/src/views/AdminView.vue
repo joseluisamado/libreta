@@ -258,6 +258,23 @@
     }
   }
 
+  // The source (if any) tracking a discovered repo's clone_url. Lets the
+  // browse-repos list remove an already-imported repo in place.
+  function sourceForRepo(cloneUrl: string): GitSource | undefined {
+    return store.sources.find((s) => s.remote_url === cloneUrl)
+  }
+
+  async function removeRepoSource(repo: GiteaRepo): Promise<void> {
+    const src = sourceForRepo(repo.clone_url)
+    if (!src) return
+    if (!window.confirm(`Remove git source "${src.label}"? The local clone will NOT be deleted.`))
+      return
+    await store.removeSource(src.id)
+    // Reflect the removal in the picker: the row is no longer "already added".
+    const match = discoveredRepos.value.find((r) => r.full_name === repo.full_name)
+    if (match) match.already_added = false
+  }
+
   // ---- Edit: git source ------------------------------------------------
   // Only the safely-mutable fields are exposed (id and remote_url are the
   // source's identity / clone target — changing them is a remove + re-add).
@@ -818,25 +835,36 @@
             </div>
 
             <div v-if="discoveredRepos.length" class="space-y-1 mb-3 max-h-72 overflow-y-auto">
-              <label
+              <div
                 v-for="repo in discoveredRepos"
                 :key="repo.full_name"
-                class="flex items-center gap-2 px-2 py-1 rounded hover:bg-slate-50 cursor-pointer"
-                :class="{ 'opacity-50 cursor-not-allowed': repo.already_added }"
+                class="flex items-center gap-2 px-2 py-1 rounded hover:bg-slate-50"
               >
-                <input
-                  type="checkbox"
-                  :checked="selectedRepos.has(repo.full_name)"
-                  :disabled="repo.already_added"
-                  @change="toggleRepo(repo.full_name)"
-                />
-                <span class="text-sm font-mono">{{ repo.full_name }}</span>
-                <span v-if="repo.already_added" class="text-xs text-slate-400">already added</span>
-                <span v-else-if="repo.empty" class="text-xs text-amber-600">empty</span>
-                <span v-if="repo.description" class="text-xs text-slate-400 truncate">
-                  — {{ repo.description }}
-                </span>
-              </label>
+                <label class="flex items-center gap-2 flex-1 min-w-0 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    :checked="selectedRepos.has(repo.full_name)"
+                    :disabled="repo.already_added"
+                    @change="toggleRepo(repo.full_name)"
+                  />
+                  <span class="text-sm font-mono" :class="{ 'text-slate-400': repo.already_added }">
+                    {{ repo.full_name }}
+                  </span>
+                  <span v-if="repo.already_added" class="text-xs text-slate-400">added</span>
+                  <span v-else-if="repo.empty" class="text-xs text-amber-600">empty</span>
+                  <span v-if="repo.description" class="text-xs text-slate-400 truncate">
+                    — {{ repo.description }}
+                  </span>
+                </label>
+                <button
+                  v-if="repo.already_added && sourceForRepo(repo.clone_url)"
+                  type="button"
+                  class="text-xs px-2 py-0.5 rounded border border-red-200 text-red-600 hover:bg-red-50 cursor-pointer shrink-0"
+                  @click="removeRepoSource(repo)"
+                >
+                  Remove
+                </button>
+              </div>
             </div>
 
             <button
