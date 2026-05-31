@@ -10,8 +10,16 @@ import {
   getSshKeys,
   addSshKey,
   deleteSshKey,
+  getGiteaServers,
+  addGiteaServer,
+  deleteGiteaServer,
+  discoverGiteaRepos,
+  importGiteaRepos,
 } from '@/api/client'
 import type {
+  GiteaRepo,
+  GiteaServer,
+  GiteaServerCreate,
   GitSource,
   GitSourceCreate,
   GitSourceUpdate,
@@ -45,6 +53,7 @@ interface State {
   sources: GitSource[]
   trees: Record<string, PageNode[]>
   sshKeys: SshKey[]
+  giteaServers: GiteaServer[]
   loaded: boolean
   error: string | null
 }
@@ -54,6 +63,7 @@ export const useSourcesStore = defineStore('sources', {
     sources: [],
     trees: {},
     sshKeys: [],
+    giteaServers: [],
     loaded: false,
     error: null,
   }),
@@ -143,6 +153,55 @@ export const useSourcesStore = defineStore('sources', {
         this.sshKeys = this.sshKeys.filter((k) => k.id !== id)
       } catch (e) {
         this.error = e instanceof Error ? e.message : String(e)
+      }
+    },
+    async loadGiteaServers(): Promise<void> {
+      try {
+        this.giteaServers = await getGiteaServers()
+      } catch (e) {
+        this.error = e instanceof Error ? e.message : String(e)
+      }
+    },
+    async addGiteaServer(data: GiteaServerCreate): Promise<void> {
+      this.error = null
+      try {
+        const server = await addGiteaServer(data)
+        this.giteaServers.push(server)
+      } catch (e) {
+        this.error = e instanceof Error ? e.message : String(e)
+        throw e
+      }
+    },
+    async removeGiteaServer(id: string): Promise<void> {
+      this.error = null
+      try {
+        await deleteGiteaServer(id)
+        this.giteaServers = this.giteaServers.filter((s) => s.id !== id)
+      } catch (e) {
+        this.error = e instanceof Error ? e.message : String(e)
+      }
+    },
+    // Discover returns the repo list to the caller (the Admin view) rather
+    // than storing it: it is a transient picker, not durable store state.
+    async discoverGiteaRepos(serverId: string, owner: string): Promise<GiteaRepo[]> {
+      this.error = null
+      try {
+        return await discoverGiteaRepos(serverId, owner)
+      } catch (e) {
+        this.error = e instanceof Error ? e.message : String(e)
+        throw e
+      }
+    },
+    async importGiteaRepos(serverId: string, owner: string, repos: string[]): Promise<GitSource[]> {
+      this.error = null
+      try {
+        const created = await importGiteaRepos(serverId, { owner, repos })
+        // Newly imported sources clone in the background; surface them now.
+        for (const src of created) this.sources.push(src)
+        return created
+      } catch (e) {
+        this.error = e instanceof Error ? e.message : String(e)
+        throw e
       }
     },
     async loadTreeChildren(sourceId: string, parentPath: string): Promise<void> {

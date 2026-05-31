@@ -17,6 +17,10 @@ class GitSourceCreate(BaseModel):
     ssh_key_id: str | None = None
     http_username: str | None = None
     http_password: str | None = None
+    # When set, the source clones/fetches/pushes over HTTPS using the token
+    # stored for this Gitea server. Resolved at git-op time so rotating the
+    # token in one place updates every source imported from that server.
+    gitea_server_id: str | None = None
     sync_interval_minutes: int = Field(default=5, ge=1, le=1440)
 
 
@@ -36,6 +40,7 @@ class GitSourceResponse(BaseModel):
     branch: str
     ssh_key_id: str | None
     http_username: str | None
+    gitea_server_id: str | None = None
     sync_interval_minutes: int
     local_path: str
     cloned: bool
@@ -66,6 +71,53 @@ class SshKeyResponse(BaseModel):
     id: str
     label: str
     fingerprint: str
+
+
+# ---------------------------------------------------------------------------
+# Gitea servers (remembered credential groups)
+# ---------------------------------------------------------------------------
+
+
+class GiteaServerCreate(BaseModel):
+    label: str = Field(min_length=1, max_length=128)
+    # Base URL of the Gitea instance, e.g. https://git.example.com (no
+    # trailing /api). The username is the account the token belongs to; it is
+    # reused as the HTTPS basic-auth username when cloning.
+    base_url: str = Field(min_length=1)
+    username: str = Field(min_length=1, max_length=128)
+    token: str = Field(min_length=1)
+
+
+class GiteaServerResponse(BaseModel):
+    # The token is never returned — it stays in a 0600 file on the backend,
+    # exactly like SSH private keys.
+    id: str
+    label: str
+    base_url: str
+    username: str
+
+
+class GiteaRepo(BaseModel):
+    name: str
+    full_name: str
+    clone_url: str
+    description: str = ""
+    empty: bool = False
+    # True when a source already points at this clone_url, so the UI can
+    # disable the row instead of creating a duplicate.
+    already_added: bool = False
+
+
+class GiteaDiscoverRequest(BaseModel):
+    # The org or user whose repos to list. The server (and its token) is
+    # identified by the path param, so no credential travels in this body.
+    owner: str = Field(min_length=1, max_length=128)
+
+
+class GiteaImportRequest(BaseModel):
+    owner: str = Field(min_length=1, max_length=128)
+    # full_name values (e.g. "team/handbook") selected from a prior discover.
+    repos: list[str] = Field(min_length=1)
 
 
 class PageMeta(BaseModel):

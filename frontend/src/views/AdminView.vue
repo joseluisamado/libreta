@@ -2,7 +2,7 @@
   import { ref, onMounted } from 'vue'
   import { useSourcesStore } from '@/stores/sources'
   import { useWatchedStore } from '@/stores/watched'
-  import type { GitSourceCreate } from '@/api/types'
+  import type { GitSourceCreate, GiteaRepo, GiteaServerCreate } from '@/api/types'
 
   const store = useSourcesStore()
   const watched = useWatchedStore()
@@ -132,9 +132,118 @@
     await store.removeSshKey(id)
   }
 
+  // ---- Gitea servers + bulk import ------------------------------------
+  const showGiteaForm = ref(false)
+  const giteaForm = ref<GiteaServerCreate>({
+    label: '',
+    base_url: '',
+    username: '',
+    token: '',
+  })
+  const giteaError = ref<string | null>(null)
+  const giteaAdding = ref(false)
+
+  async function submitGiteaServer(): Promise<void> {
+    giteaError.value = null
+    const { label, base_url, username, token } = giteaForm.value
+    if (!label || !base_url || !username || !token) {
+      giteaError.value = 'Label, base URL, username and token are all required.'
+      return
+    }
+    giteaAdding.value = true
+    try {
+      await store.addGiteaServer({ ...giteaForm.value })
+      showGiteaForm.value = false
+      giteaForm.value = { label: '', base_url: '', username: '', token: '' }
+    } catch (e) {
+      giteaError.value = e instanceof Error ? e.message : String(e)
+    } finally {
+      giteaAdding.value = false
+    }
+  }
+
+  async function removeGiteaServer(id: string, label: string): Promise<void> {
+    if (
+      !window.confirm(
+        `Remove Gitea server "${label}"? Sources imported from it will lose their ` +
+          `stored credential and stop syncing until re-pointed.`,
+      )
+    )
+      return
+    await store.removeGiteaServer(id)
+  }
+
+  // Discovery/import state is keyed by the server being browsed. Only one
+  // server's picker is open at a time.
+  const discoverServerId = ref<string | null>(null)
+  const discoverOwner = ref('')
+  const discoverBusy = ref(false)
+  const discoverError = ref<string | null>(null)
+  const discoveredRepos = ref<GiteaRepo[]>([])
+  const selectedRepos = ref<Set<string>>(new Set())
+  const importBusy = ref(false)
+
+  function toggleDiscover(serverId: string): void {
+    if (discoverServerId.value === serverId) {
+      discoverServerId.value = null
+      return
+    }
+    discoverServerId.value = serverId
+    discoverOwner.value = ''
+    discoveredRepos.value = []
+    selectedRepos.value = new Set()
+    discoverError.value = null
+  }
+
+  async function runDiscover(serverId: string): Promise<void> {
+    discoverError.value = null
+    const owner = discoverOwner.value.trim()
+    if (!owner) {
+      discoverError.value = 'Enter an org or user to list its repos.'
+      return
+    }
+    discoverBusy.value = true
+    try {
+      discoveredRepos.value = await store.discoverGiteaRepos(serverId, owner)
+      // Pre-select every importable (not-yet-added, non-empty) repo.
+      selectedRepos.value = new Set(
+        discoveredRepos.value.filter((r) => !r.already_added && !r.empty).map((r) => r.full_name),
+      )
+    } catch (e) {
+      discoverError.value = e instanceof Error ? e.message : String(e)
+      discoveredRepos.value = []
+    } finally {
+      discoverBusy.value = false
+    }
+  }
+
+  function toggleRepo(fullName: string): void {
+    const next = new Set(selectedRepos.value)
+    if (next.has(fullName)) next.delete(fullName)
+    else next.add(fullName)
+    selectedRepos.value = next
+  }
+
+  async function runImport(serverId: string): Promise<void> {
+    if (!selectedRepos.value.size) return
+    importBusy.value = true
+    discoverError.value = null
+    try {
+      await store.importGiteaRepos(serverId, discoverOwner.value.trim(), [...selectedRepos.value])
+      discoverServerId.value = null
+      discoveredRepos.value = []
+      selectedRepos.value = new Set()
+    } catch (e) {
+      discoverError.value = e instanceof Error ? e.message : String(e)
+    } finally {
+      importBusy.value = false
+    }
+  }
+
   onMounted(() => {
     store.loadSources()
     store.loadSshKeys()
+    store.loadGiteaServers()
     watched.loadFolders()
   })
 </script>
@@ -311,6 +420,167 @@
         </div>
       </div>
       <p v-else-if="store.loaded" class="text-sm text-slate-400">No git sources configured yet.</p>
+    </section>
+
+    <!-- ==================== Gitea Servers ==================== -->
+    <section class="mb-10">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-lg font-semibold">Gitea Servers</h2>
+        <button
+          type="button"
+          class="text-sm px-3 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 cursor-pointer"
+          @click="showGiteaForm = !showGiteaForm"
+        >
+          {{ showGiteaForm ? 'Cancel' : '+ Add server' }}
+        </button>
+      </div>
+
+      <p class="text-sm text-slate-500 mb-4">
+        Store a server's access token once, then bulk-import every repo under an org or user.
+        Imported sources share the stored token, so rotating it here updates them all.
+      </p>
+
+      <!-- Add server form -->
+      <div v-if="showGiteaForm" class="mb-4 p-4 border border-slate-200 rounded-lg bg-slate-50">
+        <p v-if="giteaError" class="text-red-600 text-sm mb-2">{{ giteaError }}</p>
+        <div class="grid grid-cols-2 gap-3 mb-3">
+          <div>
+            <label class="block text-xs text-slate-500 mb-1">Label</label>
+            <input
+              v-model.trim="giteaForm.label"
+              type="text"
+              placeholder="Home Gitea"
+              class="w-full border border-slate-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+            />
+          </div>
+          <div>
+            <label class="block text-xs text-slate-500 mb-1">Base URL</label>
+            <input
+              v-model.trim="giteaForm.base_url"
+              type="text"
+              placeholder="https://git.example.com"
+              class="w-full border border-slate-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+            />
+          </div>
+          <div>
+            <label class="block text-xs text-slate-500 mb-1">Username</label>
+            <input
+              v-model.trim="giteaForm.username"
+              type="text"
+              placeholder="alice"
+              class="w-full border border-slate-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+            />
+          </div>
+          <div>
+            <label class="block text-xs text-slate-500 mb-1">Access token</label>
+            <input
+              v-model="giteaForm.token"
+              type="password"
+              placeholder="personal access token"
+              class="w-full border border-slate-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+            />
+          </div>
+        </div>
+        <button
+          type="button"
+          :disabled="giteaAdding"
+          class="px-4 py-1.5 text-sm rounded bg-blue-600 text-white hover:bg-blue-700 cursor-pointer disabled:opacity-50"
+          @click="submitGiteaServer"
+        >
+          {{ giteaAdding ? 'Adding…' : 'Add server' }}
+        </button>
+      </div>
+
+      <!-- Server list -->
+      <div v-if="store.giteaServers.length" class="space-y-3">
+        <div
+          v-for="gs in store.giteaServers"
+          :key="gs.id"
+          class="p-4 border border-slate-200 rounded-lg"
+        >
+          <div class="flex items-start justify-between">
+            <div>
+              <p class="font-medium text-sm">{{ gs.label }}</p>
+              <p class="text-xs text-slate-500 mt-0.5">{{ gs.base_url }}</p>
+              <p class="text-xs text-slate-400 mt-0.5">user: {{ gs.username }}</p>
+            </div>
+            <div class="flex gap-2 shrink-0 ml-4">
+              <button
+                type="button"
+                class="text-xs px-2 py-1 rounded border border-slate-300 text-slate-600 hover:bg-slate-50 cursor-pointer"
+                @click="toggleDiscover(gs.id)"
+              >
+                {{ discoverServerId === gs.id ? 'Close' : 'Browse repos' }}
+              </button>
+              <button
+                type="button"
+                class="text-xs px-2 py-1 rounded border border-red-200 text-red-600 hover:bg-red-50 cursor-pointer"
+                @click="removeGiteaServer(gs.id, gs.label)"
+              >
+                Remove
+              </button>
+            </div>
+          </div>
+
+          <!-- Discover + import picker -->
+          <div v-if="discoverServerId === gs.id" class="mt-4 pt-4 border-t border-slate-200">
+            <p v-if="discoverError" class="text-red-600 text-sm mb-2">{{ discoverError }}</p>
+            <div class="flex gap-2 items-end mb-3">
+              <div class="flex-1">
+                <label class="block text-xs text-slate-500 mb-1">Org or user</label>
+                <input
+                  v-model.trim="discoverOwner"
+                  type="text"
+                  placeholder="team-name"
+                  class="w-full border border-slate-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+                  @keyup.enter="runDiscover(gs.id)"
+                />
+              </div>
+              <button
+                type="button"
+                :disabled="discoverBusy"
+                class="px-3 py-1.5 text-sm rounded bg-slate-700 text-white hover:bg-slate-800 cursor-pointer disabled:opacity-50"
+                @click="runDiscover(gs.id)"
+              >
+                {{ discoverBusy ? 'Listing…' : 'List repos' }}
+              </button>
+            </div>
+
+            <div v-if="discoveredRepos.length" class="space-y-1 mb-3 max-h-72 overflow-y-auto">
+              <label
+                v-for="repo in discoveredRepos"
+                :key="repo.full_name"
+                class="flex items-center gap-2 px-2 py-1 rounded hover:bg-slate-50 cursor-pointer"
+                :class="{ 'opacity-50 cursor-not-allowed': repo.already_added }"
+              >
+                <input
+                  type="checkbox"
+                  :checked="selectedRepos.has(repo.full_name)"
+                  :disabled="repo.already_added"
+                  @change="toggleRepo(repo.full_name)"
+                />
+                <span class="text-sm font-mono">{{ repo.full_name }}</span>
+                <span v-if="repo.already_added" class="text-xs text-slate-400">already added</span>
+                <span v-else-if="repo.empty" class="text-xs text-amber-600">empty</span>
+                <span v-if="repo.description" class="text-xs text-slate-400 truncate">
+                  — {{ repo.description }}
+                </span>
+              </label>
+            </div>
+
+            <button
+              v-if="discoveredRepos.length"
+              type="button"
+              :disabled="importBusy || !selectedRepos.size"
+              class="px-4 py-1.5 text-sm rounded bg-blue-600 text-white hover:bg-blue-700 cursor-pointer disabled:opacity-50"
+              @click="runImport(gs.id)"
+            >
+              {{ importBusy ? 'Importing…' : `Import ${selectedRepos.size} selected` }}
+            </button>
+          </div>
+        </div>
+      </div>
+      <p v-else-if="store.loaded" class="text-sm text-slate-400">No Gitea servers configured.</p>
     </section>
 
     <!-- ==================== Watched Folders ==================== -->

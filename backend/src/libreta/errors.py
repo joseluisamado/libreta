@@ -68,3 +68,16 @@ class SshKeyAlreadyExistsError(LibretaError):
 
 class SshKeyInvalidError(LibretaError):
     status_code = 400
+
+
+class GiteaServerNotFoundError(LibretaError):
+    status_code = 404
+
+
+class GiteaServerAlreadyExistsError(LibretaError):
+    status_code = 409
+
+
+class GiteaDiscoveryError(LibretaError):
+    # The upstream Gitea server rejected the request or was unreachable.
+    status_code = 502

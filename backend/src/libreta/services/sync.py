@@ -39,6 +39,7 @@ def enqueue_push(source_id: str) -> None:
 async def _do_push(
     repos_dir: Path,
     ssh_keys_dir: Path,
+    gitea_servers_dir: Path,
     content_dir: Path,
     source_id: str,
 ) -> None:
@@ -51,7 +52,7 @@ async def _do_push(
     delay = _PUSH_BASE_DELAY
     for attempt in range(1, _PUSH_MAX_RETRIES + 1):
         try:
-            await asyncio.to_thread(push_sync, repos_dir, ssh_keys_dir, entry)
+            await asyncio.to_thread(push_sync, repos_dir, ssh_keys_dir, gitea_servers_dir, entry)
             await record_sync_result(content_dir, source_id, None)
             logger.info("push: source %s pushed (attempt %d)", source_id, attempt)
             return
@@ -68,13 +69,14 @@ async def _do_push(
 async def push_worker(
     repos_dir: Path,
     ssh_keys_dir: Path,
+    gitea_servers_dir: Path,
     content_dir: Path,
 ) -> None:
     """Drain the push queue forever.  Run as a background task."""
     while True:
         source_id = await _push_queue.get()
         try:
-            await _do_push(repos_dir, ssh_keys_dir, content_dir, source_id)
+            await _do_push(repos_dir, ssh_keys_dir, gitea_servers_dir, content_dir, source_id)
         except Exception:
             logger.exception("push worker: unhandled error for %s", source_id)
         finally:
@@ -84,12 +86,13 @@ async def push_worker(
 async def _sync_one(
     repos_dir: Path,
     ssh_keys_dir: Path,
+    gitea_servers_dir: Path,
     content_dir: Path,
     entry: dict,  # type: ignore[type-arg]
 ) -> None:
     source_id: str = entry["id"]
     try:
-        await fetch_and_ff(repos_dir, ssh_keys_dir, entry)
+        await fetch_and_ff(repos_dir, ssh_keys_dir, gitea_servers_dir, entry)
         await record_sync_result(content_dir, source_id, None)
         logger.info("sync: source %s up to date", source_id)
     except Exception as exc:
@@ -115,16 +118,18 @@ def _get_sync_sem() -> asyncio.Semaphore:
 async def _bounded_sync_one(
     repos_dir: Path,
     ssh_keys_dir: Path,
+    gitea_servers_dir: Path,
     content_dir: Path,
     entry: dict,  # type: ignore[type-arg]
 ) -> None:
     async with _get_sync_sem():
-        await _sync_one(repos_dir, ssh_keys_dir, content_dir, entry)
+        await _sync_one(repos_dir, ssh_keys_dir, gitea_servers_dir, content_dir, entry)
 
 
 async def startup_sync(
     repos_dir: Path,
     ssh_keys_dir: Path,
+    gitea_servers_dir: Path,
     content_dir: Path,
 ) -> None:
     """Clone missing sources and fetch existing ones at startup.
@@ -138,7 +143,10 @@ async def startup_sync(
     if not sources:
         return
     await asyncio.gather(
-        *[_bounded_sync_one(repos_dir, ssh_keys_dir, content_dir, s) for s in sources],
+        *[
+            _bounded_sync_one(repos_dir, ssh_keys_dir, gitea_servers_dir, content_dir, s)
+            for s in sources
+        ],
         return_exceptions=True,
     )
 
@@ -146,6 +154,7 @@ async def startup_sync(
 async def periodic_sync_loop(
     repos_dir: Path,
     ssh_keys_dir: Path,
+    gitea_servers_dir: Path,
     content_dir: Path,
 ) -> None:
     """Poll each source on its own interval.  Run as a background task."""
@@ -177,7 +186,9 @@ async def periodic_sync_loop(
                 # Bounded via the shared semaphore so multiple sources don't
                 # fetch in parallel on low-core hosts.
                 task = asyncio.create_task(
-                    _bounded_sync_one(repos_dir, ssh_keys_dir, content_dir, entry)
+                    _bounded_sync_one(
+                        repos_dir, ssh_keys_dir, gitea_servers_dir, content_dir, entry
+                    )
                 )
                 _running.add(task)
                 task.add_done_callback(_running.discard)

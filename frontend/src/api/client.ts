@@ -2,6 +2,10 @@ import type {
   AssetUploadResponse,
   DiffEntry,
   DirChildren,
+  GiteaImportRequest,
+  GiteaRepo,
+  GiteaServer,
+  GiteaServerCreate,
   GitSource,
   GitSourceCreate,
   GitSourceUpdate,
@@ -285,6 +289,40 @@ export function triggerSync(id: string): Promise<GitSource> {
 
 export function getPendingCommits(id: string): Promise<PendingCommit[]> {
   return request<PendingCommit[]>(`/sources/${id}/pending`)
+}
+
+// ---- Gitea servers (remembered credential groups) -----------------------
+
+export function getGiteaServers(): Promise<GiteaServer[]> {
+  return request<GiteaServer[]>('/sources/gitea-servers')
+}
+
+export function addGiteaServer(data: GiteaServerCreate): Promise<GiteaServer> {
+  return request<GiteaServer>('/sources/gitea-servers', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+}
+
+export function deleteGiteaServer(serverId: string): Promise<void> {
+  return requestNoContent(`/sources/gitea-servers/${serverId}`, { method: 'DELETE' })
+}
+
+export function discoverGiteaRepos(serverId: string, owner: string): Promise<GiteaRepo[]> {
+  return request<GiteaRepo[]>(`/sources/gitea-servers/${serverId}/discover`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ owner }),
+  })
+}
+
+export function importGiteaRepos(serverId: string, data: GiteaImportRequest): Promise<GitSource[]> {
+  return request<GitSource[]>(`/sources/gitea-servers/${serverId}/import`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
 }
 
 export function getSourceTree(id: string): Promise<PageNode[]> {

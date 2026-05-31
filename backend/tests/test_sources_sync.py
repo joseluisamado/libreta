@@ -40,8 +40,10 @@ def test_fast_forward_materialises_new_files(tmp_path: Path) -> None:
 
     repos_dir = tmp_path / "repos"
     ssh_keys_dir = tmp_path / "ssh"
+    gitea_dir = tmp_path / "gitea"
     repos_dir.mkdir()
     ssh_keys_dir.mkdir()
+    gitea_dir.mkdir()
 
     entry = {
         "id": "work",
@@ -53,7 +55,7 @@ def test_fast_forward_materialises_new_files(tmp_path: Path) -> None:
     }
 
     # First sync clones.
-    fetch_and_ff_sync(repos_dir, ssh_keys_dir, entry)
+    fetch_and_ff_sync(repos_dir, ssh_keys_dir, gitea_dir, entry)
     local = repos_dir / "work"
     assert (local / "intro.md").exists()
 
@@ -69,7 +71,7 @@ def test_fast_forward_materialises_new_files(tmp_path: Path) -> None:
     _commit_all(remote_repo, "More materials.")
 
     # Second sync fast-forwards.
-    fetch_and_ff_sync(repos_dir, ssh_keys_dir, entry)
+    fetch_and_ff_sync(repos_dir, ssh_keys_dir, gitea_dir, entry)
 
     # The new files must exist on disk...
     assert (local / "EPSO books" / "Ch2 Verbal Reasoning — Summary & Gotchas.md").exists()
@@ -88,8 +90,10 @@ def test_fast_forward_heals_desynced_index(tmp_path: Path) -> None:
 
     repos_dir = tmp_path / "repos"
     ssh_keys_dir = tmp_path / "ssh"
+    gitea_dir = tmp_path / "gitea"
     repos_dir.mkdir()
     ssh_keys_dir.mkdir()
+    gitea_dir.mkdir()
 
     entry = {
         "id": "work",
@@ -99,14 +103,14 @@ def test_fast_forward_heals_desynced_index(tmp_path: Path) -> None:
         "http_username": None,
         "http_password": None,
     }
-    fetch_and_ff_sync(repos_dir, ssh_keys_dir, entry)
+    fetch_and_ff_sync(repos_dir, ssh_keys_dir, gitea_dir, entry)
     local = repos_dir / "work"
 
     # Upstream adds a file; sync it down normally.
     remote_repo = pygit2.Repository(str(remote))
     (remote / "added.md").write_text("# Added\n", encoding="utf-8")
     _commit_all(remote_repo, "add file")
-    fetch_and_ff_sync(repos_dir, ssh_keys_dir, entry)
+    fetch_and_ff_sync(repos_dir, ssh_keys_dir, gitea_dir, entry)
     assert (local / "added.md").exists()
 
     # Corrupt into the INDEX_DELETED state: drop the file from index + workdir
@@ -123,7 +127,7 @@ def test_fast_forward_heals_desynced_index(tmp_path: Path) -> None:
     _commit_all(remote_repo, "another file")
 
     # The next sync must restore the previously-missing file AND apply the new one.
-    fetch_and_ff_sync(repos_dir, ssh_keys_dir, entry)
+    fetch_and_ff_sync(repos_dir, ssh_keys_dir, gitea_dir, entry)
     assert (local / "added.md").exists()
     assert (local / "another.md").exists()
     assert local_repo.status() == {}
@@ -136,8 +140,10 @@ def test_fast_forward_preserves_local_uncommitted_changes(tmp_path: Path) -> Non
 
     repos_dir = tmp_path / "repos"
     ssh_keys_dir = tmp_path / "ssh"
+    gitea_dir = tmp_path / "gitea"
     repos_dir.mkdir()
     ssh_keys_dir.mkdir()
+    gitea_dir.mkdir()
 
     entry = {
         "id": "work",
@@ -147,7 +153,7 @@ def test_fast_forward_preserves_local_uncommitted_changes(tmp_path: Path) -> Non
         "http_username": None,
         "http_password": None,
     }
-    fetch_and_ff_sync(repos_dir, ssh_keys_dir, entry)
+    fetch_and_ff_sync(repos_dir, ssh_keys_dir, gitea_dir, entry)
     local = repos_dir / "work"
 
     # Upstream modifies intro.md.
@@ -160,7 +166,7 @@ def test_fast_forward_preserves_local_uncommitted_changes(tmp_path: Path) -> Non
     local_repo = pygit2.Repository(str(local))
     head_before = local_repo.head.target
 
-    fetch_and_ff_sync(repos_dir, ssh_keys_dir, entry)
+    fetch_and_ff_sync(repos_dir, ssh_keys_dir, gitea_dir, entry)
 
     # Ref did not move and the local edit survived.
     assert local_repo.head.target == head_before

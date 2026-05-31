@@ -37,7 +37,7 @@ from libreta.models import (
     PageNode,
     PageRead,
 )
-from libreta.storage import pagefile
+from libreta.storage import gitea_servers, pagefile
 from libreta.storage.ssh import make_callbacks
 
 logger = logging.getLogger(__name__)
@@ -151,6 +151,7 @@ def _entry_to_response(entry: dict[str, Any], repos_dir: Path) -> GitSourceRespo
         branch=branch,
         ssh_key_id=entry.get("ssh_key_id"),
         http_username=entry.get("http_username"),
+        gitea_server_id=entry.get("gitea_server_id"),
         sync_interval_minutes=entry.get("sync_interval_minutes", 15),
         local_path=str(local),
         cloned=cloned,
@@ -190,6 +191,7 @@ def add_source_sync(
             "ssh_key_id": body.ssh_key_id,
             "http_username": body.http_username,
             "http_password": body.http_password,
+            "gitea_server_id": body.gitea_server_id,
             "sync_interval_minutes": body.sync_interval_minutes,
             "last_synced_at": None,
             "last_sync_error": None,
@@ -285,6 +287,33 @@ async def record_sync_result(
 # ---------------------------------------------------------------------------
 
 
+def _resolve_http_auth(
+    entry: dict[str, Any],
+    gitea_servers_dir: Path,
+) -> tuple[str | None, str | None]:
+    """Return the (username, password) to use for HTTPS git auth.
+
+    When the source references a Gitea server, the credentials come from that
+    server's store (so a rotated token applies to every source at once).
+    Otherwise the per-source http_username/http_password are used. A failure
+    to load server credentials is non-fatal here: it degrades to no HTTP auth,
+    and the git op surfaces the resulting error normally.
+    """
+    server_id = entry.get("gitea_server_id")
+    if server_id:
+        try:
+            return gitea_servers.load_credentials_sync(gitea_servers_dir, server_id)
+        except Exception:
+            logger.warning(
+                "source %s: cannot load gitea server %s credentials",
+                entry.get("id"),
+                server_id,
+                exc_info=True,
+            )
+            return None, None
+    return entry.get("http_username"), entry.get("http_password")
+
+
 def _open_repo(local: Path) -> pygit2.Repository:
     return pygit2.Repository(str(local))
 
@@ -292,14 +321,14 @@ def _open_repo(local: Path) -> pygit2.Repository:
 def clone_source_sync(
     repos_dir: Path,
     ssh_keys_dir: Path,
+    gitea_servers_dir: Path,
     entry: dict[str, Any],
 ) -> None:
     source_id: str = entry["id"]
     remote_url: str = entry["remote_url"]
     branch: str = entry.get("branch", "main")
     key_id: str | None = entry.get("ssh_key_id")
-    http_username: str | None = entry.get("http_username")
-    http_password: str | None = entry.get("http_password")
+    http_username, http_password = _resolve_http_auth(entry, gitea_servers_dir)
     local = _local_path(repos_dir, source_id)
 
     if (local / ".git").exists():
@@ -322,26 +351,27 @@ def clone_source_sync(
 async def clone_source(
     repos_dir: Path,
     ssh_keys_dir: Path,
+    gitea_servers_dir: Path,
     entry: dict[str, Any],
 ) -> None:
-    await asyncio.to_thread(clone_source_sync, repos_dir, ssh_keys_dir, entry)
+    await asyncio.to_thread(clone_source_sync, repos_dir, ssh_keys_dir, gitea_servers_dir, entry)
 
 
 def fetch_and_ff_sync(
     repos_dir: Path,
     ssh_keys_dir: Path,
+    gitea_servers_dir: Path,
     entry: dict[str, Any],
 ) -> None:
     """Fetch from remote and fast-forward the local branch if clean."""
     source_id: str = entry["id"]
     branch: str = entry.get("branch", "main")
     key_id: str | None = entry.get("ssh_key_id")
-    http_username: str | None = entry.get("http_username")
-    http_password: str | None = entry.get("http_password")
+    http_username, http_password = _resolve_http_auth(entry, gitea_servers_dir)
     local = _local_path(repos_dir, source_id)
 
     if not (local / ".git").exists():
-        clone_source_sync(repos_dir, ssh_keys_dir, entry)
+        clone_source_sync(repos_dir, ssh_keys_dir, gitea_servers_dir, entry)
         return
 
     callbacks = make_callbacks(ssh_keys_dir, key_id, http_username, http_password)
@@ -412,14 +442,16 @@ def fetch_and_ff_sync(
 async def fetch_and_ff(
     repos_dir: Path,
     ssh_keys_dir: Path,
+    gitea_servers_dir: Path,
     entry: dict[str, Any],
 ) -> None:
-    await asyncio.to_thread(fetch_and_ff_sync, repos_dir, ssh_keys_dir, entry)
+    await asyncio.to_thread(fetch_and_ff_sync, repos_dir, ssh_keys_dir, gitea_servers_dir, entry)
 
 
 def push_sync(
     repos_dir: Path,
     ssh_keys_dir: Path,
+    gitea_servers_dir: Path,
     entry: dict[str, Any],
 ) -> None:
     # Libreta commits on every page write, so a push only ships commits already
@@ -429,8 +461,7 @@ def push_sync(
     source_id: str = entry["id"]
     branch: str = entry.get("branch", "main")
     key_id: str | None = entry.get("ssh_key_id")
-    http_username: str | None = entry.get("http_username")
-    http_password: str | None = entry.get("http_password")
+    http_username, http_password = _resolve_http_auth(entry, gitea_servers_dir)
     local = _local_path(repos_dir, source_id)
 
     if not (local / ".git").exists():
@@ -449,9 +480,10 @@ def push_sync(
 async def push_source(
     repos_dir: Path,
     ssh_keys_dir: Path,
+    gitea_servers_dir: Path,
     entry: dict[str, Any],
 ) -> None:
-    await asyncio.to_thread(push_sync, repos_dir, ssh_keys_dir, entry)
+    await asyncio.to_thread(push_sync, repos_dir, ssh_keys_dir, gitea_servers_dir, entry)
 
 
 # ---------------------------------------------------------------------------

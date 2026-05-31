@@ -10,7 +10,47 @@ Living document. Update as work progresses. Latest at the top.
 
 **Current milestone**: M5 — v1.0 release ✅ (post-1.0 hardening pass shipped 2026-05-13)
 **Next milestone**: post-1.0 hardening / M6 (multi-user & auth)
-**Next action**: push the tags, keep eyes on the homelab install.
+**Next action**: try the Gitea bulk-import against the homelab Gitea, then push tags.
+
+---
+
+## 2026-05-31 — Feat: Gitea servers + bulk repo import
+
+**Motivation**: adding sources one-at-a-time from the same Gitea server was
+tedious. You can now store a Gitea server's credentials once and bulk-import
+every repo under an org or user.
+
+**Model**: a *Gitea server* is a remembered credential group (label, base URL,
+username, token), stored exactly like SSH keys — metadata in
+`<gitea_servers_dir>/index.json`, the token in a sibling `0600` file, never
+returned over the API (R2: filesystem is the source of truth; the token never
+lives only in memory). Imported sources carry a `gitea_server_id` and resolve
+the token at clone/fetch/push time, so rotating the token in one place updates
+every source from that server.
+
+**Backend**:
+- `storage/gitea_servers.py` — the credential store (mirrors `storage/ssh.py`).
+- `services/gitea.py` — repo discovery via the Gitea API
+  (`/api/v1/orgs/{owner}/repos`, falling back to `/users/{owner}/repos`),
+  paginated, using the existing `httpx` dep. Only talks to Gitea on an explicit
+  admin action (R5).
+- `config.gitea_servers_dir` (default `/var/lib/libreta/gitea_servers`).
+- New endpoints under `/sources`: `gitea-servers` CRUD,
+  `gitea-servers/{id}/discover`, `gitea-servers/{id}/import`.
+- The three git ops (`clone_source`/`fetch_and_ff`/`push`) now take a
+  `gitea_servers_dir` and resolve HTTPS auth from the server store when a source
+  references one. Threaded through the sync service and lifespan.
+
+**Frontend**: a "Gitea Servers" section in the Admin view — add a server, then
+"Browse repos" → enter org/user → checkbox picker (already-added rows disabled,
+empty repos flagged) → "Import N selected".
+
+**Tests**: `test_gitea_servers.py` (store: token perms, dedupe, roundtrip),
+`test_gitea_discovery.py` (org/user paths, pagination, auth/unreachable errors,
+httpx mocked), `test_gitea_api.py` (server CRUD, discover `already_added`
+flagging, import creates server-referencing sources, idempotent re-import).
+Existing `test_sources_sync.py` updated for the new signature. Backend 115
+green, frontend 65 green (round-trip corpus intact).
 
 ---
 

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import re
 from pathlib import Path
 from typing import Annotated
 
@@ -13,6 +15,11 @@ from libreta.errors import AssetNotFoundError, PageNotFoundError
 from libreta.models import (
     AssetUploadResponse,
     DirChildren,
+    GiteaDiscoverRequest,
+    GiteaImportRequest,
+    GiteaRepo,
+    GiteaServerCreate,
+    GiteaServerResponse,
     GitSourceCreate,
     GitSourceResponse,
     GitSourceUpdate,
@@ -24,8 +31,14 @@ from libreta.models import (
     SshKeyCreate,
     SshKeyResponse,
 )
+from libreta.services.gitea import discover_repos
 from libreta.services.sync import enqueue_push
-from libreta.storage import pagefile, sources as src_store, ssh as ssh_store
+from libreta.storage import (
+    gitea_servers as gitea_store,
+    pagefile,
+    sources as src_store,
+    ssh as ssh_store,
+)
 from libreta.storage.assets import replace_asset, store_asset
 from libreta.storage.repo import _delete_commit_sync, _move_commit_sync, commit_page, open_repo
 from libreta.storage.sources import _commit_sync
@@ -64,6 +77,131 @@ async def delete_ssh_key(
 
 
 # ---------------------------------------------------------------------------
+# Gitea servers (remembered credential groups) + bulk discovery/import
+# ---------------------------------------------------------------------------
+
+
+@router.get("/gitea-servers", response_model=list[GiteaServerResponse])
+async def list_gitea_servers(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> list[GiteaServerResponse]:
+    return await gitea_store.list_servers(settings.gitea_servers_dir)
+
+
+@router.post("/gitea-servers", response_model=GiteaServerResponse, status_code=201)
+async def add_gitea_server(
+    body: GiteaServerCreate,
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> GiteaServerResponse:
+    return await gitea_store.add_server(
+        settings.gitea_servers_dir, body.label, body.base_url, body.username, body.token
+    )
+
+
+@router.delete("/gitea-servers/{server_id}", status_code=204)
+async def delete_gitea_server(
+    server_id: str,
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> None:
+    await gitea_store.remove_server(settings.gitea_servers_dir, server_id)
+
+
+@router.post("/gitea-servers/{server_id}/discover", response_model=list[GiteaRepo])
+async def discover_gitea_repos(
+    server_id: str,
+    body: GiteaDiscoverRequest,
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> list[GiteaRepo]:
+    """List repos under *owner* on the server, flagging already-added ones."""
+    server = await gitea_store.get_server(settings.gitea_servers_dir, server_id)
+    _username, token = await gitea_store.load_credentials(settings.gitea_servers_dir, server_id)
+    repos = await discover_repos(server["base_url"], body.owner, token)
+
+    existing = await src_store.load_sources(settings.content_dir)
+    existing_urls = {s.get("remote_url") for s in existing}
+    for repo in repos:
+        repo.already_added = repo.clone_url in existing_urls
+    return repos
+
+
+@router.post("/gitea-servers/{server_id}/import", response_model=list[GitSourceResponse])
+async def import_gitea_repos(
+    server_id: str,
+    body: GiteaImportRequest,
+    background: BackgroundTasks,
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> list[GitSourceResponse]:
+    """Create a source for each selected repo, cloning each in the background.
+
+    Each source references the Gitea server by id, so its clone/fetch/push
+    auth resolves the shared token at git-op time. Repos whose clone_url is
+    already tracked are skipped silently (idempotent re-import).
+    """
+    server = await gitea_store.get_server(settings.gitea_servers_dir, server_id)
+    _username, token = await gitea_store.load_credentials(settings.gitea_servers_dir, server_id)
+    discovered = await discover_repos(server["base_url"], body.owner, token)
+    by_full_name = {r.full_name: r for r in discovered}
+
+    existing = await src_store.load_sources(settings.content_dir)
+    existing_ids = {s["id"] for s in existing}
+    existing_urls = {s.get("remote_url") for s in existing}
+
+    created: list[GitSourceResponse] = []
+    for full_name in body.repos:
+        repo = by_full_name.get(full_name)
+        if repo is None or repo.clone_url in existing_urls:
+            continue
+        source_id = _slug_source_id(full_name, existing_ids)
+        existing_ids.add(source_id)
+        existing_urls.add(repo.clone_url)
+        src = await src_store.add_source(
+            settings.content_dir,
+            settings.repos_dir,
+            GitSourceCreate(
+                id=source_id,
+                label=repo.full_name,
+                remote_url=repo.clone_url,
+                gitea_server_id=server_id,
+            ),
+        )
+        created.append(src)
+        entry = {
+            "id": source_id,
+            "remote_url": repo.clone_url,
+            "branch": "main",
+            "gitea_server_id": server_id,
+        }
+        background.add_task(
+            _clone_and_record,
+            settings.repos_dir,
+            settings.ssh_keys_dir,
+            settings.gitea_servers_dir,
+            settings.content_dir,
+            entry,
+        )
+    return created
+
+
+def _slug_source_id(full_name: str, taken: set[str]) -> str:
+    """Turn a Gitea full_name (owner/repo) into a unique source id.
+
+    Source ids must match ^[a-z0-9][a-z0-9_-]*$ (see GitSourceCreate). We
+    lowercase, replace any run of invalid chars with '-', trim to fit, and
+    suffix -2, -3, ... on collision.
+    """
+    base = re.sub(r"[^a-z0-9]+", "-", full_name.lower()).strip("-")
+    if not base or not base[0].isalnum():
+        base = f"src-{base}".strip("-")
+    base = base[:60] or "source"
+    candidate = base
+    n = 2
+    while candidate in taken:
+        candidate = f"{base}-{n}"
+        n += 1
+    return candidate
+
+
+# ---------------------------------------------------------------------------
 # Source CRUD
 # ---------------------------------------------------------------------------
 
@@ -90,6 +228,7 @@ async def add_source(
             _clone_and_record,
             settings.repos_dir,
             settings.ssh_keys_dir,
+            settings.gitea_servers_dir,
             settings.content_dir,
             entry,
         )
@@ -99,11 +238,12 @@ async def add_source(
 async def _clone_and_record(
     repos_dir: Path,
     ssh_keys_dir: Path,
+    gitea_servers_dir: Path,
     content_dir: Path,
     entry: dict,  # type: ignore[type-arg]
 ) -> None:
     try:
-        await src_store.clone_source(repos_dir, ssh_keys_dir, entry)
+        await src_store.clone_source(repos_dir, ssh_keys_dir, gitea_servers_dir, entry)
         await src_store.record_sync_result(content_dir, entry["id"], None)
     except Exception as exc:
         await src_store.record_sync_result(content_dir, entry["id"], str(exc))
@@ -142,13 +282,22 @@ async def trigger_sync(
     async def _sync() -> None:
         from libreta.storage.sources import fetch_and_ff, push_source, record_sync_result
 
+        # Push local commits first, then pull remote changes. Push failures
+        # are non-fatal here; the subsequent pull may still succeed.
+        with contextlib.suppress(Exception):
+            await push_source(
+                settings.repos_dir,
+                settings.ssh_keys_dir,
+                settings.gitea_servers_dir,
+                entry,
+            )
         try:
-            # Push local commits first, then pull remote changes
-            await push_source(settings.repos_dir, settings.ssh_keys_dir, entry)
-        except Exception:
-            pass  # push failures are non-fatal; pull may still work
-        try:
-            await fetch_and_ff(settings.repos_dir, settings.ssh_keys_dir, entry)
+            await fetch_and_ff(
+                settings.repos_dir,
+                settings.ssh_keys_dir,
+                settings.gitea_servers_dir,
+                entry,
+            )
             await record_sync_result(settings.content_dir, source_id, None)
         except Exception as exc:
             await record_sync_result(settings.content_dir, source_id, str(exc))

@@ -30,7 +30,12 @@ async def _startup_reindex(settings: Settings) -> None:
 
 async def _startup_sources_sync(settings: Settings) -> None:
     try:
-        await startup_sync(settings.repos_dir, settings.ssh_keys_dir, settings.content_dir)
+        await startup_sync(
+            settings.repos_dir,
+            settings.ssh_keys_dir,
+            settings.gitea_servers_dir,
+            settings.content_dir,
+        )
     except Exception:
         logger.warning("sources: startup sync failed", exc_info=True)
 
@@ -47,10 +52,20 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     startup_sync_task = asyncio.create_task(_startup_sources_sync(settings))
 
     push_task = asyncio.create_task(
-        push_worker(settings.repos_dir, settings.ssh_keys_dir, settings.content_dir)
+        push_worker(
+            settings.repos_dir,
+            settings.ssh_keys_dir,
+            settings.gitea_servers_dir,
+            settings.content_dir,
+        )
     )
     sync_task = asyncio.create_task(
-        periodic_sync_loop(settings.repos_dir, settings.ssh_keys_dir, settings.content_dir)
+        periodic_sync_loop(
+            settings.repos_dir,
+            settings.ssh_keys_dir,
+            settings.gitea_servers_dir,
+            settings.content_dir,
+        )
     )
 
     yield

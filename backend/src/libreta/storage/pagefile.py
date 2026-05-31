@@ -285,7 +285,7 @@ def _classify_other(name: str) -> str:
             ".entitlements",
             ".pbxproj",
             "nix",
-            "flake"
+            "flake",
         )
     ):
         return "text"

@@ -106,6 +106,9 @@ export interface GitSource {
   branch: string
   ssh_key_id: string | null
   http_username: string | null
+  // When set, the source clones/fetches/pushes using the token stored for
+  // this Gitea server (see GiteaServer).
+  gitea_server_id: string | null
   sync_interval_minutes: number
   local_path: string
   cloned: boolean
@@ -134,6 +137,7 @@ export interface GitSourceCreate {
   ssh_key_id?: string | null
   http_username?: string | null
   http_password?: string | null
+  gitea_server_id?: string | null
   sync_interval_minutes?: number
 }
 
@@ -155,4 +159,35 @@ export interface SshKey {
 export interface SshKeyCreate {
   label: string
   private_key: string
+}
+
+// ---- Gitea servers (remembered credential groups) -----------------------
+
+export interface GiteaServer {
+  id: string
+  label: string
+  base_url: string
+  username: string
+}
+
+export interface GiteaServerCreate {
+  label: string
+  base_url: string
+  username: string
+  token: string
+}
+
+export interface GiteaRepo {
+  name: string
+  full_name: string
+  clone_url: string
+  description: string
+  empty: boolean
+  // True when a source already tracks this clone_url.
+  already_added: boolean
+}
+
+export interface GiteaImportRequest {
+  owner: string
+  repos: string[]
 }

@@ -18,6 +18,11 @@ class Settings(BaseSettings):
     # Private SSH key files. Never committed to any repo.
     ssh_keys_dir: Path = Field(default=Path("/var/lib/libreta/ssh_keys"))
 
+    # Gitea server credentials (one token per server, shared by every source
+    # imported from it). Index of metadata + a 0600 token file per server,
+    # mirroring ssh_keys_dir. Never committed to any repo.
+    gitea_servers_dir: Path = Field(default=Path("/var/lib/libreta/gitea_servers"))
+
     # Sources config file, relative to content_dir (reuses the .meta convention).
     sources_config: str = ".meta/sources.json"
 
