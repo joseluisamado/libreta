@@ -183,13 +183,15 @@
   const selectedRepos = ref<Set<string>>(new Set())
   const importBusy = ref(false)
 
-  function toggleDiscover(serverId: string): void {
+  function toggleDiscover(serverId: string, username: string): void {
     if (discoverServerId.value === serverId) {
       discoverServerId.value = null
       return
     }
     discoverServerId.value = serverId
-    discoverOwner.value = ''
+    // Default to the server's own account — the most common owner to browse.
+    // The user can still overwrite it to list another org/user's repos.
+    discoverOwner.value = username
     discoveredRepos.value = []
     selectedRepos.value = new Set()
     discoverError.value = null
@@ -753,7 +755,7 @@
               <button
                 type="button"
                 class="text-xs px-2 py-1 rounded border border-slate-300 text-slate-600 hover:bg-slate-50 cursor-pointer"
-                @click="toggleDiscover(gs.id)"
+                @click="toggleDiscover(gs.id, gs.username)"
               >
                 {{ discoverServerId === gs.id ? 'Close' : 'Browse repos' }}
               </button>
