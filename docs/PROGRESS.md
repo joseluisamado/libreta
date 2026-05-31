@@ -14,6 +14,40 @@ Living document. Update as work progresses. Latest at the top.
 
 ---
 
+## 2026-05-31 — Fix: private-repo clone over authenticated HTTP left repo empty
+
+**Symptom**: a private Gitea repo imported as a source showed "synced" in the
+sidebar but had no content; only a `.git` husk (unborn HEAD, zero refs) on disk.
+A public repo from the same server cloned fine.
+
+**Root cause**: two compounding bugs.
+1. `pygit2.clone_repository(..., checkout_branch="main")` against an
+   *authenticated* Gitea over smart-HTTP fails the fetch outright
+   (`could not read from remote repository`) and leaves an empty repo. A plain
+   clone (no `checkout_branch`, taking the remote default HEAD) works.
+   Confirmed empirically: WITH_main → GitError; NO_checkout_branch → 3 refs, OK.
+2. The failure was invisible. `clone_source_sync` skipped anything with a
+   `.git` dir as "already cloned", and `fetch_and_ff_sync` returned cleanly when
+   the remote-tracking ref was missing — so every later sync reported success on
+   an empty repo and `last_sync_error` stayed null.
+
+**Fix** (`storage/sources.py`):
+- Clone WITHOUT `checkout_branch`; afterwards `_checkout_branch_if_needed`
+  moves HEAD to the configured branch only when it differs from the default
+  (and raises if that branch is absent on the remote).
+- `_is_incomplete_clone` detects a husk (`.git` present but unborn HEAD / no
+  `origin/<branch>` ref). `clone_source_sync` removes such a husk and re-clones;
+  `fetch_and_ff_sync` treats it as needing a re-clone — so a stuck-empty source
+  self-heals on the next sync. A failed clone now cleans up after itself.
+- A missing remote branch after a real fetch now raises `GitSourceSyncError`
+  (recorded in `last_sync_error`) instead of silently reporting "synced".
+
+**Tests**: husk self-heal + clone-lands-on-non-default-branch. Backend 130 green.
+Verified live: the stuck `work` repo healed on a sync — HEAD on main, 3 refs,
+content present, `last_sync_error` null.
+
+---
+
 ## 2026-05-31 — Fix: new-source tree refresh + remove repos from browse panel
 
 Two follow-ups to the Gitea/sources admin work:

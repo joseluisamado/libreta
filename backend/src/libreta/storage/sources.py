@@ -16,6 +16,7 @@ import json
 import logging
 import os
 import re
+import shutil
 import threading
 from datetime import UTC, datetime
 from pathlib import Path
@@ -27,6 +28,7 @@ from libreta.errors import (
     GitSourceAlreadyExistsError,
     GitSourceCloneError,
     GitSourceNotFoundError,
+    GitSourceSyncError,
     InvalidPathError,
 )
 from libreta.models import (
@@ -318,6 +320,27 @@ def _open_repo(local: Path) -> pygit2.Repository:
     return pygit2.Repository(str(local))
 
 
+def _is_incomplete_clone(local: Path, branch: str) -> bool:
+    """True when *local* has a .git dir but is not a usable clone of *branch*.
+
+    A clone that fails partway (network drop mid-fetch) can leave a .git
+    directory with an unborn HEAD and no remote refs. Without this check, the
+    "already cloned" guard treats that husk as done and every later sync is a
+    no-op that silently reports success — the repo stays empty forever.
+    """
+    if not (local / ".git").exists():
+        return False
+    try:
+        repo = _open_repo(local)
+    except pygit2.GitError:
+        return True  # .git exists but won't open — definitely broken
+    # A good clone has the remote-tracking ref for its branch. (HEAD unborn
+    # alone isn't proof — but a missing origin/<branch> after a clone is.)
+    if repo.head_is_unborn:
+        return True
+    return f"refs/remotes/origin/{branch}" not in repo.references
+
+
 def clone_source_sync(
     repos_dir: Path,
     ssh_keys_dir: Path,
@@ -332,20 +355,50 @@ def clone_source_sync(
     local = _local_path(repos_dir, source_id)
 
     if (local / ".git").exists():
-        return  # already cloned
+        if not _is_incomplete_clone(local, branch):
+            return  # already cloned and healthy
+        # A previous clone left a broken husk (no refs / unborn HEAD). Remove
+        # it so clone_repository can start clean — it refuses a non-empty dir.
+        logger.warning("source %s: removing incomplete clone, retrying", source_id)
+        shutil.rmtree(local, ignore_errors=True)
 
     callbacks = make_callbacks(ssh_keys_dir, key_id, http_username, http_password)
     try:
         local.mkdir(parents=True, exist_ok=True)
-        pygit2.clone_repository(
-            remote_url,
-            str(local),
-            checkout_branch=branch,
-            callbacks=callbacks,
-        )
+        # Deliberately NOT passing checkout_branch: against an authenticated
+        # Gitea over smart-HTTP, clone_repository(checkout_branch=...) fails the
+        # fetch outright ("could not read from remote repository") and leaves an
+        # empty repo. Cloning on the remote's default HEAD works; we then move
+        # to the configured branch below if it differs. (A plain clone still
+        # fetches every branch's remote-tracking ref, so origin/<branch> exists.)
+        repo = pygit2.clone_repository(remote_url, str(local), callbacks=callbacks)
+        _checkout_branch_if_needed(repo, branch)
         logger.info("cloned %s -> %s", remote_url, local)
     except pygit2.GitError as exc:
+        # Don't leave a partial clone behind to be mistaken for "done" later.
+        shutil.rmtree(local, ignore_errors=True)
         raise GitSourceCloneError(f"clone failed for {source_id}: {exc}") from exc
+
+
+def _checkout_branch_if_needed(repo: pygit2.Repository, branch: str) -> None:
+    """Ensure *repo*'s working tree is on *branch* after a default-HEAD clone.
+
+    A no-op when the clone already landed on *branch* (the common case, where
+    the configured branch is the remote default). Otherwise create the local
+    branch from origin/<branch> and check it out.
+    """
+    local_ref = f"refs/heads/{branch}"
+    if not repo.head_is_unborn and repo.head.name == local_ref:
+        return
+    remote_ref = f"refs/remotes/origin/{branch}"
+    if remote_ref not in repo.references:
+        # The configured branch doesn't exist on the remote — surface it rather
+        # than silently leaving the clone on a different branch.
+        raise GitSourceCloneError(f"branch {branch!r} not found on remote")
+    target = repo.references[remote_ref].target
+    if local_ref not in repo.references:
+        repo.create_reference(local_ref, target)
+    repo.checkout(local_ref)
 
 
 async def clone_source(
@@ -370,7 +423,10 @@ def fetch_and_ff_sync(
     http_username, http_password = _resolve_http_auth(entry, gitea_servers_dir)
     local = _local_path(repos_dir, source_id)
 
-    if not (local / ".git").exists():
+    if not (local / ".git").exists() or _is_incomplete_clone(local, branch):
+        # Missing or a broken husk from a clone that failed partway — (re)clone.
+        # clone_source_sync removes the husk first, so this self-heals a source
+        # stuck empty after an interrupted import.
         clone_source_sync(repos_dir, ssh_keys_dir, gitea_servers_dir, entry)
         return
 
@@ -383,9 +439,13 @@ def fetch_and_ff_sync(
     remote_ref = f"refs/remotes/origin/{branch}"
     try:
         remote_commit = repo.lookup_reference(remote_ref).peel(pygit2.Commit)
-    except (KeyError, pygit2.GitError):
-        logger.warning("source %s: remote ref %s not found after fetch", source_id, remote_ref)
-        return
+    except (KeyError, pygit2.GitError) as exc:
+        # The fetch succeeded but the configured branch doesn't exist on the
+        # remote — a real misconfiguration (wrong branch name), not a no-op.
+        # Surface it so last_sync_error reflects reality instead of "synced".
+        raise GitSourceSyncError(
+            f"source {source_id}: branch {branch!r} not found on remote"
+        ) from exc
 
     local_ref_name = f"refs/heads/{branch}"
     try:

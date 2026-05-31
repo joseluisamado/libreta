@@ -171,3 +171,85 @@ def test_fast_forward_preserves_local_uncommitted_changes(tmp_path: Path) -> Non
     # Ref did not move and the local edit survived.
     assert local_repo.head.target == head_before
     assert (local / "intro.md").read_text(encoding="utf-8") == "# Local uncommitted edit\n"
+
+
+def test_sync_reclones_incomplete_husk(tmp_path: Path) -> None:
+    """A .git husk left by a clone that failed partway (no refs, unborn HEAD)
+    must be re-cloned on the next sync, not treated as 'already cloned' and
+    left empty forever."""
+    remote = _make_remote(tmp_path)
+
+    repos_dir = tmp_path / "repos"
+    ssh_keys_dir = tmp_path / "ssh"
+    gitea_dir = tmp_path / "gitea"
+    repos_dir.mkdir()
+    ssh_keys_dir.mkdir()
+    gitea_dir.mkdir()
+
+    entry = {
+        "id": "work",
+        "remote_url": str(remote),
+        "branch": "main",
+        "ssh_key_id": None,
+        "http_username": None,
+        "http_password": None,
+    }
+
+    # Simulate the broken state: a bare-init repo (a .git dir with an unborn
+    # HEAD and no remote refs) sitting where the clone should be — exactly what
+    # an interrupted clone leaves behind.
+    local = repos_dir / "work"
+    pygit2.init_repository(str(local), initial_head="main")
+    husk = pygit2.Repository(str(local))
+    assert husk.head_is_unborn
+    assert "refs/remotes/origin/main" not in list(husk.references)
+
+    # Sync must detect the husk and re-clone it.
+    fetch_and_ff_sync(repos_dir, ssh_keys_dir, gitea_dir, entry)
+
+    assert (local / "intro.md").exists()
+    healed = pygit2.Repository(str(local))
+    assert not healed.head_is_unborn
+    assert "refs/remotes/origin/main" in list(healed.references)
+    assert healed.status() == {}
+
+
+def test_clone_lands_on_configured_non_default_branch(tmp_path: Path) -> None:
+    """The clone no longer passes checkout_branch (it breaks authenticated
+    Gitea over HTTP). When the configured branch is NOT the remote default,
+    the post-clone checkout must still move HEAD to it with files materialised."""
+    remote = _make_remote(tmp_path)  # default branch: main
+    remote_repo = pygit2.Repository(str(remote))
+
+    # Add a second branch 'docs' with a file that doesn't exist on main.
+    main_tip = remote_repo.head.peel(pygit2.Commit)
+    remote_repo.branches.local.create("docs", main_tip)
+    remote_repo.checkout("refs/heads/docs")
+    (remote / "guide.md").write_text("# Guide\n", encoding="utf-8")
+    _commit_all(remote_repo, "docs-only file")
+    # Leave the remote's HEAD on main so the clone's default is main, not docs.
+    remote_repo.checkout("refs/heads/main")
+
+    repos_dir = tmp_path / "repos"
+    ssh_keys_dir = tmp_path / "ssh"
+    gitea_dir = tmp_path / "gitea"
+    repos_dir.mkdir()
+    ssh_keys_dir.mkdir()
+    gitea_dir.mkdir()
+
+    entry = {
+        "id": "docs-src",
+        "remote_url": str(remote),
+        "branch": "docs",
+        "ssh_key_id": None,
+        "http_username": None,
+        "http_password": None,
+    }
+    fetch_and_ff_sync(repos_dir, ssh_keys_dir, gitea_dir, entry)
+
+    local = repos_dir / "docs-src"
+    repo = pygit2.Repository(str(local))
+    assert repo.head.name == "refs/heads/docs"
+    # The docs-only file is present (HEAD really moved to docs), tree is clean.
+    assert (local / "guide.md").exists()
+    assert repo.status() == {}
