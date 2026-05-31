@@ -50,16 +50,35 @@ async def test_discover_org_repos(monkeypatch: pytest.MonkeyPatch) -> None:
     assert repos[0].clone_url == "https://git.example.com/team/handbook.git"
 
 
-async def test_falls_back_to_user_endpoint_on_404(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("org_status", [403, 404])
+async def test_falls_back_to_user_endpoint(
+    monkeypatch: pytest.MonkeyPatch, org_status: int
+) -> None:
+    # 404 = owner isn't an org; 403 = token lacks read:organization scope.
+    # Both must fall through to the (org-scope-free) user endpoint.
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path == "/api/v1/orgs/alice/repos":
-            return httpx.Response(404, json={"message": "not an org"})
+            return httpx.Response(org_status, json={"message": "nope"})
         assert request.url.path == "/api/v1/users/alice/repos"
         return httpx.Response(200, json=[_repo("notes", owner="alice")])
 
     _install_transport(monkeypatch, handler)
     repos = await gitea.discover_repos("https://git.example.com", "alice", "tok")
     assert [r.full_name for r in repos] == ["alice/notes"]
+
+
+async def test_error_includes_gitea_message(monkeypatch: pytest.MonkeyPatch) -> None:
+    # When BOTH endpoints fail, the surfaced error carries Gitea's own
+    # `message` so the operator sees the real cause (e.g. a scope problem).
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            403,
+            json={"message": "token does not have at least one of required scope(s)"},
+        )
+
+    _install_transport(monkeypatch, handler)
+    with pytest.raises(GiteaDiscoveryError, match="required scope"):
+        await gitea.discover_repos("https://git.example.com", "team", "tok")
 
 
 async def test_pagination_concatenates_pages(monkeypatch: pytest.MonkeyPatch) -> None:

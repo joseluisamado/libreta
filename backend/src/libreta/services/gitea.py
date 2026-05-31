@@ -41,6 +41,19 @@ def _to_repo(raw: dict[str, Any]) -> GiteaRepo:
     )
 
 
+def _gitea_message(resp: httpx.Response) -> str:
+    """Best-effort extraction of Gitea's JSON `message` field for an error."""
+    try:
+        body = resp.json()
+    except (ValueError, httpx.HTTPError):
+        return ""
+    if isinstance(body, dict):
+        msg = body.get("message")
+        if isinstance(msg, str):
+            return msg
+    return ""
+
+
 async def _fetch_all(client: httpx.AsyncClient, url: str, token: str) -> list[dict[str, Any]]:
     """Fetch every page of a Gitea list endpoint. Raises on the first error."""
     out: list[dict[str, Any]] = []
@@ -60,12 +73,30 @@ async def _fetch_all(client: httpx.AsyncClient, url: str, token: str) -> list[di
     return out
 
 
+# Status codes on the org endpoint that mean "try the user endpoint instead":
+#   404 — owner is genuinely not an org.
+#   403 — the token can reach the instance but lacks `read:organization`
+#         scope. A user-owned account returns 403 here (the org check is
+#         scope-gated and runs before the not-an-org decision), yet the user
+#         endpoint needs no org scope and succeeds. Falling through lets a
+#         repo-scoped token list a user's repos without `read:organization`.
+_ORG_FALLBACK_CODES = frozenset({403, 404})
+
+
+def _status_error(owner: str, exc: httpx.HTTPStatusError) -> GiteaDiscoveryError:
+    code = exc.response.status_code
+    detail = _gitea_message(exc.response)
+    suffix = f": {detail}" if detail else ""
+    return GiteaDiscoveryError(f"gitea returned {code} for {owner!r}{suffix}")
+
+
 async def discover_repos(base_url: str, owner: str, token: str) -> list[GiteaRepo]:
     """List repos under *owner*, trying the org endpoint then the user one.
 
     Gitea exposes org repos at ``/api/v1/orgs/{owner}/repos`` and user repos
     at ``/api/v1/users/{owner}/repos``. We don't know which *owner* is, so we
-    try the org endpoint first and fall back to the user endpoint on 404.
+    try the org endpoint first and fall back to the user endpoint when the org
+    attempt returns a code in ``_ORG_FALLBACK_CODES``.
     """
     base = base_url.rstrip("/")
     org_url = f"{base}/api/v1/orgs/{owner}/repos"
@@ -75,17 +106,13 @@ async def discover_repos(base_url: str, owner: str, token: str) -> list[GiteaRep
         try:
             raw = await _fetch_all(client, org_url, token)
         except httpx.HTTPStatusError as exc:
-            if exc.response.status_code != 404:
-                raise GiteaDiscoveryError(
-                    f"gitea returned {exc.response.status_code} for {owner!r}"
-                ) from exc
-            # Not an org — try the user endpoint.
+            if exc.response.status_code not in _ORG_FALLBACK_CODES:
+                raise _status_error(owner, exc) from exc
+            # Not an org, or no org scope — try the user endpoint.
             try:
                 raw = await _fetch_all(client, user_url, token)
             except httpx.HTTPStatusError as exc2:
-                raise GiteaDiscoveryError(
-                    f"gitea returned {exc2.response.status_code} for {owner!r}"
-                ) from exc2
+                raise _status_error(owner, exc2) from exc2
             except httpx.HTTPError as exc2:
                 raise GiteaDiscoveryError(f"cannot reach gitea: {exc2}") from exc2
         except httpx.HTTPError as exc:
