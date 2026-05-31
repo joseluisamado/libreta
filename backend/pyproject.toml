@@ -1,6 +1,6 @@
 [project]
 name = "libreta"
-version = "1.6.0"
+version = "1.6.1"
 description = "Self-hosted wiki backed by a git repo of markdown files."
 license = "AGPL-3.0-only"
 license-files = ["../LICENSE"]
