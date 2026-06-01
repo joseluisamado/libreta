@@ -149,7 +149,8 @@
 
   function statusTitle(src: GitSource): string {
     if (src.cloning) return 'Cloning… (large repos can take a few minutes)'
-    if (!src.cloned) return src.last_sync_error ? `Clone failed: ${src.last_sync_error}` : 'Not cloned yet'
+    if (!src.cloned)
+      return src.last_sync_error ? `Clone failed: ${src.last_sync_error}` : 'Not cloned yet'
     if (src.last_sync_error) return `Sync error: ${src.last_sync_error}`
     if (src.pending_count > 0) {
       return `${src.pending_count} local commit(s) not yet pushed`

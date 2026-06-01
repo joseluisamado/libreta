@@ -11,23 +11,11 @@
   }>()
 
   const emit = defineEmits<{
-    createPage: [name: string]
-    createFolder: [name: string]
+    createPage: []
+    createFolder: []
     rename: [childPath: string]
     delete: [childPath: string]
   }>()
-
-  function onCreatePage(): void {
-    const name = window.prompt('Page name:')
-    if (!name || !name.trim()) return
-    emit('createPage', name.trim())
-  }
-
-  function onCreateFolder(): void {
-    const name = window.prompt('Folder name:')
-    if (!name || !name.trim()) return
-    emit('createFolder', name.trim())
-  }
 
   function kindBadge(kind: string): string {
     switch (kind) {
@@ -65,14 +53,14 @@
       <button
         type="button"
         class="text-xs px-3 py-1 rounded border border-slate-300 text-slate-600 hover:bg-slate-50 hover:text-blue-600 cursor-pointer"
-        @click="onCreatePage"
+        @click="emit('createPage')"
       >
         + New page
       </button>
       <button
         type="button"
         class="text-xs px-3 py-1 rounded border border-slate-300 text-slate-600 hover:bg-slate-50 hover:text-blue-600 cursor-pointer"
-        @click="onCreateFolder"
+        @click="emit('createFolder')"
       >
         + New folder
       </button>
@@ -82,7 +70,7 @@
       <li v-for="child in children" :key="child.path" class="flex items-center gap-1 group">
         <RouterLink
           :to="getChildUrl(child.path)"
-          class="flex items-center flex-1 min-w-0 text-slate-700 hover:text-blue-600 hover:underline"
+          class="flex items-center min-w-0 text-slate-700 hover:text-blue-600 hover:underline"
         >
           <!-- Folder icon -->
           <svg
@@ -112,7 +100,7 @@
         </RouterLink>
         <button
           type="button"
-          class="shrink-0 opacity-0 group-hover:opacity-100 text-slate-400 hover:text-slate-600 p-0.5 rounded transition-opacity cursor-pointer"
+          class="shrink-0 opacity-30 group-hover:opacity-100 text-slate-400 hover:text-slate-600 p-0.5 rounded transition-opacity cursor-pointer"
           title="Rename"
           aria-label="Rename"
           @click="emit('rename', child.path)"
@@ -133,7 +121,7 @@
         </button>
         <button
           type="button"
-          class="shrink-0 opacity-0 group-hover:opacity-100 text-slate-400 hover:text-red-600 p-0.5 rounded transition-opacity cursor-pointer"
+          class="shrink-0 opacity-30 group-hover:opacity-100 text-slate-400 hover:text-red-600 p-0.5 rounded transition-opacity cursor-pointer"
           title="Delete"
           aria-label="Delete"
           @click="emit('delete', child.path)"

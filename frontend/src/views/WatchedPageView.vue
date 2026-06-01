@@ -17,6 +17,9 @@
   import DirListing from '@/components/DirListing.vue'
   import PageToolbar from '@/components/PageToolbar.vue'
   import PageToc from '@/components/PageToc.vue'
+  import NameDialog from '@/components/NameDialog.vue'
+  import { useNameDialog } from '@/composables/useNameDialog'
+  import { pageNameToSlug } from '@/utils/pageName'
   import hljs from 'highlight.js'
   import 'highlight.js/styles/github.css'
 
@@ -115,23 +118,24 @@
     return `/watch/${label.value}/${childPath}`
   }
 
-  function slugify(name: string): string {
-    return name
-      .trim()
-      .toLowerCase()
-      .replace(/\s+/g, '-')
-      .replace(/[^a-z0-9-]/g, '')
-  }
+  const nameDialog = useNameDialog()
 
   // ----- Actions -----------------------------------------------------------
 
-  async function onCreatePage(name: string): Promise<void> {
-    const slug = slugify(name)
+  async function onCreatePage(): Promise<void> {
+    const name = await nameDialog.prompt({
+      title: 'New page',
+      label: 'Page name',
+      placeholder: 'my_new_page',
+    })
+    if (!name) return
+    const slug = pageNameToSlug(name)
+    if (!slug) return
     const prefix = basePath.value
     const newPath = prefix ? `${prefix}/${slug}` : slug
     try {
       await saveWatchedPage(label.value, newPath, {
-        body: `# ${name}\n\n`,
+        body: `# ${name.trim()}\n\n`,
       })
       await watched.loadTree(label.value)
       router.push(`/edit-watch/${label.value}/${newPath}`)
@@ -140,8 +144,15 @@
     }
   }
 
-  async function onCreateFolder(name: string): Promise<void> {
-    const slug = slugify(name)
+  async function onCreateFolder(): Promise<void> {
+    const name = await nameDialog.prompt({
+      title: 'New folder',
+      label: 'Folder name',
+      placeholder: 'my_folder',
+    })
+    if (!name) return
+    const slug = pageNameToSlug(name)
+    if (!slug) return
     const prefix = basePath.value
     const newPath = prefix ? `${prefix}/${slug}` : slug
     try {
@@ -285,4 +296,15 @@
     </template>
     <p v-else class="text-slate-400">Loading…</p>
   </article>
+  <NameDialog
+    :open="nameDialog.state.open"
+    :title="nameDialog.state.title"
+    :label="nameDialog.state.label"
+    :placeholder="nameDialog.state.placeholder"
+    :initial="nameDialog.state.initial"
+    :confirm-label="nameDialog.state.confirmLabel"
+    :slug-preview="nameDialog.state.slugPreview"
+    @confirm="nameDialog.onConfirm"
+    @cancel="nameDialog.onCancel"
+  />
 </template>

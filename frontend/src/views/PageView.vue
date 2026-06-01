@@ -10,6 +10,9 @@
   import Breadcrumbs from '@/components/Breadcrumbs.vue'
   import PageToolbar from '@/components/PageToolbar.vue'
   import PageToc from '@/components/PageToc.vue'
+  import NameDialog from '@/components/NameDialog.vue'
+  import { useNameDialog } from '@/composables/useNameDialog'
+  import { pageNameToSlug } from '@/utils/pageName'
   import hljs from 'highlight.js'
   import 'highlight.js/styles/github.css'
 
@@ -83,18 +86,17 @@
 
   watch(path, load, { immediate: true })
 
-  function slugify(name: string): string {
-    return name
-      .trim()
-      .toLowerCase()
-      .replace(/\s+/g, '-')
-      .replace(/[^a-z0-9-]/g, '')
-  }
+  const nameDialog = useNameDialog()
 
   async function createPage(): Promise<void> {
-    const name = window.prompt('Page name:')
-    if (!name || !name.trim()) return
-    const slug = slugify(name)
+    const name = await nameDialog.prompt({
+      title: 'New page',
+      label: 'Page name',
+      placeholder: 'my_new_page',
+    })
+    if (!name) return
+    const slug = pageNameToSlug(name)
+    if (!slug) return
     const prefix = path.value === 'index' ? '' : path.value
     const newPath = prefix ? `${prefix}/${slug}` : slug
     try {
@@ -107,9 +109,14 @@
   }
 
   async function createFolder(): Promise<void> {
-    const name = window.prompt('Folder name:')
-    if (!name || !name.trim()) return
-    const slug = slugify(name)
+    const name = await nameDialog.prompt({
+      title: 'New folder',
+      label: 'Folder name',
+      placeholder: 'my_folder',
+    })
+    if (!name) return
+    const slug = pageNameToSlug(name)
+    if (!slug) return
     const prefix = path.value === 'index' ? '' : path.value
     const newPath = prefix ? `${prefix}/${slug}` : slug
     try {
@@ -132,10 +139,16 @@
   }
 
   async function renameChild(childPath: string): Promise<void> {
-    const newName = window.prompt('New path:', childPath)
-    if (!newName || !newName.trim() || newName.trim() === childPath) return
+    const newName = await nameDialog.prompt({
+      title: 'Rename',
+      label: 'New path',
+      initial: childPath,
+      confirmLabel: 'Rename',
+      slugPreview: false,
+    })
+    if (!newName || newName === childPath) return
     try {
-      await movePage(childPath, { new_path: newName.trim() })
+      await movePage(childPath, { new_path: newName })
       await tree.load()
     } catch (e) {
       window.alert(`Failed to rename: ${e instanceof Error ? e.message : String(e)}`)
@@ -292,7 +305,7 @@
           >
             <RouterLink
               :to="`${child.kind === 'pdf' ? '/pdf' : '/w'}/${child.path}`"
-              class="flex items-center flex-1 min-w-0 text-slate-700 hover:text-blue-600 hover:underline"
+              class="flex items-center min-w-0 text-slate-700 hover:text-blue-600 hover:underline"
             >
               <span class="inline-block w-6 shrink-0 text-slate-400">
                 <span v-if="child.children.length">📁</span>
@@ -307,7 +320,7 @@
             </RouterLink>
             <button
               type="button"
-              class="shrink-0 opacity-0 group-hover:opacity-100 text-slate-400 hover:text-slate-600 p-0.5 rounded transition-opacity"
+              class="shrink-0 opacity-30 group-hover:opacity-100 text-slate-400 hover:text-slate-600 p-0.5 rounded transition-opacity"
               title="Rename"
               aria-label="Rename"
               @click="renameChild(child.path)"
@@ -328,7 +341,7 @@
             </button>
             <button
               type="button"
-              class="shrink-0 opacity-0 group-hover:opacity-100 text-slate-400 hover:text-red-600 p-0.5 rounded transition-opacity"
+              class="shrink-0 opacity-30 group-hover:opacity-100 text-slate-400 hover:text-red-600 p-0.5 rounded transition-opacity"
               title="Delete"
               aria-label="Delete"
               @click="deleteChild(child.path)"
@@ -398,4 +411,15 @@
     </template>
     <p v-else class="text-slate-400">Loading…</p>
   </article>
+  <NameDialog
+    :open="nameDialog.state.open"
+    :title="nameDialog.state.title"
+    :label="nameDialog.state.label"
+    :placeholder="nameDialog.state.placeholder"
+    :initial="nameDialog.state.initial"
+    :confirm-label="nameDialog.state.confirmLabel"
+    :slug-preview="nameDialog.state.slugPreview"
+    @confirm="nameDialog.onConfirm"
+    @cancel="nameDialog.onCancel"
+  />
 </template>

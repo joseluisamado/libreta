@@ -18,6 +18,9 @@
   import DirListing from '@/components/DirListing.vue'
   import PageToolbar from '@/components/PageToolbar.vue'
   import PageToc from '@/components/PageToc.vue'
+  import NameDialog from '@/components/NameDialog.vue'
+  import { useNameDialog } from '@/composables/useNameDialog'
+  import { pageNameToSlug } from '@/utils/pageName'
   import hljs from 'highlight.js'
   import 'highlight.js/styles/github.css'
 
@@ -105,13 +108,7 @@
     return `/text-source/${sourceId.value}/${filePath}`
   }
 
-  function slugify(name: string): string {
-    return name
-      .trim()
-      .toLowerCase()
-      .replace(/\s+/g, '-')
-      .replace(/[^a-z0-9-]/g, '')
-  }
+  const nameDialog = useNameDialog()
 
   const basePath = computed(() => (path.value === '' ? '' : path.value))
 
@@ -122,13 +119,20 @@
     return `/source/${sourceId.value}/${childPath}`
   }
 
-  async function onCreatePage(name: string): Promise<void> {
-    const slug = slugify(name)
+  async function onCreatePage(): Promise<void> {
+    const name = await nameDialog.prompt({
+      title: 'New page',
+      label: 'Page name',
+      placeholder: 'my_new_page',
+    })
+    if (!name) return
+    const slug = pageNameToSlug(name)
+    if (!slug) return
     const prefix = basePath.value
     const newPath = prefix ? `${prefix}/${slug}` : slug
     try {
       await saveSourcePage(sourceId.value, newPath, {
-        body: `# ${name}\n\n`,
+        body: `# ${name.trim()}\n\n`,
       })
       await sources.loadTree(sourceId.value)
       router.push(`/edit-source/${sourceId.value}/${newPath}`)
@@ -137,8 +141,15 @@
     }
   }
 
-  async function onCreateFolder(name: string): Promise<void> {
-    const slug = slugify(name)
+  async function onCreateFolder(): Promise<void> {
+    const name = await nameDialog.prompt({
+      title: 'New folder',
+      label: 'Folder name',
+      placeholder: 'my_folder',
+    })
+    if (!name) return
+    const slug = pageNameToSlug(name)
+    if (!slug) return
     const prefix = basePath.value
     const newPath = prefix ? `${prefix}/${slug}` : slug
     try {
@@ -150,11 +161,17 @@
   }
 
   async function onRename(childPath: string): Promise<void> {
-    const newName = window.prompt('New path:', childPath)
-    if (!newName || !newName.trim() || newName.trim() === childPath) return
+    const newName = await nameDialog.prompt({
+      title: 'Rename',
+      label: 'New path',
+      initial: childPath,
+      confirmLabel: 'Rename',
+      slugPreview: false,
+    })
+    if (!newName || newName === childPath) return
     try {
       await moveSourcePage(sourceId.value, childPath, {
-        new_path: newName.trim(),
+        new_path: newName,
       })
       await sources.loadTree(sourceId.value)
       // If the renamed item was the current page, redirect
@@ -299,4 +316,15 @@
     </template>
     <p v-else class="text-slate-400">Loading…</p>
   </article>
+  <NameDialog
+    :open="nameDialog.state.open"
+    :title="nameDialog.state.title"
+    :label="nameDialog.state.label"
+    :placeholder="nameDialog.state.placeholder"
+    :initial="nameDialog.state.initial"
+    :confirm-label="nameDialog.state.confirmLabel"
+    :slug-preview="nameDialog.state.slugPreview"
+    @confirm="nameDialog.onConfirm"
+    @cancel="nameDialog.onCancel"
+  />
 </template>

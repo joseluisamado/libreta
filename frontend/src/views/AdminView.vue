@@ -429,8 +429,8 @@
       v-if="store.error || watched.error"
       class="mb-6 p-3 rounded-lg border border-amber-200 bg-amber-50 text-sm text-amber-700"
     >
-      Couldn't load some settings: {{ store.error || watched.error }}. Retrying when the tab
-      regains focus.
+      Couldn't load some settings: {{ store.error || watched.error }}. Retrying when the tab regains
+      focus.
     </div>
 
     <!-- ==================== Git Sources ==================== -->
@@ -627,7 +627,10 @@
                 </template>
                 <template v-else> Not synced yet </template>
               </p>
-              <p v-if="src.cloning" class="text-xs text-sky-600 mt-0.5 italic flex items-center gap-1">
+              <p
+                v-if="src.cloning"
+                class="text-xs text-sky-600 mt-0.5 italic flex items-center gap-1"
+              >
                 <span class="inline-block w-2 h-2 rounded-full bg-sky-400 animate-pulse"></span>
                 Cloning… large repos can take a few minutes — no need to re-add.
               </p>
