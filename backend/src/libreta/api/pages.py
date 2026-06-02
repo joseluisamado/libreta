@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile
@@ -14,7 +15,7 @@ from libreta.models import (
     PageWrite,
     RecentChange,
 )
-from libreta.storage.assets import replace_asset, store_asset
+from libreta.storage.assets import replace_asset, store_asset, store_folder_file
 from libreta.storage.pages import (
     delete_page as delete_page_storage,
     move_page as move_page_storage,
@@ -44,6 +45,52 @@ router = APIRouter(prefix="/pages")
 @router.get("/tree", response_model=list[PageNode])
 async def get_tree(settings: Annotated[Settings, Depends(get_settings)]) -> list[PageNode]:
     return await walk_tree(settings.content_dir)
+
+
+def _pages_root(content_dir: Path) -> Path:
+    pages_dir = content_dir / "pages"
+    return pages_dir if pages_dir.is_dir() else content_dir
+
+
+async def _upload_into_folder(
+    settings: Settings,
+    folder: str,
+    file: UploadFile,
+) -> AssetUploadResponse:
+    """Stream an uploaded file into a content folder as a sibling file.
+
+    No size cap — the file is streamed to disk in chunks. Every successful
+    upload is committed (R3). ``folder`` is a page-style path ("" = root).
+    """
+    if file.filename is None:
+        raise HTTPException(status_code=400, detail="missing filename")
+    base_dir = _pages_root(settings.content_dir)
+    result = await store_folder_file(
+        base_dir,
+        folder,
+        file.filename,
+        file.read,
+        repo_root=settings.content_dir,
+    )
+    repo = open_repo(settings.content_dir)
+    await commit_page(repo, result.rel_path, "upload")
+    return AssetUploadResponse(
+        filename=result.filename,
+        size=result.size,
+        sha256=result.sha256,
+        kind=result.kind,
+        deduped=result.deduped,
+    )
+
+
+# Upload a file straight into the content root. Registered before the
+# /{path:path} routes so the literal "/files" suffix wins.
+@router.post("/files", response_model=AssetUploadResponse)
+async def upload_root_file(
+    file: UploadFile,
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> AssetUploadResponse:
+    return await _upload_into_folder(settings, "", file)
 
 
 # NOTE: /recent must be registered before /{path:path} routes so that the
@@ -144,6 +191,17 @@ async def upsert_asset(
         kind=result.kind,
         deduped=result.deduped,
     )
+
+
+# NOTE: /{path:path}/files (POST) uploads a sibling file into the folder at
+# ``path``. Registered before /{path:path} so the literal "/files" suffix wins.
+@router.post("/{path:path}/files", response_model=AssetUploadResponse)
+async def upload_folder_file(
+    path: str,
+    file: UploadFile,
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> AssetUploadResponse:
+    return await _upload_into_folder(settings, path, file)
 
 
 # NOTE: /{path:path}/diff must also be registered before /{path:path}.

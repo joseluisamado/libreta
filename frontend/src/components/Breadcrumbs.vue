@@ -1,6 +1,8 @@
 <script setup lang="ts">
   import { computed } from 'vue'
   import { useTreeStore } from '@/stores/tree'
+  import { useSourcesStore } from '@/stores/sources'
+  import { displaySourceLabel } from '@/utils/sourceLabel'
   import type { PageNode } from '@/api/types'
 
   const props = defineProps<{
@@ -9,6 +11,7 @@
     sourceId?: string
   }>()
   const tree = useTreeStore()
+  const sources = useSourcesStore()
 
   interface Crumb {
     label: string
@@ -30,14 +33,29 @@
     return segment.replace(/[-_]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
   }
 
+  const sourceLabel = computed<string | null>(() => {
+    if (!props.sourceId) return null
+    const src = sources.sources.find((s) => s.id === props.sourceId)
+    return src ? displaySourceLabel(src.label) : props.sourceId
+  })
+
   const crumbs = computed<Crumb[]>(() => {
     const segments = props.path.split('/').filter(Boolean)
     const out: Crumb[] = [{ label: 'Home', to: '/' }]
 
     if (props.watchedLabel) {
+      // Repo-root crumb: clicking it opens the watched root's folder view.
       out.push({
         label: props.watchedLabel,
         to: `/watch/${props.watchedLabel}/`,
+      })
+    } else if (props.sourceId) {
+      // Repo-root crumb for git sources, e.g. "my-org:homeops". Links to
+      // the source root so the root folder's "In this folder" (and uploads)
+      // are reachable — the sidebar entry only expands/collapses.
+      out.push({
+        label: sourceLabel.value ?? props.sourceId,
+        to: `/source/${props.sourceId}/`,
       })
     }
 

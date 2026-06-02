@@ -127,6 +127,52 @@ export async function uploadSourceAsset(
   return (await r.json()) as AssetUploadResponse
 }
 
+/** POST a file as multipart/form-data and parse the AssetUploadResponse. */
+async function postFile(url: string, file: File): Promise<AssetUploadResponse> {
+  const fd = new FormData()
+  fd.append('file', file, file.name)
+  const r = await fetch(url, { method: 'POST', body: fd })
+  if (!r.ok) {
+    const body = (await r.json().catch(() => ({}))) as { detail?: string }
+    throw new Error(body.detail ?? `HTTP ${r.status}`)
+  }
+  return (await r.json()) as AssetUploadResponse
+}
+
+/**
+ * Upload a file as a sibling into a content folder (not a page sidecar).
+ * ``folder`` is a page-style path; "" or "index" means the content root.
+ */
+export function uploadFolderFile(folder: string, file: File): Promise<AssetUploadResponse> {
+  const f = folder && folder !== 'index' ? folder : ''
+  const url = f ? `${BASE}/pages/${enc(f)}/files` : `${BASE}/pages/files`
+  return postFile(url, file)
+}
+
+/** Upload a file as a sibling into a git-source folder ("" = repo root). */
+export function uploadSourceFolderFile(
+  sourceId: string,
+  folder: string,
+  file: File,
+): Promise<AssetUploadResponse> {
+  const url = folder
+    ? `${BASE}/sources/${sourceId}/folders/${enc(folder)}/files`
+    : `${BASE}/sources/${sourceId}/files`
+  return postFile(url, file)
+}
+
+/** Upload a file as a sibling into a watched folder ("" = watched root). */
+export function uploadWatchedFolderFile(
+  label: string,
+  folder: string,
+  file: File,
+): Promise<AssetUploadResponse> {
+  const url = folder
+    ? `${BASE}/watch/${enc(label)}/folders/${enc(folder)}/files`
+    : `${BASE}/watch/${enc(label)}/files`
+  return postFile(url, file)
+}
+
 export async function upsertAsset(
   pagePath: string,
   filename: string,

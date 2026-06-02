@@ -4,10 +4,14 @@ import asyncio
 import hashlib
 import re
 from pathlib import Path, PurePosixPath
+from typing import TYPE_CHECKING
 
 from libreta.errors import AssetNotFoundError, InvalidPathError, PageNotFoundError
 from libreta.storage import pagefile
 from libreta.storage.paths import normalize_page_path, page_to_file
+
+if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
 
 
 def resolve_asset(content_dir: Path, raw: str) -> Path:
@@ -240,4 +244,88 @@ async def replace_asset(
 ) -> UploadResult:
     return await asyncio.to_thread(
         _replace_asset_sync, content_dir, raw_page, raw_filename, data, content_type
+    )
+
+
+# ── folder uploads ──────────────────────────────────────────────────────
+#
+# Unlike ``store_asset`` (page-scoped sidecar attachments), a folder upload
+# writes the raw file as a *sibling* inside a folder — e.g. dropping
+# ``report.pdf`` into ``Docs/`` lands it at ``pages/Docs/report.pdf`` where it
+# shows up in the folder listing as a first-class file. There is no size cap:
+# the file is streamed to disk in chunks so memory stays constant regardless of
+# upload size (the >50MB warning is a client-side courtesy, not a server gate).
+
+
+def _resolve_upload_dir(base_dir: Path, folder: str) -> Path:
+    """Resolve and validate the on-disk folder that an upload targets.
+
+    *folder* is a path relative to *base_dir* ("" means the repo root). The
+    resolved directory must exist and stay strictly inside *base_dir*.
+    """
+    pagefile.validate_path_segments(folder)
+    base = base_dir.resolve()
+    target = (base_dir / folder).resolve() if folder else base
+    if base != target and base not in target.parents:
+        raise InvalidPathError("folder path escapes content directory")
+    if not target.is_dir():
+        raise PageNotFoundError(folder or "/")
+    return target
+
+
+async def store_folder_file(
+    base_dir: Path,
+    folder: str,
+    raw_filename: str,
+    read_chunk: Callable[[int], Awaitable[bytes]],
+    *,
+    repo_root: Path | None = None,
+    chunk_size: int = 1024 * 1024,
+) -> UploadResult:
+    """Stream an uploaded file into *folder* as a sibling file.
+
+    *base_dir* is the directory ``folder`` resolves against (``pages/`` for the
+    main content repo, the repo root for a git source). *read_chunk* pumps the
+    upload one chunk at a time so arbitrarily large files never sit fully in
+    memory. ``rel_path`` on the result is relative to *repo_root* (defaulting to
+    *base_dir*) so it's ready to hand to the git index.
+    """
+    root = repo_root if repo_root is not None else base_dir
+    directory = await asyncio.to_thread(_resolve_upload_dir, base_dir, folder)
+    name = sanitize_filename(raw_filename)
+
+    def _open() -> tuple[Path, object]:
+        final_name = _unique_filename(directory, name)
+        target = directory / final_name
+        return target, target.open("wb")
+
+    target, handle = await asyncio.to_thread(_open)
+    hasher = hashlib.sha256()
+    size = 0
+    try:
+        while True:
+            chunk = await read_chunk(chunk_size)
+            if not chunk:
+                break
+            size += len(chunk)
+            hasher.update(chunk)
+            await asyncio.to_thread(handle.write, chunk)  # type: ignore[attr-defined]
+    except BaseException:
+        await asyncio.to_thread(handle.close)  # type: ignore[attr-defined]
+        target.unlink(missing_ok=True)
+        raise
+    await asyncio.to_thread(handle.close)  # type: ignore[attr-defined]
+
+    if size == 0:
+        target.unlink(missing_ok=True)
+        raise InvalidPathError("empty upload")
+
+    rel = str(target.relative_to(root))
+    return UploadResult(
+        filename=target.name,
+        size=size,
+        sha256=hasher.hexdigest(),
+        kind=_kind_for(None, target.name),
+        rel_path=rel,
+        deduped=False,
     )

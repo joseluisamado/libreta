@@ -1,13 +1,14 @@
 <script setup lang="ts">
   import { computed, ref, watch, nextTick } from 'vue'
   import { useRoute, useRouter } from 'vue-router'
-  import { getPage, savePage, deletePage, movePage } from '@/api/client'
+  import { getPage, savePage, deletePage, movePage, uploadFolderFile } from '@/api/client'
   import type { OtherFile, PageNode, PageRead } from '@/api/types'
   import { renderMarkdown, renderMermaidIn } from '@/markdown'
   import { useTreeStore } from '@/stores/tree'
   import { useReadingWidth } from '@/composables/usePrefs'
   import { useViewMode } from '@/composables/useViewMode'
   import Breadcrumbs from '@/components/Breadcrumbs.vue'
+  import DirListing from '@/components/DirListing.vue'
   import PageToolbar from '@/components/PageToolbar.vue'
   import PageToc from '@/components/PageToc.vue'
   import NameDialog from '@/components/NameDialog.vue'
@@ -56,6 +57,27 @@
 
   function getTextFileUrl(filePath: string): string {
     return `/text/${filePath}`
+  }
+
+  function getChildUrl(childPath: string): string {
+    return `${childPath.toLowerCase().endsWith('.pdf') ? '/pdf' : '/w'}/${childPath}`
+  }
+
+  const uploading = ref(false)
+
+  async function uploadFiles(files: File[]): Promise<void> {
+    const folder = path.value === 'index' ? '' : path.value
+    uploading.value = true
+    try {
+      for (const file of files) {
+        await uploadFolderFile(folder, file)
+      }
+      await tree.load()
+    } catch (e) {
+      window.alert(`Failed to upload: ${e instanceof Error ? e.message : String(e)}`)
+    } finally {
+      uploading.value = false
+    }
   }
 
   const isDirectory = computed(() => {
@@ -277,137 +299,21 @@
       <p v-if="page.meta.tags.length" class="mt-8 text-xs text-slate-500">
         <span v-for="t in page.meta.tags" :key="t" class="mr-2">#{{ t }}</span>
       </p>
-      <section v-if="isDirectory" class="mt-8 border-t border-slate-200 pt-4">
-        <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-500 mb-2">
-          In this folder
-        </h2>
-        <div class="flex gap-2 mb-3">
-          <button
-            type="button"
-            class="text-xs px-3 py-1 rounded border border-slate-300 text-slate-600 hover:bg-slate-50 hover:text-blue-600 cursor-pointer"
-            @click="createPage"
-          >
-            + New page
-          </button>
-          <button
-            type="button"
-            class="text-xs px-3 py-1 rounded border border-slate-300 text-slate-600 hover:bg-slate-50 hover:text-blue-600 cursor-pointer"
-            @click="createFolder"
-          >
-            + New folder
-          </button>
-        </div>
-        <ul v-if="directoryChildren.length" class="text-sm space-y-1">
-          <li
-            v-for="child in directoryChildren"
-            :key="child.path"
-            class="flex items-center gap-1 group"
-          >
-            <RouterLink
-              :to="`${child.kind === 'pdf' ? '/pdf' : '/w'}/${child.path}`"
-              class="flex items-center min-w-0 text-slate-700 hover:text-blue-600 hover:underline"
-            >
-              <span class="inline-block w-6 shrink-0 text-slate-400">
-                <span v-if="child.children.length">📁</span>
-                <span
-                  v-else-if="child.kind === 'pdf'"
-                  class="text-[10px] font-semibold text-rose-500"
-                  >PDF</span
-                >
-                <span v-else class="text-[10px] font-semibold text-sky-500">MD</span>
-              </span>
-              <span class="truncate">{{ child.title }}</span>
-            </RouterLink>
-            <button
-              type="button"
-              class="shrink-0 opacity-30 group-hover:opacity-100 text-slate-400 hover:text-slate-600 p-0.5 rounded transition-opacity"
-              title="Rename"
-              aria-label="Rename"
-              @click="renameChild(child.path)"
-            >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                class="w-3.5 h-3.5"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              >
-                <path d="M12 20h9" />
-                <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
-              </svg>
-            </button>
-            <button
-              type="button"
-              class="shrink-0 opacity-30 group-hover:opacity-100 text-slate-400 hover:text-red-600 p-0.5 rounded transition-opacity"
-              title="Delete"
-              aria-label="Delete"
-              @click="deleteChild(child.path)"
-            >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                class="w-3.5 h-3.5"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              >
-                <polyline points="3 6 5 6 21 6" />
-                <path
-                  d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"
-                />
-                <line x1="10" y1="11" x2="10" y2="17" />
-                <line x1="14" y1="11" x2="14" y2="17" />
-              </svg>
-            </button>
-          </li>
-        </ul>
-      </section>
-      <section v-if="directoryOtherFiles.length" class="mt-6 border-t border-slate-200 pt-4">
-        <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-500 mb-2">
-          Other files
-        </h2>
-        <ul class="text-sm space-y-1">
-          <li
-            v-for="file in directoryOtherFiles"
-            :key="file.path"
-            class="flex items-center gap-1 group"
-          >
-            <RouterLink
-              v-if="file.kind === 'text'"
-              :to="getTextFileUrl(file.path)"
-              class="flex items-center flex-1 min-w-0 text-slate-600 hover:text-blue-600 hover:underline"
-            >
-              <span
-                class="w-6 shrink-0 mr-0.5 text-[10px] font-semibold text-violet-500 text-center"
-                >TXT</span
-              >
-              <span class="truncate">{{ file.name }}</span>
-            </RouterLink>
-            <a
-              v-else
-              :href="getOtherFileUrl(file.path)"
-              :download="file.name"
-              class="flex items-center flex-1 min-w-0 text-slate-600 hover:text-blue-600 hover:underline"
-            >
-              <span
-                class="w-6 shrink-0 mr-0.5 text-[10px] font-semibold text-center"
-                :class="{
-                  'text-emerald-500': file.kind === 'image',
-                  'text-orange-500': file.kind === 'drawio',
-                  'text-slate-500': file.kind === 'binary',
-                }"
-                >{{ file.kind === 'image' ? 'IMG' : file.kind === 'drawio' ? 'DRAW' : 'BIN' }}</span
-              >
-              <span class="truncate">{{ file.name }}</span>
-            </a>
-          </li>
-        </ul>
-      </section>
+      <DirListing
+        v-if="isDirectory"
+        :children="directoryChildren"
+        :base-path="path === 'index' ? '' : path"
+        :get-child-url="getChildUrl"
+        :other-files="directoryOtherFiles"
+        :get-other-file-url="getOtherFileUrl"
+        :get-text-file-url="getTextFileUrl"
+        :uploading="uploading"
+        @create-page="createPage"
+        @create-folder="createFolder"
+        @rename="renameChild"
+        @delete="deleteChild"
+        @upload="uploadFiles"
+      />
     </template>
     <p v-else class="text-slate-400">Loading…</p>
   </article>

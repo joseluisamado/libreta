@@ -14,6 +14,43 @@ Living document. Update as work progresses. Latest at the top.
 
 ---
 
+## 2026-06-02 — Feature: upload arbitrary files into a folder; repo-root navigation
+
+**What**: the "In this folder" panel gains an **Upload files** button. Selected
+files are written as *sibling* files in the folder (e.g. `pages/Docs/report.pdf`)
+— not in the page sidecar — so they appear in the folder listing as first-class
+files. Files ≥ 50 MB trigger an in-dialog confirmation before upload; there is no
+hard size cap.
+
+**Backend**:
+- New `store_folder_file` in `storage/assets.py` streams the upload to disk in
+  1 MB chunks (constant memory, any file size) and returns a `rel_path` ready for
+  the git index. Repo-agnostic via `base_dir`/`repo_root`.
+- Endpoints: `POST /pages/{path}/files` + `POST /pages/files` (root) commit per
+  R3; `POST /sources/{id}/folders/{path}/files` + `/sources/{id}/files` commit &
+  enqueue push; `POST /watch/{label}/folders/{path}/files` + `/watch/{label}/files`
+  write to disk (watched dirs aren't git). No `MAX_UPLOAD_BYTES` cap on these
+  (existing page-sidecar uploads keep their 25 MB cap).
+
+**Frontend**:
+- `DirListing.vue` owns the upload button, file picker, and the >50 MB warning;
+  emits `upload` for the parent to perform. Wired into `PageView` (migrated off
+  its bespoke inline listing onto the shared `DirListing`), `SourcePageView`,
+  `WatchedPageView`.
+- **Root navigation**: `SourcePageView`/`WatchedPageView` now render the folder
+  listing at the repo root (`path === ""`) via the children endpoint, so files
+  can be uploaded to the root. `Breadcrumbs` shows a clickable repo-root crumb
+  (e.g. `Home / my-org:homeops / Docs`) linking to `/source/<id>/` — the
+  sidebar entry still only expands/collapses.
+- Source labels display `owner/repo` as `owner:repo` (new `utils/sourceLabel.ts`)
+  in both the sidebar and breadcrumbs, reserving `/` for path separators.
+
+Tests: `store_folder_file` unit tests + folder-upload API tests in
+`tests/test_assets.py` (sibling placement, root, uniquify, commit, traversal,
+empty/markdown rejection).
+
+---
+
 ## 2026-05-31 — Fix: private-repo clone over authenticated HTTP left repo empty
 
 **Symptom**: a private Gitea repo imported as a source showed "synced" in the

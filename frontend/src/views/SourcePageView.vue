@@ -7,8 +7,10 @@
     deleteSourcePage,
     moveSourcePage,
     createSourceFolder,
+    uploadSourceFolderFile,
   } from '@/api/client'
-  import type { OtherFile, PageNode, PageRead } from '@/api/types'
+  import { getSourceChildren } from '@/api/client'
+  import type { DirChildren, OtherFile, PageNode, PageRead } from '@/api/types'
   import { renderMarkdown, renderMermaidIn } from '@/markdown'
   import { isTextPath } from '@/textFiles'
   import { useReadingWidth } from '@/composables/usePrefs'
@@ -55,6 +57,7 @@
     }
     page.value = null
     error.value = null
+    rootListing.value = null
     try {
       page.value = await getSourcePage(sourceId.value, path.value)
       // Ensure the tree is loaded so we can detect directory status
@@ -65,11 +68,19 @@
       // listing renders.
       if (page.value && path.value) {
         await sources.ensurePathExpanded(sourceId.value, path.value)
+      } else if (page.value) {
+        // Repo root: there's no tree node for "" to read children from, so
+        // fetch the root directory's children + non-page files directly.
+        rootListing.value = await getSourceChildren(sourceId.value, '')
       }
     } catch (e) {
       error.value = e instanceof Error ? e.message : String(e)
     }
   }
+
+  // Populated only when viewing the repo root (path === ""), where there is no
+  // PageNode to hang children/other_files off.
+  const rootListing = ref<DirChildren | null>(null)
 
   watch([sourceId, path], load, { immediate: true })
 
@@ -91,14 +102,21 @@
     return findNode(tree, page.value.path)
   })
 
-  const isDirectory = computed(() => dirNode.value?.is_directory ?? false)
+  const isDirectory = computed(() => {
+    if (path.value === '') return true // repo root is always a directory
+    return dirNode.value?.is_directory ?? false
+  })
 
   const dirChildren = computed<PageNode[]>(() => {
+    if (path.value === '') return rootListing.value?.children ?? []
     if (!dirNode.value?.is_directory) return []
     return dirNode.value.children
   })
 
-  const dirOtherFiles = computed<OtherFile[]>(() => dirNode.value?.other_files ?? [])
+  const dirOtherFiles = computed<OtherFile[]>(() => {
+    if (path.value === '') return rootListing.value?.other_files ?? []
+    return dirNode.value?.other_files ?? []
+  })
 
   function getOtherFileUrl(filePath: string): string {
     return `/api/v1/sources/${sourceId.value}/assets/${encodeURIComponent(filePath)}`
@@ -157,6 +175,27 @@
       await sources.loadTree(sourceId.value)
     } catch (e) {
       window.alert(`Failed to create folder: ${e instanceof Error ? e.message : String(e)}`)
+    }
+  }
+
+  const uploading = ref(false)
+
+  async function onUpload(files: File[]): Promise<void> {
+    uploading.value = true
+    try {
+      for (const file of files) {
+        await uploadSourceFolderFile(sourceId.value, basePath.value, file)
+      }
+      await sources.loadTree(sourceId.value)
+      if (path.value === '') {
+        rootListing.value = await getSourceChildren(sourceId.value, '')
+      } else {
+        await sources.loadTreeChildren(sourceId.value, path.value)
+      }
+    } catch (e) {
+      window.alert(`Failed to upload: ${e instanceof Error ? e.message : String(e)}`)
+    } finally {
+      uploading.value = false
     }
   }
 
@@ -305,10 +344,12 @@
         :other-files="dirOtherFiles"
         :get-other-file-url="getOtherFileUrl"
         :get-text-file-url="getTextFileUrl"
+        :uploading="uploading"
         @create-page="onCreatePage"
         @create-folder="onCreateFolder"
         @rename="onRename"
         @delete="onDelete"
+        @upload="onUpload"
       />
       <p v-if="page.meta.tags.length" class="mt-8 text-xs text-slate-500">
         <span v-for="t in page.meta.tags" :key="t" class="mr-2">#{{ t }}</span>

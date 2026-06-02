@@ -6,9 +6,11 @@
     saveWatchedPage,
     createWatchedFolder,
     deleteWatchedPage,
+    uploadWatchedFolderFile,
+    getWatchedChildren,
   } from '@/api/client'
   import { useWatchedStore } from '@/stores/watched'
-  import type { OtherFile, PageNode, PageRead } from '@/api/types'
+  import type { DirChildren, OtherFile, PageNode, PageRead } from '@/api/types'
   import { renderMarkdown, renderMermaidIn } from '@/markdown'
   import { isTextPath } from '@/textFiles'
   import { useReadingWidth } from '@/composables/usePrefs'
@@ -54,6 +56,7 @@
     }
     page.value = null
     error.value = null
+    rootListing.value = null
     try {
       page.value = await getWatchedPage(label.value, path.value)
       // Load tree so we can detect directory status
@@ -64,11 +67,17 @@
       // current path so deep directories list their children correctly.
       if (page.value && path.value) {
         await watched.ensurePathExpanded(label.value, path.value)
+      } else if (page.value) {
+        // Watched root: no tree node for "" — fetch its children directly.
+        rootListing.value = await getWatchedChildren(label.value, '')
       }
     } catch (e) {
       error.value = e instanceof Error ? e.message : String(e)
     }
   }
+
+  // Populated only when viewing the watched root (path === "").
+  const rootListing = ref<DirChildren | null>(null)
 
   watch([label, path], load, { immediate: true })
 
@@ -92,14 +101,21 @@
     return findNode(tree, page.value.path)
   })
 
-  const isDirectory = computed(() => dirNode.value?.is_directory ?? false)
+  const isDirectory = computed(() => {
+    if (path.value === '') return true // watched root is always a directory
+    return dirNode.value?.is_directory ?? false
+  })
 
   const dirChildren = computed<PageNode[]>(() => {
+    if (path.value === '') return rootListing.value?.children ?? []
     if (!dirNode.value?.is_directory) return []
     return dirNode.value.children
   })
 
-  const dirOtherFiles = computed<OtherFile[]>(() => dirNode.value?.other_files ?? [])
+  const dirOtherFiles = computed<OtherFile[]>(() => {
+    if (path.value === '') return rootListing.value?.other_files ?? []
+    return dirNode.value?.other_files ?? []
+  })
 
   function getOtherFileUrl(filePath: string): string {
     return `/api/v1/watch/${label.value}/assets/${encodeURIComponent(filePath)}`
@@ -170,6 +186,27 @@
       await watched.loadTree(label.value)
     } catch (e) {
       window.alert(`Failed to delete: ${e instanceof Error ? e.message : String(e)}`)
+    }
+  }
+
+  const uploading = ref(false)
+
+  async function onUpload(files: File[]): Promise<void> {
+    uploading.value = true
+    try {
+      for (const file of files) {
+        await uploadWatchedFolderFile(label.value, basePath.value, file)
+      }
+      await watched.loadTree(label.value)
+      if (path.value === '') {
+        rootListing.value = await getWatchedChildren(label.value, '')
+      } else {
+        await watched.loadTreeChildren(label.value, path.value)
+      }
+    } catch (e) {
+      window.alert(`Failed to upload: ${e instanceof Error ? e.message : String(e)}`)
+    } finally {
+      uploading.value = false
     }
   }
 
@@ -280,9 +317,11 @@
         :other-files="dirOtherFiles"
         :get-other-file-url="getOtherFileUrl"
         :get-text-file-url="getTextFileUrl"
+        :uploading="uploading"
         @create-page="onCreatePage"
         @create-folder="onCreateFolder"
         @delete="onDelete"
+        @upload="onUpload"
       />
 
       <div v-if="mode === 'rendered' && page.body" ref="contentEl" class="prose" v-html="html" />

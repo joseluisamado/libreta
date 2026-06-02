@@ -5,6 +5,7 @@
   import PendingChangesPopover from '@/components/PendingChangesPopover.vue'
   import type { GitSource, PageNode, PendingCommit } from '@/api/types'
   import { getPendingCommits } from '@/api/client'
+  import { displaySourceLabel } from '@/utils/sourceLabel'
 
   const props = defineProps<{ source: GitSource }>()
 
@@ -215,9 +216,10 @@
       <button
         type="button"
         class="flex-1 min-w-0 truncate text-left text-sm font-medium text-slate-700 hover:text-blue-600"
+        :title="`Open ${displaySourceLabel(source.label)}`"
         @click="expanded = !expanded"
       >
-        {{ source.label }}
+        {{ displaySourceLabel(source.label) }}
       </button>
 
       <!-- Pending-changes link: only shown when local is ahead of remote. -->

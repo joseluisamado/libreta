@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 
 from libreta.config import Settings
@@ -12,6 +12,7 @@ from libreta.errors import (
     WatchedLabelNotFoundError,
 )
 from libreta.models import (
+    AssetUploadResponse,
     DirChildren,
     PageNode,
     PageRead,
@@ -21,6 +22,7 @@ from libreta.models import (
     WatchedFolderUpdate,
 )
 from libreta.storage import pagefile
+from libreta.storage.assets import store_folder_file
 from libreta.storage.watched import (
     create_watched_folder,
     delete_watched_page,
@@ -170,6 +172,59 @@ async def put_watched_page(
     watched_root, _ = await resolve_watched_file(settings.content_dir, label, path)
     page, _ = await write_watched_page(watched_root, path, body.body)
     return page
+
+
+async def _watched_root(settings: Settings, label: str) -> Path:
+    config = await load_watched_config(settings.content_dir)
+    entry = next((e for e in config if e["label"] == label), None)
+    if entry is None:
+        raise HTTPException(status_code=404, detail=f"watched folder {label!r} not found")
+    return Path(entry["path"]).expanduser().resolve()
+
+
+async def _upload_into_watched_folder(
+    settings: Settings,
+    label: str,
+    folder: str,
+    file: UploadFile,
+) -> AssetUploadResponse:
+    """Stream an uploaded file into a watched folder as a sibling file.
+
+    Watched folders are plain on-disk directories (no git), so there is no
+    commit — the file is simply streamed to disk. No size cap.
+    """
+    if file.filename is None:
+        raise HTTPException(status_code=400, detail="missing filename")
+    watched_root = await _watched_root(settings, label)
+    result = await store_folder_file(watched_root, folder, file.filename, file.read)
+    return AssetUploadResponse(
+        filename=result.filename,
+        size=result.size,
+        sha256=result.sha256,
+        kind=result.kind,
+        deduped=result.deduped,
+    )
+
+
+@router.post("/{label}/files", response_model=AssetUploadResponse)
+async def upload_watched_root_file(
+    label: str,
+    file: UploadFile,
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> AssetUploadResponse:
+    return await _upload_into_watched_folder(settings, label, "", file)
+
+
+# NOTE: registered before /{label}/{path:path}; the "/folders/.../files" suffix
+# disambiguates from the page routes.
+@router.post("/{label}/folders/{path:path}/files", response_model=AssetUploadResponse)
+async def upload_watched_folder_file(
+    label: str,
+    path: str,
+    file: UploadFile,
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> AssetUploadResponse:
+    return await _upload_into_watched_folder(settings, label, path, file)
 
 
 @router.post("/{label}/folders/{path:path}", status_code=201)

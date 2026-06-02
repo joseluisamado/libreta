@@ -41,7 +41,7 @@ from libreta.storage import (
     sources as src_store,
     ssh as ssh_store,
 )
-from libreta.storage.assets import replace_asset, store_asset
+from libreta.storage.assets import replace_asset, store_asset, store_folder_file
 from libreta.storage.repo import _delete_commit_sync, _move_commit_sync, commit_page, open_repo
 from libreta.storage.sources import _commit_sync
 
@@ -493,6 +493,57 @@ async def put_source_page(
     )
     background.add_task(enqueue_push, source_id)
     return result
+
+
+async def _upload_into_source_folder(
+    settings: Settings,
+    background: BackgroundTasks,
+    source_id: str,
+    folder: str,
+    file: UploadFile,
+) -> AssetUploadResponse:
+    """Stream an uploaded file into a source folder as a sibling file.
+
+    No size cap — streamed to disk in chunks. Committed and queued for push.
+    ``folder`` is relative to the repo root ("" = root).
+    """
+    if file.filename is None:
+        raise HTTPException(status_code=400, detail="missing filename")
+    local = (settings.repos_dir / source_id).resolve()
+    result = await store_folder_file(local, folder, file.filename, file.read)
+    repo = open_repo(local)
+    await asyncio.to_thread(_commit_sync, repo, [result.rel_path], f"upload {result.rel_path}")
+    background.add_task(enqueue_push, source_id)
+    return AssetUploadResponse(
+        filename=result.filename,
+        size=result.size,
+        sha256=result.sha256,
+        kind=result.kind,
+        deduped=result.deduped,
+    )
+
+
+@router.post("/{source_id}/files", response_model=AssetUploadResponse)
+async def upload_source_root_file(
+    source_id: str,
+    file: UploadFile,
+    background: BackgroundTasks,
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> AssetUploadResponse:
+    return await _upload_into_source_folder(settings, background, source_id, "", file)
+
+
+# NOTE: registered before /{source_id}/pages/{path:path}; the "/files" suffix
+# disambiguates from the page routes.
+@router.post("/{source_id}/folders/{path:path}/files", response_model=AssetUploadResponse)
+async def upload_source_folder_file(
+    source_id: str,
+    path: str,
+    file: UploadFile,
+    background: BackgroundTasks,
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> AssetUploadResponse:
+    return await _upload_into_source_folder(settings, background, source_id, path, file)
 
 
 @router.post("/{source_id}/folders/{path:path}", status_code=201)

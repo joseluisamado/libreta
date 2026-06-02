@@ -171,3 +171,156 @@ def test_dedupe_does_not_create_extra_commit(client: TestClient, content_dir: Pa
     )
     n_after_second = sum(1 for _ in repo.walk(repo.head.target))
     assert n_after_second == n_after_first
+
+
+# ── folder uploads (sibling files, not page sidecars) ────────────────────
+
+
+PDF = b"%PDF-1.4\nfake-pdf-bytes\n%%EOF"
+
+
+def test_upload_folder_file_writes_sibling(client: TestClient, content_dir: Path) -> None:
+    r = client.post(
+        "/api/v1/pages/recipes/files",
+        files={"file": ("report.pdf", PDF, "application/pdf")},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["filename"] == "report.pdf"
+    assert body["size"] == len(PDF)
+    # Lands directly in the folder, NOT in a hidden sidecar.
+    assert (content_dir / "pages" / "recipes" / "report.pdf").read_bytes() == PDF
+
+
+def test_upload_folder_file_to_root(client: TestClient, content_dir: Path) -> None:
+    r = client.post(
+        "/api/v1/pages/files",
+        files={"file": ("top.bin", b"\x00\x01\x02", "application/octet-stream")},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["filename"] == "top.bin"
+    assert (content_dir / "pages" / "top.bin").read_bytes() == b"\x00\x01\x02"
+
+
+def test_upload_folder_file_uniquifies_on_collision(client: TestClient, content_dir: Path) -> None:
+    client.post(
+        "/api/v1/pages/recipes/files",
+        files={"file": ("doc.txt", b"first", "text/plain")},
+    )
+    r = client.post(
+        "/api/v1/pages/recipes/files",
+        files={"file": ("doc.txt", b"second", "text/plain")},
+    )
+    assert r.status_code == 200
+    assert r.json()["filename"] == "doc-2.txt"
+    assert (content_dir / "pages" / "recipes" / "doc-2.txt").read_bytes() == b"second"
+
+
+def test_upload_folder_file_creates_commit(client: TestClient, content_dir: Path) -> None:
+    import pygit2
+
+    repo = pygit2.Repository(str(content_dir))
+    n_before = sum(1 for _ in repo.walk(repo.head.target)) if not repo.is_empty else 0
+    client.post(
+        "/api/v1/pages/recipes/files",
+        files={"file": ("report.pdf", PDF, "application/pdf")},
+    )
+    n_after = sum(1 for _ in repo.walk(repo.head.target))
+    assert n_after == n_before + 1
+    head = repo[repo.head.target]
+    assert head.message.startswith("upload pages/recipes/report.pdf")
+
+
+def test_upload_folder_file_unknown_folder_404(client: TestClient) -> None:
+    r = client.post(
+        "/api/v1/pages/does/not/exist/files",
+        files={"file": ("x.bin", b"x", "application/octet-stream")},
+    )
+    assert r.status_code == 404
+
+
+def test_upload_folder_file_rejects_empty(client: TestClient) -> None:
+    r = client.post(
+        "/api/v1/pages/recipes/files",
+        files={"file": ("empty.bin", b"", "application/octet-stream")},
+    )
+    assert r.status_code == 400
+
+
+def test_upload_folder_file_rejects_markdown(client: TestClient) -> None:
+    # Sibling .md would collide with the page model — assets layer refuses it.
+    r = client.post(
+        "/api/v1/pages/recipes/files",
+        files={"file": ("notes.md", b"# hi\n", "text/markdown")},
+    )
+    assert r.status_code == 400
+
+
+# ── store_folder_file storage helper (shared by all three repo kinds) ─────
+
+
+async def _chunks(*parts: bytes):
+    """A read_chunk-style callable that yields fixed parts then EOF."""
+    queue = list(parts)
+
+    async def read(_n: int) -> bytes:
+        return queue.pop(0) if queue else b""
+
+    return read
+
+
+def test_store_folder_file_streams_to_disk(tmp_path: Path) -> None:
+    import asyncio
+
+    from libreta.storage.assets import store_folder_file
+
+    base = tmp_path / "repo"
+    (base / "sub").mkdir(parents=True)
+
+    async def run() -> None:
+        read = await _chunks(b"hello ", b"world")
+        result = await store_folder_file(base, "sub", "greeting.txt", read)
+        assert result.filename == "greeting.txt"
+        assert result.size == len(b"hello world")
+        assert result.rel_path == "sub/greeting.txt"
+        assert (base / "sub" / "greeting.txt").read_bytes() == b"hello world"
+
+    asyncio.run(run())
+
+
+def test_store_folder_file_repo_root_rel_path(tmp_path: Path) -> None:
+    import asyncio
+
+    from libreta.storage.assets import store_folder_file
+
+    # base_dir is pages/, repo_root is the parent → rel_path keeps the prefix.
+    repo_root = tmp_path / "content"
+    base = repo_root / "pages"
+    (base / "docs").mkdir(parents=True)
+
+    async def run() -> None:
+        read = await _chunks(b"data")
+        result = await store_folder_file(base, "docs", "f.bin", read, repo_root=repo_root)
+        assert result.rel_path == "pages/docs/f.bin"
+
+    asyncio.run(run())
+
+
+def test_store_folder_file_escape_blocked(tmp_path: Path) -> None:
+    import asyncio
+
+    from libreta.errors import InvalidPathError
+    from libreta.storage.assets import store_folder_file
+
+    base = tmp_path / "repo"
+    base.mkdir()
+
+    async def run() -> None:
+        read = await _chunks(b"x")
+        try:
+            await store_folder_file(base, "../escape", "f.bin", read)
+        except InvalidPathError:
+            return
+        raise AssertionError("expected InvalidPathError for traversal")
+
+    asyncio.run(run())

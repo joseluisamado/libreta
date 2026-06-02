@@ -1,4 +1,5 @@
 <script setup lang="ts">
+  import { ref } from 'vue'
   import type { OtherFile, PageNode } from '@/api/types'
 
   defineProps<{
@@ -8,6 +9,7 @@
     otherFiles?: OtherFile[]
     getOtherFileUrl?: (filePath: string) => string
     getTextFileUrl?: (filePath: string) => string
+    uploading?: boolean
   }>()
 
   const emit = defineEmits<{
@@ -15,7 +17,50 @@
     createFolder: []
     rename: [childPath: string]
     delete: [childPath: string]
+    upload: [files: File[]]
   }>()
+
+  // Files at or above this size trigger a confirmation step before upload.
+  // There is no hard cap — uploads stream to disk server-side — but a large
+  // file is worth a deliberate confirm (it lands in git history).
+  const LARGE_FILE_BYTES = 50 * 1024 * 1024
+
+  const fileInput = ref<HTMLInputElement | null>(null)
+  // Files awaiting confirmation because at least one exceeds LARGE_FILE_BYTES.
+  const pendingLarge = ref<File[] | null>(null)
+
+  function formatSize(bytes: number): string {
+    if (bytes >= 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024 / 1024).toFixed(1)} GB`
+    if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+    return `${(bytes / 1024).toFixed(0)} KB`
+  }
+
+  function pickFiles(): void {
+    fileInput.value?.click()
+  }
+
+  function onFilesChosen(e: Event): void {
+    const input = e.target as HTMLInputElement
+    const files = input.files ? Array.from(input.files) : []
+    // Reset so choosing the same file again re-triggers change.
+    input.value = ''
+    if (files.length === 0) return
+    if (files.some((f) => f.size >= LARGE_FILE_BYTES)) {
+      pendingLarge.value = files
+      return
+    }
+    emit('upload', files)
+  }
+
+  function confirmLargeUpload(): void {
+    const files = pendingLarge.value
+    pendingLarge.value = null
+    if (files) emit('upload', files)
+  }
+
+  function cancelLargeUpload(): void {
+    pendingLarge.value = null
+  }
 
   function kindBadge(kind: string): string {
     switch (kind) {
@@ -64,6 +109,48 @@
       >
         + New folder
       </button>
+      <button
+        type="button"
+        class="text-xs px-3 py-1 rounded border border-slate-300 text-slate-600 hover:bg-slate-50 hover:text-blue-600 cursor-pointer disabled:opacity-50"
+        :disabled="uploading"
+        @click="pickFiles"
+      >
+        {{ uploading ? 'Uploading…' : '↑ Upload files' }}
+      </button>
+      <input ref="fileInput" type="file" multiple class="hidden" @change="onFilesChosen" />
+    </div>
+
+    <!-- Large-file confirmation -->
+    <div
+      v-if="pendingLarge"
+      class="mb-3 rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"
+    >
+      <p class="font-medium mb-1">Large file{{ pendingLarge.length > 1 ? 's' : '' }}</p>
+      <ul class="mb-2 list-disc pl-5 space-y-0.5">
+        <li v-for="f in pendingLarge" :key="f.name">
+          {{ f.name }} — <span class="font-medium">{{ formatSize(f.size) }}</span>
+        </li>
+      </ul>
+      <p class="mb-2 text-xs">
+        Files over 50&nbsp;MB are committed into the repository as-is. This can bloat git history.
+        Upload anyway?
+      </p>
+      <div class="flex gap-2">
+        <button
+          type="button"
+          class="text-xs px-3 py-1 rounded bg-amber-600 text-white hover:bg-amber-700 cursor-pointer"
+          @click="confirmLargeUpload"
+        >
+          Upload anyway
+        </button>
+        <button
+          type="button"
+          class="text-xs px-3 py-1 rounded border border-slate-300 text-slate-600 hover:bg-slate-50 cursor-pointer"
+          @click="cancelLargeUpload"
+        >
+          Cancel
+        </button>
+      </div>
     </div>
 
     <ul v-if="children.length" class="text-sm space-y-1">
