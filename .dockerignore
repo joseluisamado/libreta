@@ -1,0 +1,41 @@
+# Build context for the backend image is the repo root (so the canonical
+# top-level VERSION file is reachable; pyproject reads ../VERSION). Only
+# VERSION + backend/{pyproject.toml,src} are COPYed, but the context upload
+# would otherwise include the whole repo. Exclude everything heavy/irrelevant.
+#
+# NOTE: the frontend image builds from the frontend/ context with its own
+# ignore rules, so nothing here affects it.
+
+.git
+.github
+.gitea
+.vscode
+.claude
+.DS_Store
+.pytest_cache
+.ruff_cache
+.pre-commit-config.yaml
+
+# Frontend is built by a separate image/context.
+frontend
+
+# The user's wiki — never ship it into the API image.
+data
+
+# Docs, compose files, local tooling.
+docs
+*.md
+docker-compose*.yml
+Caddyfile.example
+scripts
+
+# Python build/venv artifacts and caches.
+**/.venv
+**/__pycache__
+**/*.pyc
+backend/.venv
+backend/tests
+backend/.ruff_cache
+backend/.pytest_cache
+backend/htmlcov
+backend/.mypy_cache

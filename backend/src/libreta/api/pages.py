@@ -2,6 +2,7 @@ from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile
+from fastapi.responses import FileResponse
 
 from libreta.config import Settings
 from libreta.deps import get_settings
@@ -216,6 +217,20 @@ async def get_page_diff(
     rel_path = str(file_path.relative_to(settings.content_dir))
     repo = open_repo(settings.content_dir)
     return await get_file_diff(repo, rel_path, a, b)
+
+
+# NOTE: /{path:path}/raw must be registered before /{path:path} so that the
+# literal "/raw" suffix takes priority over the greedy path parameter.
+@router.get("/{path:path}/raw")
+async def get_page_raw(
+    path: str,
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> FileResponse:
+    """Stream a page's on-disk markdown file as a byte-identical download."""
+    file = page_to_file(settings.content_dir, normalize_page_path(path))
+    if not file.is_file():
+        raise HTTPException(status_code=404, detail="page not found")
+    return FileResponse(file, media_type="text/markdown", filename=file.name)
 
 
 @router.get("/{path:path}", response_model=PageRead)

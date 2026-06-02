@@ -820,7 +820,7 @@
   <button
     v-if="!loading && !error"
     type="button"
-    class="fixed top-3 right-[172px] z-30 bg-white/90 backdrop-blur border border-slate-200 rounded-md p-2 hover:bg-slate-50 shadow-sm"
+    class="fixed top-[52px] right-[24px] z-30 bg-white/90 backdrop-blur border border-slate-200 rounded-md p-2 hover:bg-slate-50 shadow-sm"
     :class="showOutline ? 'text-blue-600' : 'text-slate-600'"
     :title="showOutline ? 'Hide outline' : 'Show outline'"
     :aria-label="showOutline ? 'Hide outline' : 'Show outline'"

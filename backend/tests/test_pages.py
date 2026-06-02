@@ -40,6 +40,35 @@ def test_get_page_not_found(client: TestClient) -> None:
     assert r.status_code == 404
 
 
+def test_get_page_raw_byte_identical(client: TestClient, content_dir: Path) -> None:
+    # The raw download must be byte-identical to the on-disk file, frontmatter
+    # included (R1: the markdown round-trip is sacred).
+    on_disk = (content_dir / "pages" / "recipes" / "pizza-dough.md").read_bytes()
+    r = client.get("/api/v1/pages/recipes/pizza-dough/raw")
+    assert r.status_code == 200
+    assert r.content == on_disk
+    assert "attachment" in r.headers.get("content-disposition", "")
+    assert "pizza-dough.md" in r.headers.get("content-disposition", "")
+
+
+def test_get_page_raw_not_found(client: TestClient) -> None:
+    r = client.get("/api/v1/pages/does-not-exist/raw")
+    assert r.status_code == 404
+
+
+def test_get_page_raw_directory_404(client: TestClient, content_dir: Path) -> None:
+    # A bare directory page has no <dir>.md to download.
+    (content_dir / "pages" / "onlydir").mkdir()
+    (content_dir / "pages" / "onlydir" / "child.md").write_text("# c\n", encoding="utf-8")
+    r = client.get("/api/v1/pages/onlydir/raw")
+    assert r.status_code == 404
+
+
+def test_get_page_raw_traversal_blocked(client: TestClient) -> None:
+    r = client.get("/api/v1/pages/../etc/passwd/raw")
+    assert r.status_code in (400, 404)
+
+
 def test_get_page_traversal_blocked(client: TestClient) -> None:
     r = client.get("/api/v1/pages/../etc/passwd")
     assert r.status_code in (400, 404)

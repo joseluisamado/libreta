@@ -1,6 +1,11 @@
 services:
   api:
-    build: ./backend
+    # Context is the repo root so the canonical top-level VERSION file (which
+    # backend/pyproject.toml reads dynamically via hatchling's ../VERSION
+    # source) is inside the build context. See backend/Dockerfile + .dockerignore.
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
     image: libreta-api:dev
     restart: unless-stopped
     environment:

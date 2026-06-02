@@ -152,6 +152,20 @@ async def get_watched_asset(
         raise HTTPException(status_code=404, detail=f"asset not found: {path}") from None
 
 
+# NOTE: /{label}/raw/{path} must be registered before /{label}/{path} so the
+# literal "/raw/" prefix beats the greedy page path parameter.
+@router.get("/{label}/raw/{path:path}")
+async def get_watched_page_raw(
+    label: str,
+    path: str,
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> FileResponse:
+    """Stream a watched page's on-disk markdown file as a download."""
+    watched_root, _ = await resolve_watched_file(settings.content_dir, label, path)
+    file = pagefile.resolve_page_source_file(watched_root, path)
+    return FileResponse(file, media_type="text/markdown", filename=file.name)
+
+
 @router.get("/{label}/{path:path}", response_model=PageRead)
 async def get_watched_page(
     label: str,

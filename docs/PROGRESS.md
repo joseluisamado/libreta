@@ -14,6 +14,27 @@ Living document. Update as work progresses. Latest at the top.
 
 ---
 
+## 2026-06-02 — Feature: download markdown pages
+
+**What**: a download button (mirroring the PDF/text viewers) now appears when
+viewing a non-directory markdown page, fetching the **byte-identical** on-disk
+`.md` (frontmatter included), not the parsed body — R1-safe.
+
+**Backend**: new `resolve_page_source_file` in `storage/pagefile.py` resolves a
+page path to its on-disk source file (implies `.md`, refuses dirs/missing/
+traversal). Three thin `FileResponse` endpoints serve it as an attachment:
+`GET /pages/{path}/raw`, `GET /sources/{id}/pages/{path}/raw`,
+`GET /watch/{label}/raw/{path}`. Each registered before its greedy
+`/{path:path}` sibling so the literal suffix wins.
+
+**Frontend**: `PageView`, `SourcePageView`, `WatchedPageView` gain a download
+`<a download>` at `right-[156px]`, shown only when `page && !isDirectory`.
+
+**Tests**: byte-identity + not-found + dir-404 + traversal across pages/watch
+HTTP endpoints and the `resolve_page_source_file` helper.
+
+---
+
 ## 2026-06-02 — Feature: upload arbitrary files into a folder; repo-root navigation
 
 **What**: the "In this folder" panel gains an **Upload files** button. Selected

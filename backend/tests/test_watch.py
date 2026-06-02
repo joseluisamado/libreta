@@ -250,6 +250,31 @@ def test_read_watched_page_without_frontmatter(
     assert "No frontmatter here." in body["body"]
 
 
+def test_download_watched_page_raw_byte_identical(
+    client_with_watchers: TestClient, watched_fixture: Path
+) -> None:
+    client_with_watchers.post(
+        "/api/v1/watch/folders",
+        json={"label": "mywiki", "path": str(watched_fixture)},
+    )
+    on_disk = (watched_fixture / "notes" / "todo.md").read_bytes()
+    r = client_with_watchers.get("/api/v1/watch/mywiki/raw/notes/todo")
+    assert r.status_code == 200
+    assert r.content == on_disk
+    assert "todo.md" in r.headers.get("content-disposition", "")
+
+
+def test_download_watched_page_raw_not_found(
+    client_with_watchers: TestClient, watched_fixture: Path
+) -> None:
+    client_with_watchers.post(
+        "/api/v1/watch/folders",
+        json={"label": "mywiki", "path": str(watched_fixture)},
+    )
+    r = client_with_watchers.get("/api/v1/watch/mywiki/raw/does-not-exist")
+    assert r.status_code == 404
+
+
 def test_read_watched_page_not_found(
     client_with_watchers: TestClient, watched_fixture: Path
 ) -> None:

@@ -14,9 +14,16 @@ ENV UV_LINK_MODE=copy \
     VIRTUAL_ENV=/opt/venv
 
 WORKDIR /app
-COPY pyproject.toml ./
-COPY src ./src
+# The build context is the repo root (see `make build-prod`) so that the
+# canonical top-level VERSION file — which pyproject reads dynamically via
+# hatchling's `../VERSION` source — is reachable. pyproject lives in backend/
+# and reads ../VERSION, so both must keep that relative layout inside the image:
+# pyproject at /app/backend/pyproject.toml, VERSION at /app/VERSION.
+COPY VERSION ./VERSION
+COPY backend/pyproject.toml ./backend/pyproject.toml
+COPY backend/src ./backend/src
 
+WORKDIR /app/backend
 RUN uv venv /opt/venv \
  && uv pip install --no-cache .
 
@@ -30,7 +37,7 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /opt/venv /opt/venv
-COPY --from=builder /app/src /app/src
+COPY --from=builder /app/backend/src /app/src
 
 ENV PATH="/opt/venv/bin:$PATH" \
     PYTHONDONTWRITEBYTECODE=1 \

@@ -105,10 +105,12 @@
 
 <template>
   <template v-if="hasToc">
-    <!-- Trigger button. Placed left of the page-action buttons (delete, rename, edit). -->
+    <!-- Trigger button. The page-action buttons (view-toggle, edit, download)
+         fill the first row; the ToC sits on a second row below them, aligned
+         to the right edge so it never collides with the download button. -->
     <button
       type="button"
-      class="fixed top-3 right-[172px] z-30 bg-white/90 backdrop-blur border border-slate-200 rounded-md p-2 shadow-sm hover:bg-slate-50"
+      class="fixed top-[52px] right-[24px] z-30 bg-white/90 backdrop-blur border border-slate-200 rounded-md p-2 shadow-sm hover:bg-slate-50"
       :title="open ? 'Hide table of contents' : 'Show table of contents'"
       :aria-label="open ? 'Hide table of contents' : 'Show table of contents'"
       :aria-expanded="open"

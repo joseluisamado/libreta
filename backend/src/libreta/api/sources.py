@@ -386,6 +386,20 @@ async def get_source_children(
     return DirChildren(children=children, other_files=other)
 
 
+# NOTE: /pages/{path}/raw must be registered before /pages/{path} so the
+# literal "/raw" suffix beats the greedy path parameter.
+@router.get("/{source_id}/pages/{path:path}/raw")
+async def get_source_page_raw(
+    source_id: str,
+    path: str,
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> FileResponse:
+    """Stream a source page's on-disk markdown file as a download."""
+    repo_root = src_store._local_path(settings.repos_dir, source_id).resolve()
+    file = pagefile.resolve_page_source_file(repo_root, path)
+    return FileResponse(file, media_type="text/markdown", filename=file.name)
+
+
 @router.get("/{source_id}/pages/{path:path}", response_model=PageRead)
 async def get_source_page(
     source_id: str,

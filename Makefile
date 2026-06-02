@@ -19,7 +19,7 @@
         import-apple-notes import-apple-notes-dry \
         compute-tags compute-tags-dry \
         version version-bump version-set sync-version \
-        build-prod build-prod-frontend release
+        build-prod build-prod-frontend release release-current
 
 BACKEND   := backend
 FRONTEND  := frontend
@@ -198,7 +198,7 @@ version-set: ## Set the VERSION (NEW=X.Y.Z) and propagate
 
 build-prod: build-prod-frontend ## Build prod images tagged :VERSION and :latest (no bump)
 	@echo "→ building libreta-api:$(VERSION)"
-	docker build -t libreta-api:$(VERSION) -t libreta-api:latest $(BACKEND)
+	docker build -f $(BACKEND)/Dockerfile -t libreta-api:$(VERSION) -t libreta-api:latest .
 	@echo "→ images:"
 	@docker images libreta-api --format "  {{.Repository}}:{{.Tag}}  ({{.Size}})"
 	@docker images libreta-frontend --format "  {{.Repository}}:{{.Tag}}  ({{.Size}})"
@@ -210,6 +210,9 @@ build-prod-frontend: ## Build the frontend static bundle into a runnable image
 release: ## Bump VERSION (LEVEL=patch|minor|major), build images, tag git, deploy to DEPLOY_HOST
 	@if [ -z "$(LEVEL)" ]; then echo "usage: make release LEVEL=patch|minor|major" && exit 2; fi
 	$(MAKE) version-bump LEVEL=$(LEVEL)
+	$(MAKE) release-current
+
+release-current: ## Release the CURRENT VERSION as-is (no bump): build images, tag git, deploy to DEPLOY_HOST
 	$(MAKE) build-prod
 	@new=$$(cat VERSION); \
 	echo "→ tagging git as v$$new"; \

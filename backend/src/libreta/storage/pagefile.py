@@ -109,6 +109,25 @@ def validate_path_segments(raw_path: str) -> None:
 # ---------------------------------------------------------------------------
 
 
+def resolve_page_source_file(root: Path, raw_path: str) -> Path:
+    """Resolve a page path to its on-disk source file, for raw download.
+
+    Mirrors :func:`read_page_file`'s resolution (``.md`` is implied when the
+    path has no suffix) but returns the *file itself* so it can be streamed
+    byte-identically. Refuses directories and missing pages. The returned path
+    is guaranteed to stay strictly inside *root*.
+    """
+    validate_path_segments(raw_path)
+    base = root.resolve()
+    file = (root / raw_path).resolve()
+    actual = file.with_suffix(".md") if not file.suffix else file
+    if base not in actual.parents:
+        raise InvalidPathError("page path escapes content directory")
+    if not actual.is_file():
+        raise PageNotFoundError(raw_path)
+    return actual
+
+
 def read_page_file(root: Path, raw_path: str) -> PageRead:
     """Read a page from *root* at *raw_path*.
 
