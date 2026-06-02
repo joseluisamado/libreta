@@ -318,7 +318,7 @@ def _blob_text_at(commit: pygit2.Commit, rel_path: str) -> str | None:
 
     Tries the current path and legacy ``index.md`` forms.
     """
-    to_try = [rel_path] + _legacy_index_paths(rel_path)
+    to_try = [rel_path, *_legacy_index_paths(rel_path)]
     for p in to_try:
         try:
             entry = commit.tree[p]

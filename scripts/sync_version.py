@@ -3,8 +3,14 @@
 The single source of truth is the top-level ``VERSION`` file (plain text,
 contents are a single semver string). This script propagates that value to:
 
-  - backend/pyproject.toml  (the [project] version field)
   - frontend/package.json   (the "version" field)
+
+The backend (``backend/pyproject.toml``) reads ``VERSION`` directly at build
+time via hatchling's dynamic version source, so there is nothing to propagate
+there — and importantly nothing to *rewrite*. Rewriting the static version line
+on every release made ``uv`` reinstall the editable package and orphan the
+previous ``dist-info``, which produced "missing RECORD" warnings on every
+subsequent ``uv`` invocation.
 
 It can also bump the version per ``--bump {major,minor,patch}`` and write the
 result back to ``VERSION`` before propagating.
@@ -28,7 +34,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 VERSION_FILE = ROOT / "VERSION"
-PYPROJECT = ROOT / "backend" / "pyproject.toml"
 PACKAGE_JSON = ROOT / "frontend" / "package.json"
 
 SEMVER_RE = re.compile(r"^(\d+)\.(\d+)\.(\d+)$")
@@ -63,24 +68,6 @@ def bump(current: str, level: str) -> str:
     else:
         raise SystemExit(f"unknown bump level: {level}")
     return f"{major}.{minor}.{patch}"
-
-
-def update_pyproject(v: str) -> bool:
-    """Update the [project] version line. Returns True if file changed."""
-    if not PYPROJECT.exists():
-        print(f"warn: {PYPROJECT} missing — skipping", file=sys.stderr)
-        return False
-    text = PYPROJECT.read_text(encoding="utf-8")
-    new = re.sub(
-        r'(?m)^(version\s*=\s*)"[^"]*"',
-        rf'\g<1>"{v}"',
-        text,
-        count=1,
-    )
-    if new == text:
-        return False
-    PYPROJECT.write_text(new, encoding="utf-8")
-    return True
 
 
 def update_package_json(v: str) -> bool:
@@ -121,11 +108,10 @@ def main() -> int:
         print(f"VERSION: {current} → {args.set_to}")
         current = args.set_to
 
-    py_changed = update_pyproject(current)
     js_changed = update_package_json(current)
 
     print(f"version: {current}")
-    print(f"  backend/pyproject.toml  {'updated' if py_changed else 'already in sync'}")
+    print("  backend/pyproject.toml  reads VERSION at build time (dynamic)")
     print(f"  frontend/package.json   {'updated' if js_changed else 'already in sync'}")
     return 0
 

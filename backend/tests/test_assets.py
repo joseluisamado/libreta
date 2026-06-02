@@ -275,13 +275,17 @@ def test_upload_folder_file_rejects_empty(client: TestClient) -> None:
     assert r.status_code == 400
 
 
-def test_upload_folder_file_rejects_markdown(client: TestClient) -> None:
-    # Sibling .md would collide with the page model — assets layer refuses it.
+def test_upload_folder_file_accepts_markdown(client: TestClient) -> None:
+    # A folder upload accepts any file type, including .md. A markdown file
+    # dropped into a folder simply becomes a page there — that is the natural
+    # outcome for a wiki, not a collision. (Contrast: page-asset uploads, which
+    # embed into a page and so reject .md.)
     r = client.post(
         "/api/v1/pages/recipes/files",
         files={"file": ("notes.md", b"# hi\n", "text/markdown")},
     )
-    assert r.status_code == 400
+    assert r.status_code == 200
+    assert r.json()["filename"] == "notes.md"
 
 
 # ── store_folder_file storage helper (shared by all three repo kinds) ─────
@@ -330,6 +334,30 @@ def test_store_folder_file_repo_root_rel_path(tmp_path: Path) -> None:
         read = await _chunks(b"data")
         result = await store_folder_file(base, "docs", "f.bin", read, repo_root=repo_root)
         assert result.rel_path == "pages/docs/f.bin"
+
+    asyncio.run(run())
+
+
+def test_store_folder_file_accepts_markdown(tmp_path: Path) -> None:
+    """A folder upload accepts .md files — any file type is a first-class sibling.
+
+    Regression: folder uploads shared sanitize_filename with page-asset uploads,
+    which rejects .md ("cannot upload markdown files as assets"). That restriction
+    is meaningful only for embeddable assets, not for dropping a page into a folder.
+    """
+    import asyncio
+
+    from libreta.storage.assets import store_folder_file
+
+    base = tmp_path / "repo"
+    (base / "notes").mkdir(parents=True)
+
+    async def run() -> None:
+        read = await _chunks(b"# Title\n")
+        result = await store_folder_file(base, "notes", "page.md", read)
+        assert result.filename == "page.md"
+        assert result.rel_path == "notes/page.md"
+        assert (base / "notes" / "page.md").read_bytes() == b"# Title\n"
 
     asyncio.run(run())
 

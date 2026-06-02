@@ -1,6 +1,6 @@
 [project]
 name = "libreta"
-version = "1.9.0"
+dynamic = ["version"]
 description = "Self-hosted wiki backed by a git repo of markdown files."
 license = "AGPL-3.0-only"
 license-files = ["../LICENSE"]
@@ -33,6 +33,14 @@ libreta = "libreta.cli:main"
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+# The canonical version lives in the top-level VERSION file (single source of
+# truth, see scripts/sync_version.py). Read it at build time so a release bump
+# never rewrites this file — that rewrite is what made uv reinstall the editable
+# package and orphan the previous dist-info, producing "missing RECORD" warnings.
+[tool.hatch.version]
+path = "../VERSION"
+pattern = "(?P<version>[0-9]+\\.[0-9]+\\.[0-9]+)"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/libreta"]

@@ -241,7 +241,7 @@ async def create_watched_folder_endpoint(
     try:
         await create_watched_folder(watched_root, path)
     except FileExistsError:
-        raise HTTPException(status_code=409, detail=f"folder already exists: {path}")
+        raise HTTPException(status_code=409, detail=f"folder already exists: {path}") from None
 
 
 @router.delete("/{label}/{path:path}", status_code=204)

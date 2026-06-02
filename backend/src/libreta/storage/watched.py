@@ -137,7 +137,7 @@ def _create_watched_folder_sync(watched_root: Path, raw_path: str) -> None:
     try:
         dir_path.relative_to(watched_root)
     except ValueError:
-        raise WatchedFileOutsideRootError(raw_path)
+        raise WatchedFileOutsideRootError(raw_path) from None
     if dir_path.exists():
         raise FileExistsError(str(dir_path))
     dir_path.mkdir(parents=True)
@@ -157,7 +157,7 @@ def _delete_watched_page_sync(watched_root: Path, raw_path: str) -> None:
     try:
         raw_target.resolve().relative_to(watched_root.resolve())
     except ValueError:
-        raise WatchedFileOutsideRootError(raw_path)
+        raise WatchedFileOutsideRootError(raw_path) from None
 
     if suffix and suffix != ".md" and raw_target.is_file():
         raw_target.unlink()

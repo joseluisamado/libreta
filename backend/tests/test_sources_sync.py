@@ -8,7 +8,7 @@ working tree (git status: ``INDEX_DELETED``).
 
 from __future__ import annotations
 
-import threading
+import contextlib
 from pathlib import Path
 
 import pygit2
@@ -317,10 +317,8 @@ def test_sync_lock_released_after_failed_clone(tmp_path: Path) -> None:
 
     # First fetch attempts a clone of a bogus remote and fails (swallowed by
     # the caller in production; here it raises out of the locked impl).
-    try:
+    with contextlib.suppress(Exception):
         fetch_and_ff_sync(repos_dir, ssh_keys_dir, gitea_dir, entry)
-    except Exception:
-        pass
 
     # The lock must be free again and the in-progress flag cleared.
     lock = src_store._get_sync_lock("bad")

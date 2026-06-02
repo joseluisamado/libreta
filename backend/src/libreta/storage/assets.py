@@ -37,11 +37,14 @@ def resolve_asset(content_dir: Path, raw: str) -> Path:
 _FILENAME_SAFE = re.compile(r"[^a-zA-Z0-9._-]+")
 
 
-def sanitize_filename(raw: str) -> str:
-    """Reduce an arbitrary upload filename to a safe page-local asset name.
+def sanitize_filename(raw: str, *, allow_markdown: bool = False) -> str:
+    """Reduce an arbitrary upload filename to a safe, path-local name.
 
     Strips any directory components, replaces unsafe runs with ``-``, drops
-    leading dots, lowercases the extension. Refuses ``.md`` outright.
+    leading dots, lowercases the extension. By default refuses ``.md``: a
+    markdown file is a *page*, not an embeddable asset. Pass
+    ``allow_markdown=True`` for folder uploads, where any file type is
+    accepted as a first-class sibling file.
     """
     name = PurePosixPath(raw).name
     name = name.lstrip(".")
@@ -50,7 +53,7 @@ def sanitize_filename(raw: str) -> str:
     cleaned = _FILENAME_SAFE.sub("-", name).strip("-")
     if not cleaned:
         raise InvalidPathError(f"filename {raw!r} contains no usable characters")
-    if cleaned.lower().endswith(".md"):
+    if not allow_markdown and cleaned.lower().endswith(".md"):
         raise InvalidPathError("cannot upload markdown files as assets")
     if "\x00" in cleaned:
         raise InvalidPathError("null byte in filename")
@@ -292,7 +295,7 @@ async def store_folder_file(
     """
     root = repo_root if repo_root is not None else base_dir
     directory = await asyncio.to_thread(_resolve_upload_dir, base_dir, folder)
-    name = sanitize_filename(raw_filename)
+    name = sanitize_filename(raw_filename, allow_markdown=True)
 
     def _open() -> tuple[Path, object]:
         final_name = _unique_filename(directory, name)
