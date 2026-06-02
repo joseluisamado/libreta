@@ -477,7 +477,7 @@
             <input
               v-model.trim="sourceForm.remote_url"
               type="text"
-              placeholder="ssh://git@git.example.com:3333/my-org/libreta-data.git"
+              placeholder="ssh://git@git.example.com:22/my-org/my-wiki.git"
               class="w-full border border-slate-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
             />
             <p class="text-xs text-slate-400 mt-0.5">

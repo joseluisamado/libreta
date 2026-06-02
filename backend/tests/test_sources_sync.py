@@ -259,8 +259,8 @@ def test_clone_lands_on_configured_non_default_branch(tmp_path: Path) -> None:
 
 def test_concurrent_clone_of_same_source_does_not_race(tmp_path: Path) -> None:
     """Two clones of the same source must not run at once — the second must
-    skip rather than rmtree the first's in-flight directory. Regression for the
-    homelab failure where a slow clone outlived the sync interval and the next
+    skip rather than rmtree the first's in-flight directory. Regression for a
+    low-spec-host failure where a slow clone outlived the sync interval and the next
     tick deleted the working directory mid-clone ('failed to create locked
     file ...lock')."""
     remote = _make_remote(tmp_path)

@@ -30,7 +30,7 @@ VERSION := $(shell cat VERSION 2>/dev/null)
 
 # SSH target for `make release` image deployment. Override on the command
 # line if needed: `make release LEVEL=patch DEPLOY_HOST=user@homelab`.
-DEPLOY_HOST := example.com
+DEPLOY_HOST ?= user@homelab
 
 # Compose invocation: dev stacks layer docker-compose.dev.yml on top of the
 # base file so the api service gets a source bind-mount and uvicorn --reload.
