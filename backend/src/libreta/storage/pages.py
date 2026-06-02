@@ -115,13 +115,26 @@ def _derive_tags(content_dir: Path, body: str, path_str: str) -> list[str]:
 def _delete_page_sync(content_dir: Path, raw_path: str) -> str:
     page = normalize_page_path(raw_path)
     file = page_to_file(content_dir, page)
+    pages_root = content_dir / "pages"
 
     if file.exists():
         rel_path = str(file.relative_to(content_dir))
         file.unlink()
         parent = file.parent
-        pages_root = content_dir / "pages"
         if parent != pages_root and not any(parent.iterdir()):
+            parent.rmdir()
+        return rel_path
+
+    # A plain file uploaded into a folder: its path already carries the
+    # extension (e.g. "aaa/report.pdf"), so page_to_file's ".md" lookup above
+    # misses it. Delete the file as-is.
+    base = pages_root if pages_root.is_dir() else content_dir
+    raw_file = base.joinpath(*page.parts)
+    if raw_file.is_file():
+        rel_path = str(raw_file.relative_to(content_dir))
+        raw_file.unlink()
+        parent = raw_file.parent
+        if parent != pages_root and parent != content_dir and not any(parent.iterdir()):
             parent.rmdir()
         return rel_path
 

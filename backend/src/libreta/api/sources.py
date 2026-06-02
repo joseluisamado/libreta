@@ -577,8 +577,13 @@ async def delete_source_page(
     """Delete a page (or bare directory) and its sidecar from a git source."""
     local = (settings.repos_dir / source_id).resolve()
 
+    # Guard against traversal: the resolved target must stay inside the repo.
+    if (local / path).resolve() != local and local not in (local / path).resolve().parents:
+        raise HTTPException(status_code=400, detail=f"invalid path: {path}")
+
     md_file = local / f"{path}.md"
     dir_path = local / path
+    raw_file = local / path
 
     if md_file.is_file():
         sidecar = md_file.parent / f".{md_file.name}"
@@ -589,6 +594,13 @@ async def delete_source_page(
                 if f.is_file():
                     f.unlink()
             sidecar.rmdir()
+        repo = open_repo(local)
+        await asyncio.to_thread(_delete_commit_sync, repo, rel)
+    elif raw_file.is_file():
+        # A plain file uploaded into the folder; its path already carries the
+        # extension (e.g. "aaa/report.pdf"). No sidecar to clean up.
+        rel = str(raw_file.relative_to(local))
+        raw_file.unlink()
         repo = open_repo(local)
         await asyncio.to_thread(_delete_commit_sync, repo, rel)
     elif dir_path.is_dir():

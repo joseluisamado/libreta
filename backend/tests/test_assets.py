@@ -192,6 +192,34 @@ def test_upload_folder_file_writes_sibling(client: TestClient, content_dir: Path
     assert (content_dir / "pages" / "recipes" / "report.pdf").read_bytes() == PDF
 
 
+def test_delete_uploaded_folder_file(client: TestClient, content_dir: Path) -> None:
+    # Regression: deleting a plain uploaded file (path carries its extension)
+    # used to 404 because the delete path only looked for "<path>.md" or a dir.
+    up = client.post(
+        "/api/v1/pages/recipes/files",
+        files={"file": ("report.pdf", PDF, "application/pdf")},
+    )
+    assert up.status_code == 200
+    target = content_dir / "pages" / "recipes" / "report.pdf"
+    assert target.is_file()
+
+    d = client.delete("/api/v1/pages/recipes/report.pdf")
+    assert d.status_code == 204, d.text
+    assert not target.exists()
+
+
+def test_delete_uploaded_root_file(client: TestClient, content_dir: Path) -> None:
+    client.post(
+        "/api/v1/pages/files",
+        files={"file": ("top.bin", b"\x00\x01\x02", "application/octet-stream")},
+    )
+    target = content_dir / "pages" / "top.bin"
+    assert target.is_file()
+    d = client.delete("/api/v1/pages/top.bin")
+    assert d.status_code == 204, d.text
+    assert not target.exists()
+
+
 def test_upload_folder_file_to_root(client: TestClient, content_dir: Path) -> None:
     r = client.post(
         "/api/v1/pages/files",
@@ -324,3 +352,49 @@ def test_store_folder_file_escape_blocked(tmp_path: Path) -> None:
         raise AssertionError("expected InvalidPathError for traversal")
 
     asyncio.run(run())
+
+
+# ── git-source folder upload + delete round-trip ─────────────────────────
+
+
+def _source_client(tmp_path: Path, source_id: str):
+    """A TestClient whose repos_dir holds one initialised git source repo."""
+    import pygit2
+
+    from libreta.config import Settings
+    from libreta.deps import get_settings
+    from libreta.main import create_app
+
+    content = tmp_path / "content"
+    (content / "pages").mkdir(parents=True)
+    pygit2.init_repository(str(content))
+
+    repos = tmp_path / "repos"
+    repo_dir = repos / source_id
+    repo_dir.mkdir(parents=True)
+    pygit2.init_repository(str(repo_dir))
+    (repo_dir / "aaa").mkdir()
+
+    app = create_app()
+    app.dependency_overrides[get_settings] = lambda: Settings(content_dir=content, repos_dir=repos)
+    return TestClient(app), repo_dir
+
+
+def test_source_upload_then_delete_roundtrip(tmp_path: Path) -> None:
+    # Regression for the reported bug: upload a file into a source folder, then
+    # delete it. Deletion used to 404 because the delete path only checked for
+    # "<path>.md" or a directory, never a plain file.
+    source_id = "my-org-libreta-data"
+    client, repo_dir = _source_client(tmp_path, source_id)
+    with client:
+        up = client.post(
+            f"/api/v1/sources/{source_id}/folders/aaa/files",
+            files={"file": ("Nine-Things.pdf", PDF, "application/pdf")},
+        )
+        assert up.status_code == 200, up.text
+        target = repo_dir / "aaa" / "Nine-Things.pdf"
+        assert target.is_file()
+
+        d = client.delete(f"/api/v1/sources/{source_id}/pages/aaa/Nine-Things.pdf")
+        assert d.status_code == 204, d.text
+        assert not target.exists()
