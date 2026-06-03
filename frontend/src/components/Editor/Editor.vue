@@ -18,13 +18,7 @@
   import { Decoration, DecorationSet } from '@tiptap/pm/view'
   import { Markdown } from 'tiptap-markdown'
   import 'highlight.js/styles/github.css'
-  import {
-    getClientConfig,
-    uploadAsset,
-    uploadSourceAsset,
-    upsertAsset,
-    upsertSourceAsset,
-  } from '@/api/client'
+  import { getClientConfig, uploadSourceAsset, upsertSourceAsset } from '@/api/client'
   import { resolveAssetUrl } from '@/markdown'
   import { getMarkdownFromStorage } from '@/markdownStorage'
   import DrawioModal from './DrawioModal.vue'
@@ -471,10 +465,14 @@
   async function uploadAndInsert(file: File): Promise<void> {
     if (!editor.value || editor.value.isDestroyed) return
     uploadError.value = null
+    if (!props.sourceId) {
+      // Inline attachments live in the page's sidecar inside a git source.
+      // Editing outside a source (e.g. a watched folder) has no such home.
+      uploadError.value = 'Attachments are only supported when editing a git source.'
+      return
+    }
     try {
-      const result = props.sourceId
-        ? await uploadSourceAsset(props.sourceId, props.path, file)
-        : await uploadAsset(props.path, file)
+      const result = await uploadSourceAsset(props.sourceId, props.path, file)
       const ed = editor.value
       // Markdown link destinations cannot contain literal spaces (CommonMark
       // spec).  Encode each path segment so the serialized markdown is valid.
@@ -598,6 +596,11 @@
 
   async function onDiagramSave(svg: string): Promise<void> {
     uploadError.value = null
+    if (!props.sourceId) {
+      drawioOpen.value = false
+      uploadError.value = 'Diagrams are only supported when editing a git source.'
+      return
+    }
     const blob = new Blob([svg], { type: 'image/svg+xml' })
     const editingSrc = drawioEditingSrc.value
     try {
@@ -606,17 +609,11 @@
       let href: string | null = null
       if (editingSrc) {
         const filename = basenameFromSrc(editingSrc)
-        if (props.sourceId) {
-          await upsertSourceAsset(props.sourceId, props.path, filename, blob, 'image/svg+xml')
-        } else {
-          await upsertAsset(props.path, filename, blob, 'image/svg+xml')
-        }
+        await upsertSourceAsset(props.sourceId, props.path, filename, blob, 'image/svg+xml')
       } else {
         const filename = newDiagramFilename()
         const file = new File([blob], filename, { type: 'image/svg+xml' })
-        const result = props.sourceId
-          ? await uploadSourceAsset(props.sourceId, props.path, file)
-          : await uploadAsset(props.path, file)
+        const result = await uploadSourceAsset(props.sourceId, props.path, file)
         href = result.filename.split('/').map(encodeURIComponent).join('/')
       }
 

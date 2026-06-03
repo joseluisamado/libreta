@@ -4,7 +4,7 @@ Each git source is a remote git repository that Libreta clones to a local
 working tree under <repos_dir>/<source_id>/.  Libreta commits writes into the
 local clone and pushes asynchronously.
 
-Config is persisted in <content_dir>/.meta/sources.json so it lives alongside
+Config is persisted in <meta_dir>/.meta/sources.json so it lives alongside
 the watched-folder config and respects R2 (filesystem is the source of truth).
 """
 
@@ -89,12 +89,12 @@ def sync_in_progress(source_id: str) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def _config_path(content_dir: Path) -> Path:
-    return content_dir / ".meta" / "sources.json"
+def _config_path(meta_dir: Path) -> Path:
+    return meta_dir / ".meta" / "sources.json"
 
 
-def load_sources_sync(content_dir: Path) -> list[dict[str, Any]]:
-    path = _config_path(content_dir)
+def load_sources_sync(meta_dir: Path) -> list[dict[str, Any]]:
+    path = _config_path(meta_dir)
     if not path.exists():
         return []
     try:
@@ -106,12 +106,12 @@ def load_sources_sync(content_dir: Path) -> list[dict[str, Any]]:
     return []
 
 
-async def load_sources(content_dir: Path) -> list[dict[str, Any]]:
-    return await asyncio.to_thread(load_sources_sync, content_dir)
+async def load_sources(meta_dir: Path) -> list[dict[str, Any]]:
+    return await asyncio.to_thread(load_sources_sync, meta_dir)
 
 
-def save_sources_sync(content_dir: Path, sources: list[dict[str, Any]]) -> None:
-    path = _config_path(content_dir)
+def save_sources_sync(meta_dir: Path, sources: list[dict[str, Any]]) -> None:
+    path = _config_path(meta_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(
@@ -121,8 +121,8 @@ def save_sources_sync(content_dir: Path, sources: list[dict[str, Any]]) -> None:
     os.replace(tmp, path)  # atomic rename — readers never see a partial file
 
 
-async def save_sources(content_dir: Path, sources: list[dict[str, Any]]) -> None:
-    await asyncio.to_thread(save_sources_sync, content_dir, sources)
+async def save_sources(meta_dir: Path, sources: list[dict[str, Any]]) -> None:
+    await asyncio.to_thread(save_sources_sync, meta_dir, sources)
 
 
 # ---------------------------------------------------------------------------
@@ -202,21 +202,21 @@ def _entry_to_response(entry: dict[str, Any], repos_dir: Path) -> GitSourceRespo
 # ---------------------------------------------------------------------------
 
 
-def list_sources_sync(content_dir: Path, repos_dir: Path) -> list[GitSourceResponse]:
-    return [_entry_to_response(e, repos_dir) for e in load_sources_sync(content_dir)]
+def list_sources_sync(meta_dir: Path, repos_dir: Path) -> list[GitSourceResponse]:
+    return [_entry_to_response(e, repos_dir) for e in load_sources_sync(meta_dir)]
 
 
-async def list_sources(content_dir: Path, repos_dir: Path) -> list[GitSourceResponse]:
-    return await asyncio.to_thread(list_sources_sync, content_dir, repos_dir)
+async def list_sources(meta_dir: Path, repos_dir: Path) -> list[GitSourceResponse]:
+    return await asyncio.to_thread(list_sources_sync, meta_dir, repos_dir)
 
 
 def add_source_sync(
-    content_dir: Path,
+    meta_dir: Path,
     repos_dir: Path,
     body: GitSourceCreate,
 ) -> GitSourceResponse:
     with _config_lock:
-        sources = load_sources_sync(content_dir)
+        sources = load_sources_sync(meta_dir)
         if any(s["id"] == body.id for s in sources):
             raise GitSourceAlreadyExistsError(f"source id {body.id!r} already exists")
         entry: dict[str, Any] = {
@@ -233,26 +233,26 @@ def add_source_sync(
             "last_sync_error": None,
         }
         sources.append(entry)
-        save_sources_sync(content_dir, sources)
+        save_sources_sync(meta_dir, sources)
     return _entry_to_response(entry, repos_dir)
 
 
 async def add_source(
-    content_dir: Path,
+    meta_dir: Path,
     repos_dir: Path,
     body: GitSourceCreate,
 ) -> GitSourceResponse:
-    return await asyncio.to_thread(add_source_sync, content_dir, repos_dir, body)
+    return await asyncio.to_thread(add_source_sync, meta_dir, repos_dir, body)
 
 
 def update_source_sync(
-    content_dir: Path,
+    meta_dir: Path,
     repos_dir: Path,
     source_id: str,
     body: GitSourceUpdate,
 ) -> GitSourceResponse:
     with _config_lock:
-        sources = load_sources_sync(content_dir)
+        sources = load_sources_sync(meta_dir)
         idx = next((i for i, s in enumerate(sources) if s["id"] == source_id), None)
         if idx is None:
             raise GitSourceNotFoundError(source_id)
@@ -270,52 +270,52 @@ def update_source_sync(
         if body.sync_interval_minutes is not None:
             entry["sync_interval_minutes"] = body.sync_interval_minutes
         sources[idx] = entry
-        save_sources_sync(content_dir, sources)
+        save_sources_sync(meta_dir, sources)
     return _entry_to_response(entry, repos_dir)
 
 
 async def update_source(
-    content_dir: Path,
+    meta_dir: Path,
     repos_dir: Path,
     source_id: str,
     body: GitSourceUpdate,
 ) -> GitSourceResponse:
-    return await asyncio.to_thread(update_source_sync, content_dir, repos_dir, source_id, body)
+    return await asyncio.to_thread(update_source_sync, meta_dir, repos_dir, source_id, body)
 
 
-def remove_source_sync(content_dir: Path, source_id: str) -> None:
+def remove_source_sync(meta_dir: Path, source_id: str) -> None:
     with _config_lock:
-        sources = load_sources_sync(content_dir)
+        sources = load_sources_sync(meta_dir)
         if not any(s["id"] == source_id for s in sources):
             raise GitSourceNotFoundError(source_id)
-        save_sources_sync(content_dir, [s for s in sources if s["id"] != source_id])
+        save_sources_sync(meta_dir, [s for s in sources if s["id"] != source_id])
     _locks.pop(source_id, None)
 
 
-async def remove_source(content_dir: Path, source_id: str) -> None:
-    await asyncio.to_thread(remove_source_sync, content_dir, source_id)
+async def remove_source(meta_dir: Path, source_id: str) -> None:
+    await asyncio.to_thread(remove_source_sync, meta_dir, source_id)
 
 
 def record_sync_result_sync(
-    content_dir: Path,
+    meta_dir: Path,
     source_id: str,
     error: str | None,
 ) -> None:
     with _config_lock:
-        sources = load_sources_sync(content_dir)
+        sources = load_sources_sync(meta_dir)
         for s in sources:
             if s["id"] == source_id:
                 s["last_synced_at"] = datetime.now(UTC).isoformat()
                 s["last_sync_error"] = error
-        save_sources_sync(content_dir, sources)
+        save_sources_sync(meta_dir, sources)
 
 
 async def record_sync_result(
-    content_dir: Path,
+    meta_dir: Path,
     source_id: str,
     error: str | None,
 ) -> None:
-    await asyncio.to_thread(record_sync_result_sync, content_dir, source_id, error)
+    await asyncio.to_thread(record_sync_result_sync, meta_dir, source_id, error)
 
 
 # ---------------------------------------------------------------------------
@@ -779,7 +779,7 @@ async def read_source_page(repos_dir: Path, source_id: str, raw_path: str) -> Pa
 async def write_source_page(
     repos_dir: Path,
     ssh_keys_dir: Path,
-    content_dir: Path,
+    meta_dir: Path,
     source_id: str,
     raw_path: str,
     body: str,

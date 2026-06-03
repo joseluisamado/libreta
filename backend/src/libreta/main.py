@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from libreta import __version__
-from libreta.api import assets, pages, search, sources as sources_api, system, watch
+from libreta.api import search, sources as sources_api, system, watch
 from libreta.config import Settings
 from libreta.deps import get_settings
 from libreta.errors import LibretaError
@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 async def _startup_reindex(settings: Settings) -> None:
     try:
-        n = await incremental_reindex(settings.content_dir, settings.repos_dir)
+        n = await incremental_reindex(settings.meta_dir, settings.repos_dir)
         if n:
             logger.info("search index: updated %d page(s) on startup", n)
     except Exception:
@@ -34,7 +34,7 @@ async def _startup_sources_sync(settings: Settings) -> None:
             settings.repos_dir,
             settings.ssh_keys_dir,
             settings.gitea_servers_dir,
-            settings.content_dir,
+            settings.meta_dir,
         )
     except Exception:
         logger.warning("sources: startup sync failed", exc_info=True)
@@ -56,7 +56,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
             settings.repos_dir,
             settings.ssh_keys_dir,
             settings.gitea_servers_dir,
-            settings.content_dir,
+            settings.meta_dir,
         )
     )
     sync_task = asyncio.create_task(
@@ -64,7 +64,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
             settings.repos_dir,
             settings.ssh_keys_dir,
             settings.gitea_servers_dir,
-            settings.content_dir,
+            settings.meta_dir,
         )
     )
 
@@ -103,8 +103,6 @@ def create_app() -> FastAPI:
         )
 
     app.include_router(system.router, prefix="/api/v1", tags=["system"])
-    app.include_router(pages.router, prefix="/api/v1", tags=["pages"])
-    app.include_router(assets.router, prefix="/api/v1", tags=["assets"])
     app.include_router(search.router, prefix="/api/v1", tags=["search"])
     app.include_router(watch.router, prefix="/api/v1", tags=["watch"])
     app.include_router(sources_api.router, prefix="/api/v1", tags=["sources"])

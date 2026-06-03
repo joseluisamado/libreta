@@ -310,29 +310,16 @@ A user may edit files directly in the remote git repository (via GitHub UI, VS C
 
 All routes prefixed with `/api/v1`. JSON throughout. OpenAPI at `/api/v1/docs`.
 
-### Pages
+### Pages & Assets
 
-| Method | Path                                       | Description                                           |
-| ------ | ------------------------------------------ | ----------------------------------------------------- |
-| GET    | `/pages/tree`                              | Hierarchical page tree                                |
-| GET    | `/pages/{path:path}`                       | Read page (markdown source + rendered HTML + meta)    |
-| PUT    | `/pages/{path:path}`                       | Create or update page                                 |
-| DELETE | `/pages/{path:path}`                       | Delete page                                           |
-| POST   | `/pages/{path:path}/move`                  | Move/rename page (body: `{ "to": "new/path" }`)       |
-| GET    | `/pages/{path:path}/history`               | List of commits touching this page                    |
-| GET    | `/pages/{path:path}/revisions/{sha}`       | Page content at a specific commit                     |
-| GET    | `/pages/{path:path}/diff/{sha_a}/{sha_b}`  | Diff between two revisions                            |
+Pages and their attachments are **always** scoped to a git source (`/sources/{id}/...`)
+or a watched folder (`/watch/{label}/...`). There is no top-level `/pages` or `/assets`
+namespace — those belonged to the retired single-content-repo model (see *Decisions*).
+See the **Git Sources** and **Watch** sections below for the page/asset routes.
 
-### Assets
-
-| Method | Path                              | Description                                                                                                                                                                                          |
-| ------ | --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| POST   | `/pages/{path:path}/assets`              | Upload an attachment (multipart `file`). Auto-uniquifies the filename inside the owning page's sidecar dir and commits. Returns `{ filename, size, sha256, kind }` — `filename` is the relative ref to embed in markdown. |
-| PUT    | `/pages/{path:path}/assets/{filename}`   | Replace the bytes of an existing sidecar asset (used by the diagram editor when re-saving an `.drawio.svg`). Same response shape; `deduped: true` when content unchanged.                                                |
-| GET    | `/assets/{path:path}`                    | Serve asset file (path is into the content tree, e.g. `pages/recipes/pizza-dough.jpg`).                                                                                                                                  |
-| DELETE | `/assets/{path:path}`                    | Remove asset (deferred; not in M3 scope).                                                                                                                                                                                |
-
-Diagrams travel through the **same** asset routes — a `.drawio.svg` is just an SVG file with embedded mxfile XML. POST creates, PUT-by-filename overwrites. There is no separate `/diagrams` endpoint.
+Diagrams travel through the **same** asset routes — a `.drawio.svg` is just an SVG file
+with embedded mxfile XML. POST creates, PUT-by-filename overwrites. There is no separate
+`/diagrams` endpoint.
 
 ### Client config
 
@@ -351,8 +338,15 @@ Diagrams travel through the **same** asset routes — a `.drawio.svg` is just an
 | POST   | `/sources/{id}/sync`                   | Trigger an immediate fetch+fast-forward for a source              |
 | GET    | `/sources/{id}/pending`                | List local commits ahead of `origin/<branch>` (each with sha, message, author, timestamp, and the `.md` paths it touched). Drives the sidebar's `↑N` popover. |
 | GET    | `/sources/{id}/tree`                   | Page tree for a specific source                                   |
+| GET    | `/sources/{id}/children/{path:path}`   | Lazy-load one directory's children (shallow tree expansion)       |
 | GET    | `/sources/{id}/pages/{path:path}`      | Read a page from a source                                         |
 | PUT    | `/sources/{id}/pages/{path:path}`      | Write a page (commits locally + enqueues push)                    |
+| DELETE | `/sources/{id}/pages/{path:path}`      | Delete a page (commits locally + enqueues push)                   |
+| POST   | `/sources/{id}/pages/{path:path}/move` | Move/rename a page                                                 |
+| POST   | `/sources/{id}/pages/{path:path}/assets`            | Upload an attachment into the page's sidecar dir. Auto-uniquifies, commits. |
+| PUT    | `/sources/{id}/pages/{path:path}/assets/{filename}` | Replace an existing sidecar asset's bytes (diagram re-save).                 |
+| GET    | `/sources/{id}/assets/{path:path}`     | Serve an asset file from the source working tree                  |
+| POST   | `/sources/{id}/files`, `/sources/{id}/folders/{folder}/files` | Upload a sibling file into the repo root or a folder |
 
 ### SSH Keys
 
@@ -374,7 +368,7 @@ Diagrams travel through the **same** asset routes — a `.drawio.svg` is just an
 | ------ | ----------- | ------------------------------------------------ |
 | GET    | `/healthz`  | Liveness                                         |
 | GET    | `/readyz`   | Readiness (repo accessible, index loaded)        |
-| GET    | `/info`     | Version, build, content repo metadata            |
+| GET    | `/info`     | Version, build, and `meta_dir` metadata          |
 
 ## Frontend
 
@@ -382,10 +376,7 @@ Diagrams travel through the **same** asset routes — a `.drawio.svg` is just an
 
 | Route                          | View               | Notes                                         |
 | ------------------------------ | ------------------ | --------------------------------------------- |
-| `/`                            | DashboardView      | Home / recent changes                         |
-| `/w/:path*`                    | PageView           | Content repo read-only view (legacy)          |
-| `/edit/:path*`                 | EditorView         | Content repo WYSIWYG editor (legacy)          |
-| `/history/:path*`              | HistoryView        | Commit list, diff viewer                      |
+| `/`                            | DashboardView      | Home / search entry                           |
 | `/search`                      | SearchView         |                                               |
 | `/source/:sourceId/:path*`     | SourcePageView     | Read page from a git source                   |
 | `/edit-source/:sourceId/:path*`| SourceEditorView   | Edit page in a git source                     |
@@ -397,8 +388,6 @@ Diagrams travel through the **same** asset routes — a `.drawio.svg` is just an
 
 Pinia stores:
 
-- `pageStore` — current page content, dirty flag, save status (legacy content repo)
-- `treeStore` — page hierarchy for the legacy content repo
 - `sourcesStore` — git source list, per-source trees, SSH key list
 - `watchedStore` — watched-folder list, per-folder trees
 - `uiStore` — theme, sidebar width, breakpoint
@@ -419,10 +408,6 @@ App.vue                            # sidebar (stacked panels) + main RouterView
     │       └── EditorToolbar.vue
     ├── WatchedPageView.vue
     ├── WatchedEditorView.vue
-    ├── PageView.vue               # legacy content repo
-    ├── EditorView.vue             # legacy content repo
-    ├── HistoryView.vue
-    ├── DiffView.vue
     ├── SearchView.vue
     └── AdminView.vue              # git sources + SSH keys CRUD
 ```
@@ -482,8 +467,8 @@ The editor recognizes the `.drawio.svg` suffix and switches the rendered image i
 4. User edits and presses Save. Drawio sends `{event:'save'}`; the SPA responds with `{action:'export', format:'xmlsvg'}` to request an SVG that embeds the editable XML.
 5. Drawio replies with `{event:'export', data:<dataURI>}`; the SPA decodes the base64 SVG payload.
 6. The SPA writes the SVG via the existing asset routes:
-   - **New diagram** → `POST /api/v1/pages/{path}/assets` (or the source variant) with a generated `diagram-YYYYMMDD-HHMMSS.drawio.svg` filename. The backend auto-uniquifies, commits, and returns the relative filename.
-   - **Re-save** → `PUT /api/v1/pages/{path}/assets/{filename}` (or the source variant) — replaces the existing file's bytes in place, keeping the same path embedded in the markdown so the document doesn't need rewriting.
+   - **New diagram** → `POST /api/v1/sources/{id}/pages/{path}/assets` with a generated `diagram-YYYYMMDD-HHMMSS.drawio.svg` filename. The backend auto-uniquifies, commits, and returns the relative filename.
+   - **Re-save** → `PUT /api/v1/sources/{id}/pages/{path}/assets/{filename}` — replaces the existing file's bytes in place, keeping the same path embedded in the markdown so the document doesn't need rewriting.
 7. The editor inserts a new image node (new diagram) or refreshes the cached image (re-save).
 
 The drawio container runs `jgraph/drawio:latest` and publishes its embed UI on a host port (8093 by default). Because the iframe is loaded by the user's browser — not proxied through the api container — `LIBRETA_DRAWIO_URL` must be a **browser-reachable** URL (e.g. `http://localhost:8093` for local dev, or `https://draw.example.com` behind a reverse proxy in production). Pointing it at `https://embed.diagrams.net` is supported but disables offline operation (R5) and is documented as opt-in only.
@@ -559,7 +544,7 @@ services:
     image: libreta-api:${VERSION:-latest}
     restart: unless-stopped
     environment:
-      LIBRETA_CONTENT_DIR: /var/lib/libreta/meta   # sources.json, watched.json, search index
+      LIBRETA_META_DIR: /var/lib/libreta/meta   # sources.json, watched.json, search index
       LIBRETA_REPOS_DIR: /var/lib/libreta/repos    # cloned git source working trees
       LIBRETA_SSH_KEYS_DIR: /var/lib/libreta/ssh_keys
       LIBRETA_DRAWIO_URL: http://drawio:8080
@@ -659,7 +644,22 @@ The original design had a single bind-mounted `./data/content` directory that Li
 
 **Why:** The user's actual wiki content already lives in a remote git repository. A fixed bind-mount requires manual initialisation and makes deployment fragile (the server needs a clone of the content repo in exactly the right place before Libreta can start). Git sources let the deployment be stateless beyond the `libreta-data` volume: add a source in the Admin UI, Libreta clones it, done.
 
-**Consequence:** `LIBRETA_CONTENT_DIR` is now used only for configuration files (`sources.json`, `watched.json`) and the search index — it no longer holds wiki content. The `libreta-data` named Docker volume is the single backup target. A two-Libreta-instances-on-the-same-remote scenario is still a conflict risk (D-06 still applies).
+**Consequence:** `LIBRETA_CONTENT_DIR` (later renamed — see D-11) is now used only for configuration files (`sources.json`, `watched.json`) and the search index — it no longer holds wiki content. The `libreta-data` named Docker volume is the single backup target. A two-Libreta-instances-on-the-same-remote scenario is still a conflict risk (D-06 still applies).
+
+### D-11 — Remove the legacy main wiki; rename `content_dir` → `meta_dir` (2026-06-03)
+
+D-09 left the single-content-repo code in place (the `/pages` API, the `/w/...` and
+`/edit/...` routes, `PageView`/`EditorView`/`HistoryView`/`DiffView`, the `/assets/{path}`
+server, and `storage/pages.py`) even though the bind-mount no longer held content. That
+"main wiki" surfaced as an empty, confusing entity (e.g. a stray "Main wiki" option in the
+editor's link picker). It is now **fully removed** from backend and frontend.
+
+**Consequence:** With no content repo left, `content_dir` was a misnomer — it only ever
+holds Libreta's own metadata. The setting and env var are renamed `meta_dir` /
+`LIBRETA_META_DIR` (default `./data/meta`; the deployed volume path `/var/lib/libreta/meta`
+is unchanged). Search is now sources-only (the `content_dir/pages` index fallback is gone).
+Inline image/diagram attachments require editing inside a git source; the watched-folder
+editor no longer routes attachment uploads through the (deleted) main-wiki asset endpoint.
 
 ### D-10 — Local commit first, async push (2026-05-03)
 

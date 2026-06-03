@@ -187,7 +187,7 @@ A typed extension API for client-side editor extensions and server-side render h
 
 ### `libreta gc` — orphan asset cleanup ✅ (2026-05-08)
 
-Shipped as part of M4 cleanup. CLI subcommand that lists (and optionally deletes + commits) sidecar assets that no page references. Default is dry-run; `--delete` performs one commit per page covering all orphans. Targets a git source (`--source <id>`), an arbitrary repo (`--repo <path>`), or `LIBRETA_CONTENT_DIR`. UI affordance still TODO.
+Shipped as part of M4 cleanup. CLI subcommand that lists (and optionally deletes + commits) sidecar assets that no page references. Default is dry-run; `--delete` performs one commit per page covering all orphans. Targets a git source (`--source <id>`) or an arbitrary repo (`--repo <path>`). UI affordance still TODO.
 
 ### Visual mermaid editor (small, anytime)
 

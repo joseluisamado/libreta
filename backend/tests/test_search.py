@@ -2,27 +2,35 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
+from libreta.storage.search import _full_reindex_sync, _search_sync, db_path
 
-def _seed_index(client: TestClient) -> None:
-    """Trigger indexing by saving the existing pages through the API."""
-    for path in ("index", "recipes", "recipes/pizza-dough"):
-        r = client.get(f"/api/v1/pages/{path}")
-        if r.status_code == 200:
-            body = r.json()
-            client.put(
-                f"/api/v1/pages/{path}",
-                json={"body": body["body"]},
-            )
+from .conftest import make_source
+
+_PAGES = {
+    "index.md": '---\ntitle: "Home"\n---\n\n# Home\n\nWelcome.\n',
+    "recipes/pizza-dough.md": (
+        '---\ntitle: "Pizza Dough"\ntags: [food, pizza]\n---\n\n'
+        "# Pizza Dough\n\nFlour, water, salt, yeast.\n"
+    ),
+}
 
 
-def test_search_returns_results(client: TestClient) -> None:
-    _seed_index(client)
+def _seed_source(repos_dir: Path, meta_dir: Path) -> None:
+    """Create a git source and build the search index from it."""
+    make_source(repos_dir, "work", _PAGES)
+    _full_reindex_sync(meta_dir, repos_dir)
+
+
+def test_search_returns_results(client: TestClient, repos_dir: Path, meta_dir: Path) -> None:
+    _seed_source(repos_dir, meta_dir)
     r = client.get("/api/v1/search", params={"q": "pizza"})
     assert r.status_code == 200
     results = r.json()
     assert any(
         "pizza" in res["title"].lower() or "pizza" in res["snippet"].lower() for res in results
     )
+    # Results are attributed to the source they came from.
+    assert any(res["source_id"] == "work" for res in results)
 
 
 def test_search_empty_query_rejected(client: TestClient) -> None:
@@ -37,8 +45,8 @@ def test_search_bad_fts_syntax_returns_empty(client: TestClient) -> None:
     assert r.json() == []
 
 
-def test_search_tag_filter_rewritten(client: TestClient) -> None:
-    _seed_index(client)
+def test_search_tag_filter_rewritten(client: TestClient, repos_dir: Path, meta_dir: Path) -> None:
+    _seed_source(repos_dir, meta_dir)
     # pizza-dough.md has tags: [food, pizza]
     r = client.get("/api/v1/search", params={"q": "tag:food"})
     assert r.status_code == 200
@@ -51,32 +59,24 @@ def test_search_missing_q_rejected(client: TestClient) -> None:
     assert r.status_code == 422
 
 
-def test_full_reindex_cli(content_dir: Path) -> None:
-    from libreta.storage.search import _full_reindex_sync, db_path
+def test_full_reindex_indexes_sources(repos_dir: Path, meta_dir: Path) -> None:
+    make_source(repos_dir, "work", _PAGES)
+    n = _full_reindex_sync(meta_dir, repos_dir)
+    assert n >= 2  # index.md + recipes/pizza-dough.md
+    assert db_path(meta_dir).exists()
 
-    n = _full_reindex_sync(content_dir, content_dir)  # repos_dir same as content_dir (no sources)
-    assert n >= 3  # index.md + recipes.md + recipes/pizza-dough.md
-    assert db_path(content_dir).exists()
 
+def test_incremental_reindex_skips_unchanged(repos_dir: Path, meta_dir: Path) -> None:
+    from libreta.storage.search import _incremental_reindex_sync
 
-def test_incremental_reindex_skips_unchanged(content_dir: Path) -> None:
-    from libreta.storage.search import _full_reindex_sync, _incremental_reindex_sync
-
-    _full_reindex_sync(content_dir, content_dir)
-    # Second incremental pass should update nothing (files unchanged).
-    n = _incremental_reindex_sync(content_dir, content_dir)
+    make_source(repos_dir, "work", _PAGES)
+    _full_reindex_sync(meta_dir, repos_dir)
+    # Second incremental pass should update nothing (HEAD unchanged).
+    n = _incremental_reindex_sync(meta_dir, repos_dir)
     assert n == 0
 
 
-def test_page_removed_from_index_on_delete(client: TestClient, content_dir: Path) -> None:
-    from libreta.storage.search import _full_reindex_sync, _search_sync
-
-    _full_reindex_sync(content_dir, content_dir)
-    results_before = _search_sync(content_dir, "flour", 10)
-    assert any("pizza" in r["path"] for r in results_before)
-
-    client.delete("/api/v1/pages/recipes/pizza-dough")
-
-    # BackgroundTasks run synchronously in TestClient
-    results_after = _search_sync(content_dir, "flour", 10)
-    assert not any("pizza" in r["path"] for r in results_after)
+def test_search_finds_body_text(repos_dir: Path, meta_dir: Path) -> None:
+    _seed_source(repos_dir, meta_dir)
+    results = _search_sync(meta_dir, "flour", 10)
+    assert any("pizza" in r["path"] for r in results)

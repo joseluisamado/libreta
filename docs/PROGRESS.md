@@ -14,6 +14,34 @@ Living document. Update as work progresses. Latest at the top.
 
 ---
 
+## 2026-06-03 — Removal: legacy "main wiki" + `content_dir` → `meta_dir` rename
+
+**What**: removed the original single-content-repo "main wiki" entirely (it no longer
+held content after the git-sources migration, D-09) and renamed the now-misnamed
+`content_dir` setting to `meta_dir`. See ARCHITECTURE.md **D-11**.
+
+**Backend**: deleted `api/pages.py`, `api/assets.py`, `storage/pages.py`, and the
+`resolve_asset`/single-page-index helpers; unhooked the `pages` + `assets` routers in
+`main.py`. `storage/assets.py` (source/watched uploads) kept — only its main-wiki
+`resolve_asset` removed; its `content_dir` params renamed `repo_root`. Search is
+sources-only now (dropped the `content_dir/pages` reindex fallback). Renamed the setting
++ env var → `meta_dir` / `LIBRETA_META_DIR` (default `./data/meta`); `/info` now reports
+`meta_dir`/`meta_dir_exists`; `cli reindex` flag `--content-dir` → `--meta-dir`; `cli gc`
+now requires `--source`/`--repo`.
+
+**Frontend**: deleted `PageView`/`EditorView`/`HistoryView`/`DiffView` and `stores/tree.ts`;
+removed the `/w/ /edit/ /pdf/ /text/ /history/ /diff/` routes (the `-source`/`-watch`
+variants stay); pruned the main-wiki client fns (`getTree`, `getPage`, `savePage`, … ,
+`uploadAsset`, `upsertAsset`). The editor link picker is now git-sources-only (no more
+"Main wiki" option). The editor's inline attachment/diagram features require a git source.
+
+**Tests**: removed `test_pages/history/diff/assets` (backend) and the matching frontend
+specs; reworked `conftest.py` (a `meta_dir` + `repos_dir` fixture and a `make_source`
+helper) and `test_search.py` to seed a real git source. Backend 94 pass; frontend 63 pass;
+ruff/mypy/eslint/tsc/build all green.
+
+---
+
 ## 2026-06-02 — Feature: download markdown pages
 
 **What**: a download button (mirroring the PDF/text viewers) now appears when

@@ -17,7 +17,7 @@ async def healthz() -> HealthResponse:
 
 @router.get("/readyz", response_model=HealthResponse)
 async def readyz(settings: Annotated[Settings, Depends(get_settings)]) -> HealthResponse:
-    ready = settings.content_dir.exists()
+    ready = settings.meta_dir.exists()
     return HealthResponse(status="ready" if ready else "not-ready")
 
 
@@ -31,6 +31,6 @@ async def info(settings: Annotated[Settings, Depends(get_settings)]) -> InfoResp
     return InfoResponse(
         name="libreta",
         version=__version__,
-        content_dir=str(settings.content_dir),
-        content_dir_exists=settings.content_dir.exists(),
+        meta_dir=str(settings.meta_dir),
+        meta_dir_exists=settings.meta_dir.exists(),
     )

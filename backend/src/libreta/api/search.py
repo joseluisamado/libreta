@@ -18,7 +18,7 @@ async def search_pages(
     q: Annotated[str, Query(min_length=1, max_length=500)],
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
 ) -> list[SearchResult]:
-    results = await search_index(settings.content_dir, q, limit)
+    results = await search_index(settings.meta_dir, q, limit)
     out: list[SearchResult] = []
     for r in results:
         key: str = r["path"]

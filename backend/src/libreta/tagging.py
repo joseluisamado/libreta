@@ -202,14 +202,15 @@ def good_term(t: str) -> bool:
 # ── corpus + scoring ────────────────────────────────────────────────────
 
 
-def build_corpus_df(content_dir: Path) -> tuple[Counter[str], int]:
-    """Walk all .md files in the content directory, build a document-frequency counter.
+def build_corpus_df(repo_root: Path) -> tuple[Counter[str], int]:
+    """Walk all .md files under ``repo_root/pages`` and build a document-frequency
+    counter.
 
     Returns (df_counter, n_docs).
     """
     from frontmatter import load as fm_load
 
-    pages_dir = content_dir / "pages"
+    pages_dir = repo_root / "pages"
     df: Counter[str] = Counter()
     n_docs = 0
 

@@ -13,11 +13,11 @@ from libreta.main import create_app
 
 
 @pytest.fixture
-def client_with_watchers(content_dir: Path) -> TestClient:
-    """Test client with a content_dir already set up as a git repo."""
-    pygit2.init_repository(str(content_dir))
+def client_with_watchers(meta_dir: Path) -> TestClient:
+    """Test client with a meta_dir already set up as a git repo."""
+    pygit2.init_repository(str(meta_dir))
     app = create_app()
-    app.dependency_overrides[get_settings] = lambda: Settings(content_dir=content_dir)
+    app.dependency_overrides[get_settings] = lambda: Settings(meta_dir=meta_dir)
     return TestClient(app)
 
 
@@ -400,13 +400,13 @@ def test_write_watched_no_frontmatter_file(
 
 
 def test_config_persisted_to_disk(
-    client_with_watchers: TestClient, content_dir: Path, watched_fixture: Path
+    client_with_watchers: TestClient, meta_dir: Path, watched_fixture: Path
 ) -> None:
     client_with_watchers.post(
         "/api/v1/watch/folders",
         json={"label": "mywiki", "path": str(watched_fixture)},
     )
-    config_path = content_dir / ".meta" / "watched.json"
+    config_path = meta_dir / ".meta" / "watched.json"
     assert config_path.exists()
     data = json.loads(config_path.read_text(encoding="utf-8"))
     assert len(data) == 1

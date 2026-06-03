@@ -62,7 +62,7 @@ dev: ## Run the dev stack via docker compose (api + frontend + drawio, with hot-
 	$(COMPOSE_DEV) up
 
 dev-backend: ## Run only the backend with reload (host port 8092, no docker)
-	cd $(BACKEND) && LIBRETA_CONTENT_DIR=../data/content uv run uvicorn libreta.main:app --reload --host 0.0.0.0 --port 8092
+	cd $(BACKEND) && LIBRETA_META_DIR=../data/meta uv run uvicorn libreta.main:app --reload --host 0.0.0.0 --port 8092
 
 dev-frontend: ## Run only the frontend Vite dev server (host port 8091, no docker)
 	cd $(FRONTEND) && pnpm dev
@@ -180,11 +180,13 @@ import-apple-notes-dry: ## Dry-run Apple Notes import
 	cd $(BACKEND) && uv run python ../scripts/import_apple_notes.py \
 		--repo $(REPO) --dry-run $(if $(DEST),--dest $(DEST)) $(if $(ACCOUNT),--account "$(ACCOUNT)") $(if $(FOLDER),--folder "$(FOLDER)")
 
-compute-tags: ## Compute frontmatter tags for any untagged pages
-	cd $(BACKEND) && uv run python ../scripts/compute_tags.py $(if $(FORCE),--force)
+compute-tags: ## Compute frontmatter tags for untagged pages in REPO=<git source clone>
+	@test -n "$(REPO)" || (echo "error: pass REPO=/path/to/source-clone" >&2; exit 1)
+	cd $(BACKEND) && uv run python ../scripts/compute_tags.py --repo $(REPO) $(if $(FORCE),--force)
 
-compute-tags-dry: ## Dry-run tag computation (no files written)
-	cd $(BACKEND) && uv run python ../scripts/compute_tags.py --dry-run $(if $(FORCE),--force)
+compute-tags-dry: ## Dry-run tag computation (REPO=<git source clone>, no files written)
+	@test -n "$(REPO)" || (echo "error: pass REPO=/path/to/source-clone" >&2; exit 1)
+	cd $(BACKEND) && uv run python ../scripts/compute_tags.py --repo $(REPO) --dry-run $(if $(FORCE),--force)
 
 # ---------- versioning + release ----------
 

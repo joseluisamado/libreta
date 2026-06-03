@@ -42,7 +42,7 @@ router = APIRouter(prefix="/watch")
 async def list_watched_folders(
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> list[WatchedFolderResponse]:
-    config = await load_watched_config(settings.content_dir)
+    config = await load_watched_config(settings.meta_dir)
     return [
         WatchedFolderResponse(
             label=e["label"],
@@ -58,7 +58,7 @@ async def add_watched_folder(
     body: WatchedFolderCreate,
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> WatchedFolderResponse:
-    config = await load_watched_config(settings.content_dir)
+    config = await load_watched_config(settings.meta_dir)
     if any(e["label"] == body.label for e in config):
         raise WatchedFolderAlreadyExistsError(body.label)
 
@@ -66,7 +66,7 @@ async def add_watched_folder(
     # Accept even if not currently accessible — the user may mount it later.
     exists = folder_path.exists()
     config.append({"label": body.label, "path": str(folder_path)})
-    await save_watched_config(settings.content_dir, config)
+    await save_watched_config(settings.meta_dir, config)
     return WatchedFolderResponse(label=body.label, path=str(folder_path), exists=exists)
 
 
@@ -81,7 +81,7 @@ async def update_watched_folder(
     The label is the config key, so a rename re-keys the entry. Renaming to a
     label already used by another folder is rejected.
     """
-    config = await load_watched_config(settings.content_dir)
+    config = await load_watched_config(settings.meta_dir)
     idx = next((i for i, e in enumerate(config) if e["label"] == label), None)
     if idx is None:
         raise WatchedLabelNotFoundError(label)
@@ -90,7 +90,7 @@ async def update_watched_folder(
 
     folder_path = Path(body.path).expanduser().resolve()
     config[idx] = {"label": body.label, "path": str(folder_path)}
-    await save_watched_config(settings.content_dir, config)
+    await save_watched_config(settings.meta_dir, config)
     return WatchedFolderResponse(
         label=body.label, path=str(folder_path), exists=folder_path.exists()
     )
@@ -101,9 +101,9 @@ async def remove_watched_folder(
     label: str,
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> None:
-    config = await load_watched_config(settings.content_dir)
+    config = await load_watched_config(settings.meta_dir)
     config = [e for e in config if e["label"] != label]
-    await save_watched_config(settings.content_dir, config)
+    await save_watched_config(settings.meta_dir, config)
 
 
 @router.get("/{label}/tree", response_model=list[PageNode])
@@ -112,7 +112,7 @@ async def get_watched_tree(
     settings: Annotated[Settings, Depends(get_settings)],
     depth: int = 2,
 ) -> list[PageNode]:
-    config = await load_watched_config(settings.content_dir)
+    config = await load_watched_config(settings.meta_dir)
     entry = next((e for e in config if e["label"] == label), None)
     if entry is None:
         return []
@@ -126,13 +126,13 @@ async def get_watched_children(
     path: str,
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> DirChildren:
-    config = await load_watched_config(settings.content_dir)
+    config = await load_watched_config(settings.meta_dir)
     entry = next((e for e in config if e["label"] == label), None)
     if entry is None:
         return DirChildren()
     watched_root = Path(entry["path"]).expanduser().resolve()
     try:
-        _, _ = await resolve_watched_file(settings.content_dir, label, path)
+        _, _ = await resolve_watched_file(settings.meta_dir, label, path)
     except Exception:
         return DirChildren()
     children, other = await walk_watched_children(watched_root, path)
@@ -145,7 +145,7 @@ async def get_watched_asset(
     path: str,
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> FileResponse:
-    watched_root, _ = await resolve_watched_file(settings.content_dir, label, path)
+    watched_root, _ = await resolve_watched_file(settings.meta_dir, label, path)
     try:
         return FileResponse(pagefile.resolve_asset(watched_root, path))
     except PageNotFoundError:
@@ -161,7 +161,7 @@ async def get_watched_page_raw(
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> FileResponse:
     """Stream a watched page's on-disk markdown file as a download."""
-    watched_root, _ = await resolve_watched_file(settings.content_dir, label, path)
+    watched_root, _ = await resolve_watched_file(settings.meta_dir, label, path)
     file = pagefile.resolve_page_source_file(watched_root, path)
     return FileResponse(file, media_type="text/markdown", filename=file.name)
 
@@ -172,7 +172,7 @@ async def get_watched_page(
     path: str,
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> PageRead:
-    watched_root, _ = await resolve_watched_file(settings.content_dir, label, path)
+    watched_root, _ = await resolve_watched_file(settings.meta_dir, label, path)
     return await read_watched_page(watched_root, path or "")
 
 
@@ -183,13 +183,13 @@ async def put_watched_page(
     body: PageWrite,
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> PageRead:
-    watched_root, _ = await resolve_watched_file(settings.content_dir, label, path)
+    watched_root, _ = await resolve_watched_file(settings.meta_dir, label, path)
     page, _ = await write_watched_page(watched_root, path, body.body)
     return page
 
 
 async def _watched_root(settings: Settings, label: str) -> Path:
-    config = await load_watched_config(settings.content_dir)
+    config = await load_watched_config(settings.meta_dir)
     entry = next((e for e in config if e["label"] == label), None)
     if entry is None:
         raise HTTPException(status_code=404, detail=f"watched folder {label!r} not found")
@@ -247,7 +247,7 @@ async def create_watched_folder_endpoint(
     path: str,
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> None:
-    config = await load_watched_config(settings.content_dir)
+    config = await load_watched_config(settings.meta_dir)
     entry = next((e for e in config if e["label"] == label), None)
     if entry is None:
         raise HTTPException(status_code=404, detail=f"watched folder {label!r} not found")
@@ -264,7 +264,7 @@ async def delete_watched_page_endpoint(
     path: str,
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> None:
-    config = await load_watched_config(settings.content_dir)
+    config = await load_watched_config(settings.meta_dir)
     entry = next((e for e in config if e["label"] == label), None)
     if entry is None:
         raise HTTPException(status_code=404, detail=f"watched folder {label!r} not found")

@@ -7,9 +7,11 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="LIBRETA_", env_file=".env", extra="ignore")
 
-    # Legacy content dir — still used by the watched-folder config store and
-    # the search index. Will be phased out as sources take over.
-    content_dir: Path = Field(default=Path("./data/content"))
+    # Metadata directory. Holds Libreta's own state — the git-sources registry
+    # (.meta/sources.json), the watched-folders config (.meta/watched.json), and
+    # the full-text search index (.libreta/search.db). It does NOT hold wiki
+    # content; that lives in the git sources cloned under repos_dir.
+    meta_dir: Path = Field(default=Path("./data/meta"))
 
     # Where git sources are cloned to. Each source gets a subdirectory named
     # by its id: <repos_dir>/<source_id>/
@@ -23,7 +25,7 @@ class Settings(BaseSettings):
     # mirroring ssh_keys_dir. Never committed to any repo.
     gitea_servers_dir: Path = Field(default=Path("/var/lib/libreta/gitea_servers"))
 
-    # Sources config file, relative to content_dir (reuses the .meta convention).
+    # Sources config file, relative to meta_dir (reuses the .meta convention).
     sources_config: str = ".meta/sources.json"
 
     # Browser-facing URL for the drawio embed iframe. Must resolve in the

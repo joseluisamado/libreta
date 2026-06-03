@@ -12,16 +12,6 @@ const routes: RouteRecordRaw[] = [
     component: () => import('./views/DashboardView.vue'),
   },
   {
-    path: '/w/:path(.*)*',
-    name: 'page',
-    component: () => import('./views/PageView.vue'),
-  },
-  {
-    path: '/pdf/:path(.*)*',
-    name: 'pdf',
-    component: () => import('./views/PdfView.vue'),
-  },
-  {
     path: '/pdf-source/:sourceId/:path(.*)*',
     name: 'pdf-source',
     component: () => import('./views/PdfView.vue'),
@@ -32,11 +22,6 @@ const routes: RouteRecordRaw[] = [
     component: () => import('./views/PdfView.vue'),
   },
   {
-    path: '/text/:path(.*)*',
-    name: 'text',
-    component: () => import('./views/TextView.vue'),
-  },
-  {
     path: '/text-source/:sourceId/:path(.*)*',
     name: 'text-source',
     component: () => import('./views/TextView.vue'),
@@ -45,21 +30,6 @@ const routes: RouteRecordRaw[] = [
     path: '/text-watch/:label/:path(.*)*',
     name: 'text-watch',
     component: () => import('./views/TextView.vue'),
-  },
-  {
-    path: '/history/:path(.*)*',
-    name: 'history',
-    component: () => import('./views/HistoryView.vue'),
-  },
-  {
-    path: '/edit/:path(.*)*',
-    name: 'editor',
-    component: () => import('./views/EditorView.vue'),
-  },
-  {
-    path: '/diff/:path(.*)*',
-    name: 'diff',
-    component: () => import('./views/DiffView.vue'),
   },
   {
     path: '/search',
@@ -227,20 +197,14 @@ export const router = createRouter({
 function isAppPath(path: string): boolean {
   return (
     path === '/' ||
-    path.startsWith('/w/') ||
     path.startsWith('/watch/') ||
     path.startsWith('/source/') ||
-    path.startsWith('/edit/') ||
     path.startsWith('/edit-watch/') ||
     path.startsWith('/edit-source/') ||
-    path.startsWith('/pdf/') ||
     path.startsWith('/pdf-watch/') ||
     path.startsWith('/pdf-source/') ||
-    path.startsWith('/text/') ||
     path.startsWith('/text-watch/') ||
     path.startsWith('/text-source/') ||
-    path.startsWith('/history/') ||
-    path.startsWith('/diff/') ||
     path.startsWith('/search') ||
     path.startsWith('/-/')
   )

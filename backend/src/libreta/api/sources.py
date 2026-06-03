@@ -146,7 +146,7 @@ async def discover_gitea_repos(
     _username, token = await gitea_store.load_credentials(settings.gitea_servers_dir, server_id)
     repos = await discover_repos(server["base_url"], body.owner, token)
 
-    existing = await src_store.load_sources(settings.content_dir)
+    existing = await src_store.load_sources(settings.meta_dir)
     existing_urls = {s.get("remote_url") for s in existing}
     for repo in repos:
         repo.already_added = repo.clone_url in existing_urls
@@ -171,7 +171,7 @@ async def import_gitea_repos(
     discovered = await discover_repos(server["base_url"], body.owner, token)
     by_full_name = {r.full_name: r for r in discovered}
 
-    existing = await src_store.load_sources(settings.content_dir)
+    existing = await src_store.load_sources(settings.meta_dir)
     existing_ids = {s["id"] for s in existing}
     existing_urls = {s.get("remote_url") for s in existing}
 
@@ -184,7 +184,7 @@ async def import_gitea_repos(
         existing_ids.add(source_id)
         existing_urls.add(repo.clone_url)
         src = await src_store.add_source(
-            settings.content_dir,
+            settings.meta_dir,
             settings.repos_dir,
             GitSourceCreate(
                 id=source_id,
@@ -205,7 +205,7 @@ async def import_gitea_repos(
             settings.repos_dir,
             settings.ssh_keys_dir,
             settings.gitea_servers_dir,
-            settings.content_dir,
+            settings.meta_dir,
             entry,
         )
     return created
@@ -239,7 +239,7 @@ def _slug_source_id(full_name: str, taken: set[str]) -> str:
 async def list_sources(
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> list[GitSourceResponse]:
-    return await src_store.list_sources(settings.content_dir, settings.repos_dir)
+    return await src_store.list_sources(settings.meta_dir, settings.repos_dir)
 
 
 @router.post("", response_model=GitSourceResponse, status_code=201)
@@ -248,9 +248,9 @@ async def add_source(
     background: BackgroundTasks,
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> GitSourceResponse:
-    result = await src_store.add_source(settings.content_dir, settings.repos_dir, body)
+    result = await src_store.add_source(settings.meta_dir, settings.repos_dir, body)
     # Clone in the background so the HTTP response returns immediately
-    sources = await src_store.load_sources(settings.content_dir)
+    sources = await src_store.load_sources(settings.meta_dir)
     entry = next((s for s in sources if s["id"] == body.id), None)
     if entry:
         background.add_task(
@@ -258,7 +258,7 @@ async def add_source(
             settings.repos_dir,
             settings.ssh_keys_dir,
             settings.gitea_servers_dir,
-            settings.content_dir,
+            settings.meta_dir,
             entry,
         )
     return result
@@ -268,14 +268,14 @@ async def _clone_and_record(
     repos_dir: Path,
     ssh_keys_dir: Path,
     gitea_servers_dir: Path,
-    content_dir: Path,
+    meta_dir: Path,
     entry: dict,  # type: ignore[type-arg]
 ) -> None:
     try:
         await src_store.clone_source(repos_dir, ssh_keys_dir, gitea_servers_dir, entry)
-        await src_store.record_sync_result(content_dir, entry["id"], None)
+        await src_store.record_sync_result(meta_dir, entry["id"], None)
     except Exception as exc:
-        await src_store.record_sync_result(content_dir, entry["id"], str(exc))
+        await src_store.record_sync_result(meta_dir, entry["id"], str(exc))
 
 
 @router.put("/{source_id}", response_model=GitSourceResponse)
@@ -284,7 +284,7 @@ async def update_source(
     body: GitSourceUpdate,
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> GitSourceResponse:
-    return await src_store.update_source(settings.content_dir, settings.repos_dir, source_id, body)
+    return await src_store.update_source(settings.meta_dir, settings.repos_dir, source_id, body)
 
 
 @router.delete("/{source_id}", status_code=204)
@@ -292,7 +292,7 @@ async def delete_source(
     source_id: str,
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> None:
-    await src_store.remove_source(settings.content_dir, source_id)
+    await src_store.remove_source(settings.meta_dir, source_id)
 
 
 @router.post("/{source_id}/sync", response_model=GitSourceResponse)
@@ -301,7 +301,7 @@ async def trigger_sync(
     background: BackgroundTasks,
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> GitSourceResponse:
-    sources = await src_store.load_sources(settings.content_dir)
+    sources = await src_store.load_sources(settings.meta_dir)
     entry = next((s for s in sources if s["id"] == source_id), None)
     if entry is None:
         from libreta.errors import GitSourceNotFoundError
@@ -327,14 +327,14 @@ async def trigger_sync(
                 settings.gitea_servers_dir,
                 entry,
             )
-            await record_sync_result(settings.content_dir, source_id, None)
+            await record_sync_result(settings.meta_dir, source_id, None)
         except Exception as exc:
-            await record_sync_result(settings.content_dir, source_id, str(exc))
+            await record_sync_result(settings.meta_dir, source_id, str(exc))
 
     background.add_task(_sync)
     # Return current state (sync runs in background)
     return await src_store.update_source(
-        settings.content_dir,
+        settings.meta_dir,
         settings.repos_dir,
         source_id,
         GitSourceUpdate(),
@@ -356,7 +356,7 @@ async def get_pending(
     Each entry includes the changed page paths so the UI can show a
     "modified pages" list without needing a second round-trip per commit.
     """
-    sources = await src_store.load_sources(settings.content_dir)
+    sources = await src_store.load_sources(settings.meta_dir)
     entry = next((s for s in sources if s["id"] == source_id), None)
     if entry is None:
         from libreta.errors import GitSourceNotFoundError
@@ -500,7 +500,7 @@ async def put_source_page(
     result = await src_store.write_source_page(
         settings.repos_dir,
         settings.ssh_keys_dir,
-        settings.content_dir,
+        settings.meta_dir,
         source_id,
         path,
         body.body,

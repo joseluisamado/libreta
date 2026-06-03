@@ -197,8 +197,8 @@ interface RenderEnv {
 
 // Extensions we treat as "asset" downloads when they appear in a relative
 // link href. Everything else is assumed to be either an external URL (handled
-// in resolveAssetUrl), a route into the wiki (`/w/...`), or a same-page
-// anchor.
+// in resolveAssetUrl), an in-app route (`/source/...`, `/watch/...`), or a
+// same-page anchor.
 const ASSET_LINK_EXTS = new Set([
   '.pdf',
   '.zip',

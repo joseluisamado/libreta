@@ -17,7 +17,8 @@ libreta/
 ├── backend/                  Python 3.12 + FastAPI service (managed with uv)
 ├── frontend/                 Vue 3 + Vite SPA (managed with pnpm)
 ├── docker-compose.yml        Orchestrates backend + frontend(dev) + drawio
-├── data/content/             ★ The user's wiki. A git repo of .md files.
+├── data/meta/                ★ Libreta's metadata: sources.json, watched.json, search.db
+│                               (NOT wiki content — that lives in cloned git sources)
 ├── docs/
 │   ├── PROJECT.md            Vision, principles, non-goals
 │   ├── ARCHITECTURE.md       Tech stack, components, data model, APIs
@@ -27,7 +28,7 @@ libreta/
 └── CLAUDE.md                 You are here.
 ```
 
-**Mental model**: Libreta is a thin layer over a git repository. It reads markdown files, presents them in a nice editor, and writes commits back. The user's data lives in `data/content/`. The backend's job is to mediate between HTTP requests and that directory.
+**Mental model**: Libreta is a thin layer over git repositories. It reads markdown files, presents them in a nice editor, and writes commits back. The user's wiki content lives in **git sources** — remote repos that Libreta clones under `repos_dir` (`/var/lib/libreta/repos`), commits into locally, and pushes asynchronously — plus **watched folders** (local dirs Libreta reads but doesn't own). Libreta's own state (the sources registry, watched config, search index) lives in `meta_dir` (`data/meta` locally, `/var/lib/libreta/meta` deployed). The backend's job is to mediate between HTTP requests and those repositories. (There used to be a single bind-mounted "main wiki" at `data/content/`; it was removed — see ARCHITECTURE.md D-11.)
 
 ---
 
@@ -111,7 +112,7 @@ CI runs all four. If any of them are red, work isn't done.
 
 ### 3.5 Filesystem operations
 
-When writing/reading the content directory:
+When writing/reading a source's working tree:
 - **Always validate paths** through the helper in `storage/paths.py`. Never trust path segments from the API.
 - **Use `pathlib.Path`**, not string concatenation.
 - **Acquire the repo write lock** before any operation that touches the working tree. See `storage/repo.py`.
@@ -179,7 +180,7 @@ docker compose down                    # stop everything
 docker compose down -v                 # ★ careful: removes volumes
 ```
 
-The wiki content volume is bind-mounted from `./data/content`. **Do not put committed files there** — that directory is the user's wiki, separate from the project repo. Add it to `.gitignore` of the project repo.
+The `libreta-data` named volume (`/var/lib/libreta`) holds cloned git sources (`repos/`), SSH keys, and `meta/` (the sources registry, watched config, search index). Locally, `meta_dir` defaults to `./data/meta`. **Do not put committed files under `data/`** — it's runtime state, separate from the project repo, and is gitignored.
 
 The drawio container is a vanilla `jgraph/drawio:latest`. We do not fork or modify it. Configuration is via env vars per its upstream docs.
 
@@ -214,16 +215,16 @@ Body wrapped at 72 cols. Reference issues with `Closes #N` or `Refs #N`.
 
 ### 6.3 Two distinct git contexts
 
-There are **two repositories** at play. Don't confuse them.
+There are **two kinds of repository** at play. Don't confuse them.
 
-| | Project repo | Content repo |
+| | Project repo | Content repos (git sources) |
 |---|---|---|
-| Path | the project root | `./data/content/` |
+| Path | the project root | `repos_dir/<source_id>/` (cloned from a remote) |
 | Contains | source code, this CLAUDE.md, etc. | the user's wiki: `.md` files, attachments |
-| Who commits | developers (humans + Claude Code) | Libreta itself, on every page save |
+| Who commits | developers (humans + Claude Code) | Libreta itself, on every page save (then pushes) |
 | Author | conventional commits | "Libreta <libreta@localhost>" (until M6 auth) |
 
-When a user says "commit your work", they almost always mean the project repo. When they say "save the page", that goes through Libreta's save lifecycle and produces a commit in the content repo. If unclear, ask.
+When a user says "commit your work", they almost always mean the project repo. When they say "save the page", that goes through Libreta's save lifecycle and produces a commit in the relevant **source** repo (then an async push). If unclear, ask.
 
 ---
 
@@ -246,7 +247,7 @@ Default to action for routine work. Stop and ask the user when:
 
 - A task implies relaxing one of the **Inviolable rules** in §2.
 - A task requires a new top-level dependency (a new framework, a new database, a new container in the stack). Confirm before adding.
-- A task crosses the project / content repo boundary in a non-obvious way.
+- A task crosses the project repo / source repo boundary in a non-obvious way.
 - The architecture document doesn't cover the case and the choice has long-term implications. Bias toward asking; cheap to clarify, expensive to refactor.
 - A test would need to be deleted or weakened to make a change pass. Almost always indicates the change is wrong, not the test.
 

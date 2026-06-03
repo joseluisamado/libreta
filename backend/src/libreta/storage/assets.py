@@ -6,29 +6,12 @@ import re
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING
 
-from libreta.errors import AssetNotFoundError, InvalidPathError, PageNotFoundError
+from libreta.errors import InvalidPathError, PageNotFoundError
 from libreta.storage import pagefile
 from libreta.storage.paths import normalize_page_path, page_to_file
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
-
-
-def resolve_asset(content_dir: Path, raw: str) -> Path:
-    """Resolve a raw asset path under the content dir.
-
-    The path must stay strictly inside ``content_dir`` after symlink resolution.
-    """
-    pagefile.validate_path_segments(raw)
-    if raw.endswith(".md"):
-        raise InvalidPathError("markdown pages are served via /pages, not /assets")
-    base = content_dir.resolve()
-    candidate = (content_dir / raw).resolve()
-    if base not in candidate.parents and candidate != base:
-        raise InvalidPathError("asset path escapes content directory")
-    if not candidate.is_file():
-        raise AssetNotFoundError(raw)
-    return candidate
 
 
 # ── upload ──────────────────────────────────────────────────────────────
@@ -60,14 +43,14 @@ def sanitize_filename(raw: str, *, allow_markdown: bool = False) -> str:
     return cleaned
 
 
-def _sidecar_dir(content_dir: Path, page: PurePosixPath) -> Path:
+def _sidecar_dir(repo_root: Path, page: PurePosixPath) -> Path:
     """Return the sidecar directory for a page: ``<parent>/.<pagename>.md/``."""
-    md_file = page_to_file(content_dir, page)
+    md_file = page_to_file(repo_root, page)
     sidecar_name = f".{md_file.name}"
     return md_file.parent / sidecar_name
 
 
-def page_directory(content_dir: Path, raw_path: str) -> Path:
+def page_directory(repo_root: Path, raw_path: str) -> Path:
     """Return the sidecar directory that owns the page's attachments.
 
     Every page has a hidden sidecar directory (``.saml.md/`` for ``saml.md``)
@@ -76,17 +59,17 @@ def page_directory(content_dir: Path, raw_path: str) -> Path:
     hypothetical ``<dirname>.md`` path.
     """
     page = normalize_page_path(raw_path)
-    file = page_to_file(content_dir, page)
+    file = page_to_file(repo_root, page)
     if not file.exists():
         # Allow attachments for a synthesised directory page
         if str(page).startswith("pages/"):
-            dir_path = content_dir / Path(*page.parts)
+            dir_path = repo_root / Path(*page.parts)
         else:
-            dir_path = content_dir / "pages" / Path(*page.parts)
+            dir_path = repo_root / "pages" / Path(*page.parts)
         if dir_path.is_dir():
-            return _sidecar_dir(content_dir, page)
+            return _sidecar_dir(repo_root, page)
         raise PageNotFoundError(raw_path)
-    return _sidecar_dir(content_dir, page)
+    return _sidecar_dir(repo_root, page)
 
 
 def _unique_filename(directory: Path, base_name: str) -> str:
@@ -135,13 +118,13 @@ class UploadResult:
 
 
 def _store_asset_sync(
-    content_dir: Path,
+    repo_root: Path,
     raw_page: str,
     raw_filename: str,
     data: bytes,
     content_type: str | None,
 ) -> UploadResult:
-    directory = page_directory(content_dir, raw_page)
+    directory = page_directory(repo_root, raw_page)
     name = sanitize_filename(raw_filename)
     sha = hashlib.sha256(data).hexdigest()
     # Sidecar prefix for embedding in markdown: .<pagename>.md/
@@ -157,7 +140,7 @@ def _store_asset_sync(
         if existing.stat().st_size != len(data):
             continue
         if hashlib.sha256(existing.read_bytes()).hexdigest() == sha:
-            rel = str(existing.relative_to(content_dir))
+            rel = str(existing.relative_to(repo_root))
             return UploadResult(
                 filename=sidecar_prefix + existing.name,
                 size=len(data),
@@ -170,7 +153,7 @@ def _store_asset_sync(
     final_name = _unique_filename(directory, name)
     target = directory / final_name
     target.write_bytes(data)
-    rel = str(target.relative_to(content_dir))
+    rel = str(target.relative_to(repo_root))
     return UploadResult(
         filename=sidecar_prefix + final_name,
         size=len(data),
@@ -182,19 +165,19 @@ def _store_asset_sync(
 
 
 async def store_asset(
-    content_dir: Path,
+    repo_root: Path,
     raw_page: str,
     raw_filename: str,
     data: bytes,
     content_type: str | None,
 ) -> UploadResult:
     return await asyncio.to_thread(
-        _store_asset_sync, content_dir, raw_page, raw_filename, data, content_type
+        _store_asset_sync, repo_root, raw_page, raw_filename, data, content_type
     )
 
 
 def _replace_asset_sync(
-    content_dir: Path,
+    repo_root: Path,
     raw_page: str,
     raw_filename: str,
     data: bytes,
@@ -207,7 +190,7 @@ def _replace_asset_sync(
     save flow, where a re-saved diagram must replace the bytes of the file
     whose name is already embedded in the markdown.
     """
-    directory = page_directory(content_dir, raw_page)
+    directory = page_directory(repo_root, raw_page)
     name = sanitize_filename(raw_filename)
     sha = hashlib.sha256(data).hexdigest()
     sidecar_prefix = f"{directory.name}/"
@@ -216,7 +199,7 @@ def _replace_asset_sync(
     target = directory / name
 
     if target.is_file() and target.read_bytes() == data:
-        rel = str(target.relative_to(content_dir))
+        rel = str(target.relative_to(repo_root))
         return UploadResult(
             filename=sidecar_prefix + name,
             size=len(data),
@@ -227,7 +210,7 @@ def _replace_asset_sync(
         )
 
     target.write_bytes(data)
-    rel = str(target.relative_to(content_dir))
+    rel = str(target.relative_to(repo_root))
     return UploadResult(
         filename=sidecar_prefix + name,
         size=len(data),
@@ -239,14 +222,14 @@ def _replace_asset_sync(
 
 
 async def replace_asset(
-    content_dir: Path,
+    repo_root: Path,
     raw_page: str,
     raw_filename: str,
     data: bytes,
     content_type: str | None,
 ) -> UploadResult:
     return await asyncio.to_thread(
-        _replace_asset_sync, content_dir, raw_page, raw_filename, data, content_type
+        _replace_asset_sync, repo_root, raw_page, raw_filename, data, content_type
     )
 
 

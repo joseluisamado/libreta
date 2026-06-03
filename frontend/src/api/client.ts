@@ -1,6 +1,5 @@
 import type {
   AssetUploadResponse,
-  DiffEntry,
   DirChildren,
   GiteaImportRequest,
   GiteaRepo,
@@ -10,13 +9,11 @@ import type {
   GitSource,
   GitSourceCreate,
   GitSourceUpdate,
-  HistoryEntry,
   PageMove,
   PageNode,
   PageRead,
   PageWrite,
   PendingCommit,
-  RecentChange,
   SearchResult,
   SshKey,
   SshKeyCreate,
@@ -55,58 +52,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return (await r.json()) as T
 }
 
-export function getTree(): Promise<PageNode[]> {
-  return request<PageNode[]>('/pages/tree')
-}
-
-export function getRecentChanges(limit = 20): Promise<RecentChange[]> {
-  const qs = new URLSearchParams({ limit: String(limit) }).toString()
-  return request<RecentChange[]>(`/pages/recent?${qs}`)
-}
-
-export function getPage(path: string): Promise<PageRead> {
-  return request<PageRead>(`/pages/${enc(path)}`)
-}
-
-export function savePage(path: string, data: PageWrite): Promise<PageRead> {
-  return request<PageRead>(`/pages/${enc(path)}`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-  })
-}
-
 async function requestNoContent(path: string, init?: RequestInit): Promise<void> {
   const r = await fetch(`${BASE}${path}`, init)
   if (!r.ok) {
     const body = (await r.json().catch(() => ({}))) as { detail?: string }
     throw new Error(body.detail ?? `HTTP ${r.status}`)
   }
-}
-
-export function deletePage(path: string): Promise<void> {
-  return requestNoContent(`/pages/${enc(path)}`, { method: 'DELETE' })
-}
-
-export function getPageHistory(path: string): Promise<HistoryEntry[]> {
-  return request<HistoryEntry[]>(`/pages/${enc(path)}/history`)
-}
-
-export function getPageDiff(path: string, a: string, b: string): Promise<DiffEntry> {
-  const qs = new URLSearchParams({ a, b }).toString()
-  return request<DiffEntry>(`/pages/${enc(path)}/diff?${qs}`)
-}
-
-export async function uploadAsset(pagePath: string, file: File): Promise<AssetUploadResponse> {
-  const fd = new FormData()
-  fd.append('file', file, file.name)
-  // Don't set Content-Type — the browser sets it (with the boundary).
-  const r = await fetch(`${BASE}/pages/${enc(pagePath)}/assets`, { method: 'POST', body: fd })
-  if (!r.ok) {
-    const body = (await r.json().catch(() => ({}))) as { detail?: string }
-    throw new Error(body.detail ?? `HTTP ${r.status}`)
-  }
-  return (await r.json()) as AssetUploadResponse
 }
 
 export async function uploadSourceAsset(
@@ -139,16 +90,6 @@ async function postFile(url: string, file: File): Promise<AssetUploadResponse> {
   return (await r.json()) as AssetUploadResponse
 }
 
-/**
- * Upload a file as a sibling into a content folder (not a page sidecar).
- * ``folder`` is a page-style path; "" or "index" means the content root.
- */
-export function uploadFolderFile(folder: string, file: File): Promise<AssetUploadResponse> {
-  const f = folder && folder !== 'index' ? folder : ''
-  const url = f ? `${BASE}/pages/${enc(f)}/files` : `${BASE}/pages/files`
-  return postFile(url, file)
-}
-
 /** Upload a file as a sibling into a git-source folder ("" = repo root). */
 export function uploadSourceFolderFile(
   sourceId: string,
@@ -171,25 +112,6 @@ export function uploadWatchedFolderFile(
     ? `${BASE}/watch/${enc(label)}/folders/${enc(folder)}/files`
     : `${BASE}/watch/${enc(label)}/files`
   return postFile(url, file)
-}
-
-export async function upsertAsset(
-  pagePath: string,
-  filename: string,
-  data: Blob,
-  contentType: string,
-): Promise<AssetUploadResponse> {
-  const fd = new FormData()
-  fd.append('file', new File([data], filename, { type: contentType }), filename)
-  const r = await fetch(`${BASE}/pages/${enc(pagePath)}/assets/${encodeURIComponent(filename)}`, {
-    method: 'PUT',
-    body: fd,
-  })
-  if (!r.ok) {
-    const body = (await r.json().catch(() => ({}))) as { detail?: string }
-    throw new Error(body.detail ?? `HTTP ${r.status}`)
-  }
-  return (await r.json()) as AssetUploadResponse
 }
 
 export async function upsertSourceAsset(
@@ -223,14 +145,6 @@ export function getClientConfig(): Promise<ClientConfig> {
 export function searchPages(q: string, limit = 20): Promise<SearchResult[]> {
   const qs = new URLSearchParams({ q, limit: String(limit) }).toString()
   return request<SearchResult[]>(`/search?${qs}`)
-}
-
-export function movePage(path: string, data: PageMove): Promise<PageRead> {
-  return request<PageRead>(`/pages/${enc(path)}/move`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-  })
 }
 
 // ---- Watch folder API --------------------------------------------------------

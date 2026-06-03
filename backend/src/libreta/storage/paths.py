@@ -22,18 +22,18 @@ def normalize_page_path(raw: str) -> PurePosixPath:
     return PurePosixPath(*parts)
 
 
-def page_to_file(content_dir: Path, page: PurePosixPath) -> Path:
+def page_to_file(repo_root: Path, page: PurePosixPath) -> Path:
     """Resolve a normalized page path to its on-disk ``<page>.md`` file.
 
     When the page path already starts with ``pages/`` (source repos that have
-    a top-level pages directory) we resolve from *content_dir* directly.
-    Otherwise, if *content_dir* contains a ``pages/`` subdirectory the path is
-    rooted there. Flat repos use *content_dir* itself.
+    a top-level pages directory) we resolve from *repo_root* directly.
+    Otherwise, if *repo_root* contains a ``pages/`` subdirectory the path is
+    rooted there. Flat repos use *repo_root* itself.
     """
     page_str = str(page)
-    pages_dir = content_dir / "pages"
+    pages_dir = repo_root / "pages"
     if page_str.startswith("pages/"):
-        return content_dir.joinpath(*page.parts).with_suffix(".md")
+        return repo_root.joinpath(*page.parts).with_suffix(".md")
     if pages_dir.is_dir():
         return pages_dir.joinpath(*page.parts).with_suffix(".md")
-    return content_dir.joinpath(*page.parts).with_suffix(".md")
+    return repo_root.joinpath(*page.parts).with_suffix(".md")

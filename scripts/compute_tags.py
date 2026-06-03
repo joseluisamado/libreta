@@ -1,15 +1,16 @@
 """Compute tags for every page that doesn't already have them.
 
-Walks ``data/content/pages/``. For each ``.md`` file with no ``tags`` (or empty
-``tags``) in frontmatter, derives 3–5 tags by scoring terms via TF-IDF across
-the corpus and writes them back. Idempotent: pages that already have tags are
-left alone.
+Walks a repo's ``pages/`` directory (pass ``--repo /path/to/clone``). For each
+``.md`` file with no ``tags`` (or empty ``tags``) in frontmatter, derives 3–5
+tags by scoring terms via TF-IDF across the corpus and writes them back.
+Idempotent: pages that already have tags are left alone.
 
 Run via:
 
-    cd backend && uv run python ../scripts/compute_tags.py [--dry-run] [--force]
+    cd backend && uv run python ../scripts/compute_tags.py --repo <clone> [--dry-run] [--force]
 
 Flags:
+    --repo      Path to a git source clone (its ``pages/`` subdir is scanned). Required.
     --dry-run   Print the computed tags without writing.
     --force     Overwrite existing tags (default: skip pages that already have any).
 """
@@ -39,15 +40,18 @@ from libreta.tagging import (  # noqa: E402
     tokenize,
 )
 
-DEFAULT_PAGES = PROJECT_ROOT / "data" / "content" / "pages"
-
 HEADING_BOOST = 3
 TITLE_BOOST = 4
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--pages", type=Path, default=DEFAULT_PAGES)
+    parser.add_argument(
+        "--repo",
+        type=Path,
+        required=True,
+        help="Path to a git source clone; its pages/ subdir is scanned.",
+    )
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument(
         "--force",
@@ -56,7 +60,8 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    pages_dir: Path = args.pages.resolve()
+    repo_root: Path = args.repo.resolve()
+    pages_dir = repo_root / "pages"
     if not pages_dir.is_dir():
         print(f"pages dir not found: {pages_dir}", file=sys.stderr)
         return 2
@@ -67,7 +72,7 @@ def main() -> int:
         return 0
 
     # Build document-frequency corpus
-    df, n_docs = build_corpus_df(PROJECT_ROOT / "data" / "content")
+    df, n_docs = build_corpus_df(repo_root)
 
     written = 0
     skipped = 0

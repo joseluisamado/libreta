@@ -1,32 +1,18 @@
 <script setup lang="ts">
   import { computed } from 'vue'
-  import { useTreeStore } from '@/stores/tree'
   import { useSourcesStore } from '@/stores/sources'
   import { displaySourceLabel } from '@/utils/sourceLabel'
-  import type { PageNode } from '@/api/types'
 
   const props = defineProps<{
     path: string
     watchedLabel?: string
     sourceId?: string
   }>()
-  const tree = useTreeStore()
   const sources = useSourcesStore()
 
   interface Crumb {
     label: string
     to: string | null
-  }
-
-  function findTitle(nodes: PageNode[], target: string): string | null {
-    for (const n of nodes) {
-      if (n.path === target) return n.title
-      if (n.children.length) {
-        const hit = findTitle(n.children, target)
-        if (hit) return hit
-      }
-    }
-    return null
   }
 
   function humanise(segment: string): string {
@@ -63,7 +49,7 @@
     segments.forEach((seg, i) => {
       acc = acc ? `${acc}/${seg}` : seg
       const isLast = i === segments.length - 1
-      const title = findTitle(tree.nodes, acc) ?? humanise(seg)
+      const title = humanise(seg)
       if (props.watchedLabel) {
         out.push({
           label: title,
@@ -74,8 +60,6 @@
           label: title,
           to: isLast ? null : `/source/${props.sourceId}/${acc}`,
         })
-      } else {
-        out.push({ label: title, to: isLast ? null : `/w/${acc}` })
       }
     })
     return out

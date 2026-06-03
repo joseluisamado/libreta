@@ -12,10 +12,11 @@ def main() -> None:
 
     ri = sub.add_parser("reindex", help="Rebuild the full-text search index from scratch")
     ri.add_argument(
-        "--content-dir",
+        "--meta-dir",
         type=Path,
         default=None,
-        help="Path to the content repo (default: LIBRETA_CONTENT_DIR env var or ./data/content)",
+        help="Path to the metadata dir holding the search index "
+        "(default: LIBRETA_META_DIR env var or ./data/meta)",
     )
 
     gc = sub.add_parser(
@@ -33,7 +34,7 @@ def main() -> None:
         "--repo",
         type=Path,
         default=None,
-        help="Run on an arbitrary repo path (overrides --source and LIBRETA_CONTENT_DIR)",
+        help="Run on an arbitrary repo path (overrides --source)",
     )
     gc.add_argument(
         "--delete",
@@ -65,7 +66,7 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.command == "reindex":
-        _run_reindex(args.content_dir)
+        _run_reindex(args.meta_dir)
     elif args.command == "gc":
         _run_gc(args.source, args.repo, args.delete)
     elif args.command == "import-apple-notes":
@@ -100,18 +101,18 @@ def _run_import_apple_notes(args: argparse.Namespace) -> None:
     )
 
 
-def _run_reindex(content_dir: Path | None) -> None:
+def _run_reindex(meta_dir: Path | None) -> None:
     from libreta.config import Settings
     from libreta.storage.search import full_reindex
 
-    settings = Settings(content_dir=content_dir) if content_dir else Settings()
+    settings = Settings(meta_dir=meta_dir) if meta_dir else Settings()
 
-    if not settings.content_dir.is_dir():
-        print(f"error: content directory not found: {settings.content_dir}", file=sys.stderr)
+    if not settings.meta_dir.is_dir():
+        print(f"error: metadata directory not found: {settings.meta_dir}", file=sys.stderr)
         sys.exit(1)
 
-    print(f"Reindexing {settings.content_dir} …", flush=True)
-    n = asyncio.run(full_reindex(settings.content_dir, settings.repos_dir))
+    print(f"Reindexing {settings.meta_dir} …", flush=True)
+    n = asyncio.run(full_reindex(settings.meta_dir, settings.repos_dir))
     print(f"Done — indexed {n} page(s).")
 
 
@@ -125,7 +126,8 @@ def _run_gc(source: str | None, repo: Path | None, delete: bool) -> None:
     elif source is not None:
         repo_root = settings.repos_dir / source
     else:
-        repo_root = settings.content_dir
+        print("error: gc requires --source <id> or --repo <path>", file=sys.stderr)
+        sys.exit(2)
 
     if not repo_root.is_dir():
         print(f"error: repo not found: {repo_root}", file=sys.stderr)

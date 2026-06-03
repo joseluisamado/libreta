@@ -22,11 +22,11 @@ from libreta.models import GiteaRepo
 
 @pytest.fixture
 def client(tmp_path: Path) -> Iterator[TestClient]:
-    content_dir = tmp_path / "content"
-    content_dir.mkdir()
-    pygit2.init_repository(str(content_dir))
+    meta_dir = tmp_path / "meta"
+    meta_dir.mkdir()
+    pygit2.init_repository(str(meta_dir))
     settings = Settings(
-        content_dir=content_dir,
+        meta_dir=meta_dir,
         repos_dir=tmp_path / "repos",
         ssh_keys_dir=tmp_path / "ssh",
         gitea_servers_dir=tmp_path / "gitea",

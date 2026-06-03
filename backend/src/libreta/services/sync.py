@@ -40,10 +40,10 @@ async def _do_push(
     repos_dir: Path,
     ssh_keys_dir: Path,
     gitea_servers_dir: Path,
-    content_dir: Path,
+    meta_dir: Path,
     source_id: str,
 ) -> None:
-    sources = await load_sources(content_dir)
+    sources = await load_sources(meta_dir)
     entry = next((s for s in sources if s["id"] == source_id), None)
     if entry is None:
         logger.warning("push: source %s not found in config, skipping", source_id)
@@ -53,7 +53,7 @@ async def _do_push(
     for attempt in range(1, _PUSH_MAX_RETRIES + 1):
         try:
             await asyncio.to_thread(push_sync, repos_dir, ssh_keys_dir, gitea_servers_dir, entry)
-            await record_sync_result(content_dir, source_id, None)
+            await record_sync_result(meta_dir, source_id, None)
             logger.info("push: source %s pushed (attempt %d)", source_id, attempt)
             return
         except Exception as exc:
@@ -63,20 +63,20 @@ async def _do_push(
                 delay *= 2
 
     error = f"push failed after {_PUSH_MAX_RETRIES} attempts"
-    await record_sync_result(content_dir, source_id, error)
+    await record_sync_result(meta_dir, source_id, error)
 
 
 async def push_worker(
     repos_dir: Path,
     ssh_keys_dir: Path,
     gitea_servers_dir: Path,
-    content_dir: Path,
+    meta_dir: Path,
 ) -> None:
     """Drain the push queue forever.  Run as a background task."""
     while True:
         source_id = await _push_queue.get()
         try:
-            await _do_push(repos_dir, ssh_keys_dir, gitea_servers_dir, content_dir, source_id)
+            await _do_push(repos_dir, ssh_keys_dir, gitea_servers_dir, meta_dir, source_id)
         except Exception:
             logger.exception("push worker: unhandled error for %s", source_id)
         finally:
@@ -87,18 +87,18 @@ async def _sync_one(
     repos_dir: Path,
     ssh_keys_dir: Path,
     gitea_servers_dir: Path,
-    content_dir: Path,
+    meta_dir: Path,
     entry: dict,  # type: ignore[type-arg]
 ) -> None:
     source_id: str = entry["id"]
     try:
         await fetch_and_ff(repos_dir, ssh_keys_dir, gitea_servers_dir, entry)
-        await record_sync_result(content_dir, source_id, None)
+        await record_sync_result(meta_dir, source_id, None)
         logger.info("sync: source %s up to date", source_id)
     except Exception as exc:
         error = str(exc)
         logger.warning("sync: source %s failed: %s", source_id, error)
-        await record_sync_result(content_dir, source_id, error)
+        await record_sync_result(meta_dir, source_id, error)
 
 
 _SYNC_PARALLELISM = 2
@@ -119,18 +119,18 @@ async def _bounded_sync_one(
     repos_dir: Path,
     ssh_keys_dir: Path,
     gitea_servers_dir: Path,
-    content_dir: Path,
+    meta_dir: Path,
     entry: dict,  # type: ignore[type-arg]
 ) -> None:
     async with _get_sync_sem():
-        await _sync_one(repos_dir, ssh_keys_dir, gitea_servers_dir, content_dir, entry)
+        await _sync_one(repos_dir, ssh_keys_dir, gitea_servers_dir, meta_dir, entry)
 
 
 async def startup_sync(
     repos_dir: Path,
     ssh_keys_dir: Path,
     gitea_servers_dir: Path,
-    content_dir: Path,
+    meta_dir: Path,
 ) -> None:
     """Clone missing sources and fetch existing ones at startup.
 
@@ -139,12 +139,12 @@ async def startup_sync(
     every source in parallel on a low-core host just pegs all cores and
     increases wall-clock time through contention.
     """
-    sources = await load_sources(content_dir)
+    sources = await load_sources(meta_dir)
     if not sources:
         return
     await asyncio.gather(
         *[
-            _bounded_sync_one(repos_dir, ssh_keys_dir, gitea_servers_dir, content_dir, s)
+            _bounded_sync_one(repos_dir, ssh_keys_dir, gitea_servers_dir, meta_dir, s)
             for s in sources
         ],
         return_exceptions=True,
@@ -155,7 +155,7 @@ async def periodic_sync_loop(
     repos_dir: Path,
     ssh_keys_dir: Path,
     gitea_servers_dir: Path,
-    content_dir: Path,
+    meta_dir: Path,
 ) -> None:
     """Poll each source on its own interval.  Run as a background task."""
     # Track next-sync time per source id (in monotonic seconds).
@@ -164,7 +164,7 @@ async def periodic_sync_loop(
     # handled that. Without this, the first tick (at t≈60s) re-fetched every
     # source unconditionally because next_sync.get(sid, 0) returned 0.
     next_sync: dict[str, float] = {}
-    initial_sources = await load_sources(content_dir)
+    initial_sources = await load_sources(meta_dir)
     initial_now = asyncio.get_event_loop().time()
     for entry in initial_sources:
         sid = entry["id"]
@@ -176,7 +176,7 @@ async def periodic_sync_loop(
 
     while True:
         await asyncio.sleep(60)  # check every minute
-        sources = await load_sources(content_dir)
+        sources = await load_sources(meta_dir)
         now = asyncio.get_event_loop().time()
 
         for entry in sources:
@@ -186,9 +186,7 @@ async def periodic_sync_loop(
                 # Bounded via the shared semaphore so multiple sources don't
                 # fetch in parallel on low-core hosts.
                 task = asyncio.create_task(
-                    _bounded_sync_one(
-                        repos_dir, ssh_keys_dir, gitea_servers_dir, content_dir, entry
-                    )
+                    _bounded_sync_one(repos_dir, ssh_keys_dir, gitea_servers_dir, meta_dir, entry)
                 )
                 _running.add(task)
                 task.add_done_callback(_running.discard)

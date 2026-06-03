@@ -1,7 +1,6 @@
 <script setup lang="ts">
   import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
   import PageTree from '@/components/PageTree.vue'
-  import { useTreeStore } from '@/stores/tree'
   import { useSourcesStore } from '@/stores/sources'
   import { getSourceChildren } from '@/api/client'
   import { displaySourceLabel } from '@/utils/sourceLabel'
@@ -11,13 +10,13 @@
   // {href, text} pair that the editor turns into a link mark.
   //
   // Internal links are resolved against where the editor currently sits:
-  //   - same repo  → a relative path to the target `.md` (portable, round-trips)
-  //   - other repo → an app-route URL (`/w/...` or `/source/<id>/...`), the only
-  //                  thing that resolves across repositories in-app.
+  //   - same source repo → a relative path to the target `.md` (portable, round-trips)
+  //   - another source   → an app-route URL (`/source/<id>/...`), the only thing
+  //                         that resolves across repositories in-app.
   const props = defineProps<{
-    // The path of the page being edited (e.g. "guide/setup.md" or "index").
+    // The path of the page being edited (e.g. "guide/setup.md").
     pagePath: string
-    // The id of the git source being edited, or undefined for the main wiki.
+    // The id of the git source being edited, if any.
     sourceId?: string
     // Text currently selected in the editor — pre-fills the link-text field.
     initialText?: string
@@ -43,39 +42,25 @@
   const externalUrl = ref(startExternal ? (props.initialHref ?? '') : '')
 
   // ── Repo selection ────────────────────────────────────────────────────────
-  // "main" is the synthetic id for the primary wiki; everything else is a
-  // git-source id.
-  const MAIN = 'main'
-  const treeStore = useTreeStore()
   const sourcesStore = useSourcesStore()
-
-  // Default the picker to the repo we're editing in, so same-repo links — the
-  // common case — need no extra clicks. (If we're editing a git source, that's
-  // its id; otherwise the main wiki.)
-  const selectedRepo = ref<string>(props.sourceId ?? MAIN)
-
-  // The main wiki (the `data/content` repo behind `/w/...`) is often empty in
-  // git-source-centric installs and isn't shown in the sidebar at all. Only
-  // offer it in the picker when it actually has pages, or when we're editing a
-  // main-wiki page (so a same-repo link is always possible).
-  const mainHasPages = ref(props.sourceId === undefined)
 
   interface RepoOption {
     id: string
     label: string
   }
-  const repoOptions = computed<RepoOption[]>(() => {
-    const opts: RepoOption[] = []
-    if (mainHasPages.value) opts.push({ id: MAIN, label: 'Main wiki' })
-    for (const s of sourcesStore.sources) {
-      if (!s.cloned) continue
-      opts.push({ id: s.id, label: displaySourceLabel(s.label) })
-    }
-    return opts
-  })
+  const repoOptions = computed<RepoOption[]>(() =>
+    sourcesStore.sources
+      .filter((s) => s.cloned)
+      .map((s) => ({ id: s.id, label: displaySourceLabel(s.label) })),
+  )
+
+  // Default the picker to the source we're editing in (same-repo links are the
+  // common case). When editing outside a source (a watched folder), fall back
+  // to the first available source.
+  const selectedRepo = ref<string>(props.sourceId ?? repoOptions.value[0]?.id ?? '')
 
   // Per-repo tree state. We keep our own copy (rather than reusing the sidebar
-  // stores' trees) so toggling folders here doesn't disturb the sidebar, and so
+  // store's trees) so toggling folders here doesn't disturb the sidebar, and so
   // we can lazy-expand independently.
   const trees = ref<Record<string, PageNode[]>>({})
   const loadingTree = ref(false)
@@ -91,18 +76,12 @@
   }
 
   async function loadRepoTree(repo: string): Promise<void> {
-    if (trees.value[repo]) return
+    if (!repo || trees.value[repo]) return
     loadingTree.value = true
     treeError.value = null
     try {
-      if (repo === MAIN) {
-        if (!treeStore.loaded) await treeStore.load()
-        trees.value = { ...trees.value, [repo]: cloneNodes(treeStore.nodes) }
-        mainHasPages.value = treeStore.nodes.length > 0
-      } else {
-        if (!sourcesStore.trees[repo]) await sourcesStore.loadTree(repo)
-        trees.value = { ...trees.value, [repo]: cloneNodes(sourcesStore.trees[repo] ?? []) }
-      }
+      if (!sourcesStore.trees[repo]) await sourcesStore.loadTree(repo)
+      trees.value = { ...trees.value, [repo]: cloneNodes(sourcesStore.trees[repo] ?? []) }
     } catch (e) {
       treeError.value = e instanceof Error ? e.message : String(e)
     } finally {
@@ -132,12 +111,9 @@
     return false
   }
 
-  // Only git sources serve a shallow tree with lazy children; the main wiki's
-  // getTree() returns the full tree, so its nodes never carry `has_more` and
-  // this never fires for MAIN.
+  // The source tree endpoint is shallow; lazy-expand stub folders on demand.
   async function handleExpand(node: PageNode): Promise<void> {
     const repo = selectedRepo.value
-    if (repo === MAIN) return
     loadingPaths.value = new Set([...loadingPaths.value, node.path])
     try {
       const result = await getSourceChildren(repo, node.path)
@@ -221,15 +197,13 @@
     if (mode.value === 'external') return externalUrl.value.trim()
     const node = selectedNode.value
     if (!node) return ''
-    const sameRepo = selectedRepo.value === (props.sourceId ?? MAIN)
-    if (sameRepo) {
-      // Relative path to the .md file — portable and round-trips byte-identically.
+    // Same source repo: a relative path to the .md file — portable and
+    // round-trips byte-identically.
+    if (props.sourceId && selectedRepo.value === props.sourceId) {
       return encodePath(relativePath(props.pagePath, node.path))
     }
-    // Cross-repo: app-route URL is the only thing that resolves across repos.
-    if (selectedRepo.value === MAIN) {
-      return `/w/${encodePath(node.path).replace(/\.md$/i, '')}`
-    }
+    // Cross-repo (or linking from a non-source editor): app-route URL is the
+    // only thing that resolves across repositories in-app.
     return `/source/${selectedRepo.value}/${encodePath(node.path).replace(/\.md$/i, '')}`
   })
 

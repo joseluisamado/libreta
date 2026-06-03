@@ -21,12 +21,12 @@ _DB_SUBDIR = ".libreta"
 _DB_NAME = "search.db"
 
 
-def db_path(content_dir: Path) -> Path:
-    return content_dir / _DB_SUBDIR / _DB_NAME
+def db_path(meta_dir: Path) -> Path:
+    return meta_dir / _DB_SUBDIR / _DB_NAME
 
 
-def _connect(content_dir: Path) -> sqlite3.Connection:
-    path = db_path(content_dir)
+def _connect(meta_dir: Path) -> sqlite3.Connection:
+    path = db_path(meta_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(path))
     conn.row_factory = sqlite3.Row
@@ -131,12 +131,9 @@ def _delete_page_sync(conn: sqlite3.Connection, page_path: str) -> None:
     conn.commit()
 
 
-def _full_reindex_sync(content_dir: Path, repos_dir: Path) -> int:
-    """Drop and rebuild the entire index across all git sources.
-
-    Falls back to *content_dir* when no source repos exist (legacy / tests).
-    """
-    conn = _connect(content_dir)
+def _full_reindex_sync(meta_dir: Path, repos_dir: Path) -> int:
+    """Drop and rebuild the entire index across all git sources."""
+    conn = _connect(meta_dir)
     try:
         _ensure_schema(conn)
         conn.execute("DELETE FROM documents")
@@ -146,23 +143,14 @@ def _full_reindex_sync(content_dir: Path, repos_dir: Path) -> int:
         count = 0
         conn.execute("DELETE FROM sources_meta")
         conn.commit()
-        source_ids = _list_source_ids(repos_dir)
-        if source_ids:
-            for source_id in source_ids:
-                pages_root, md_files = _walk_source_pages(repos_dir, source_id)
-                for md_file in md_files:
-                    _upsert_page_sync(conn, md_file, pages_root, source_id)
-                    count += 1
-                head = _source_head(repos_dir, source_id)
-                if head is not None:
-                    _record_indexed_head(conn, source_id, head)
-        else:
-            # Fallback: scan content_dir/pages directly
-            pages_root = content_dir / "pages"
-            if pages_root.is_dir():
-                for md_file in sorted(p for p in pages_root.rglob("*.md") if p.is_file()):
-                    _upsert_page_sync(conn, md_file, pages_root, "local")
-                    count += 1
+        for source_id in _list_source_ids(repos_dir):
+            pages_root, md_files = _walk_source_pages(repos_dir, source_id)
+            for md_file in md_files:
+                _upsert_page_sync(conn, md_file, pages_root, source_id)
+                count += 1
+            head = _source_head(repos_dir, source_id)
+            if head is not None:
+                _record_indexed_head(conn, source_id, head)
         return count
     finally:
         conn.close()
@@ -219,7 +207,7 @@ def _changed_md_between(
     return changed, removed
 
 
-def _incremental_reindex_sync(content_dir: Path, repos_dir: Path) -> int:
+def _incremental_reindex_sync(meta_dir: Path, repos_dir: Path) -> int:
     """Reindex pages that changed since the last run.
 
     Fast path: when a source's HEAD hasn't moved since the last index, skip
@@ -228,7 +216,7 @@ def _incremental_reindex_sync(content_dir: Path, repos_dir: Path) -> int:
     for sources without recorded HEAD (first run after upgrade) or when the
     diff can't be computed.
     """
-    conn = _connect(content_dir)
+    conn = _connect(meta_dir)
     try:
         _ensure_schema(conn)
         updated = 0
@@ -297,42 +285,12 @@ def _record_indexed_head(conn: sqlite3.Connection, source_id: str, head: str) ->
     conn.commit()
 
 
-def _index_single_page_sync(content_dir: Path, md_file: Path) -> None:
-    conn = _connect(content_dir)
-    try:
-        _ensure_schema(conn)
-        pages_root = content_dir / "pages"
-        if not pages_root.is_dir():
-            pages_root = content_dir
-        _upsert_page_sync(conn, md_file, pages_root, "local")
-    finally:
-        conn.close()
+async def full_reindex(meta_dir: Path, repos_dir: Path) -> int:
+    return await asyncio.to_thread(_full_reindex_sync, meta_dir, repos_dir)
 
 
-def _remove_page_from_index_sync(content_dir: Path, page_path: str) -> None:
-    conn = _connect(content_dir)
-    try:
-        _ensure_schema(conn)
-        _delete_page_sync(conn, page_path)
-        _delete_page_sync(conn, f"local:{page_path}")
-    finally:
-        conn.close()
-
-
-async def full_reindex(content_dir: Path, repos_dir: Path) -> int:
-    return await asyncio.to_thread(_full_reindex_sync, content_dir, repos_dir)
-
-
-async def incremental_reindex(content_dir: Path, repos_dir: Path) -> int:
-    return await asyncio.to_thread(_incremental_reindex_sync, content_dir, repos_dir)
-
-
-async def index_page(content_dir: Path, md_file: Path) -> None:
-    await asyncio.to_thread(_index_single_page_sync, content_dir, md_file)
-
-
-async def remove_page_from_index(content_dir: Path, page_path: str) -> None:
-    await asyncio.to_thread(_remove_page_from_index_sync, content_dir, page_path)
+async def incremental_reindex(meta_dir: Path, repos_dir: Path) -> int:
+    return await asyncio.to_thread(_incremental_reindex_sync, meta_dir, repos_dir)
 
 
 # ---------------------------------------------------------------------------
@@ -352,7 +310,7 @@ def _build_fts_query(q: str) -> str:
 
 
 def _search_sync(
-    content_dir: Path,
+    meta_dir: Path,
     q: str,
     limit: int,
 ) -> list[dict[str, str]]:
@@ -360,7 +318,7 @@ def _search_sync(
     if not fts_q:
         return []
 
-    conn = _connect(content_dir)
+    conn = _connect(meta_dir)
     try:
         _ensure_schema(conn)
         rows = conn.execute(
@@ -387,5 +345,5 @@ def _search_sync(
         conn.close()
 
 
-async def search(content_dir: Path, q: str, limit: int = 20) -> list[dict[str, str]]:
-    return await asyncio.to_thread(_search_sync, content_dir, q, limit)
+async def search(meta_dir: Path, q: str, limit: int = 20) -> list[dict[str, str]]:
+    return await asyncio.to_thread(_search_sync, meta_dir, q, limit)

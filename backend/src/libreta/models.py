@@ -238,8 +238,8 @@ class ClientConfig(BaseModel):
 class InfoResponse(BaseModel):
     name: str
     version: str
-    content_dir: str
-    content_dir_exists: bool
+    meta_dir: str
+    meta_dir_exists: bool
 
 
 class WatchedFolderResponse(BaseModel):

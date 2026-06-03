@@ -29,36 +29,36 @@ describe('renderMarkdown', () => {
     expect(out).toContain('language-python')
   })
 
-  it('rewrites relative image URLs to the assets endpoint', () => {
-    const out = renderMarkdown('![alt](images/foo.png)', 'recipes/lasagna')
-    expect(out).toContain('/api/v1/assets/pages/recipes/images/foo.png')
+  it('rewrites relative image URLs to the source assets endpoint', () => {
+    const out = renderMarkdown('![alt](images/foo.png)', 'recipes/lasagna', 'work')
+    expect(out).toContain('/api/v1/sources/work/assets/recipes/images/foo.png')
   })
 
   it('leaves absolute image URLs alone', () => {
-    const out = renderMarkdown('![alt](https://example.com/x.png)', 'recipes/lasagna')
+    const out = renderMarkdown('![alt](https://example.com/x.png)', 'recipes/lasagna', 'work')
     expect(out).toContain('https://example.com/x.png')
   })
 
   it('resolves ../ in image URLs', () => {
-    const out = renderMarkdown('![alt](../shared/x.png)', 'recipes/lasagna')
-    expect(out).toContain('/api/v1/assets/pages/shared/x.png')
+    const out = renderMarkdown('![alt](../shared/x.png)', 'recipes/lasagna', 'work')
+    expect(out).toContain('/api/v1/sources/work/assets/shared/x.png')
   })
 
   it('resolves images relative to the page parent dir', () => {
     // Page path devel/concepts/saml → saml is the slug, assets live in devel/concepts/
-    const out = renderMarkdown('![alt](foo.png)', 'devel/concepts/saml')
-    expect(out).toContain('/api/v1/assets/pages/devel/concepts/foo.png')
+    const out = renderMarkdown('![alt](foo.png)', 'devel/concepts/saml', 'work')
+    expect(out).toContain('/api/v1/sources/work/assets/devel/concepts/foo.png')
   })
 
-  it('rewrites relative PDF/zip links through the assets endpoint', () => {
-    const out = renderMarkdown('[doc](report.pdf)', 'housing/espana/cancer')
-    expect(out).toContain('href="/api/v1/assets/pages/housing/espana/report.pdf"')
+  it('rewrites relative PDF/zip links through the source assets endpoint', () => {
+    const out = renderMarkdown('[doc](report.pdf)', 'housing/espana/cancer', 'work')
+    expect(out).toContain('href="/api/v1/sources/work/assets/housing/espana/report.pdf"')
   })
 
-  it('leaves wiki page links alone', () => {
-    const out = renderMarkdown('[other](/w/foo/bar)', 'housing/espana/cancer')
-    expect(out).toContain('href="/w/foo/bar"')
-    expect(out).not.toContain('/api/v1/assets/')
+  it('leaves in-app route links alone', () => {
+    const out = renderMarkdown('[other](/source/work/foo/bar)', 'housing/espana/cancer', 'work')
+    expect(out).toContain('href="/source/work/foo/bar"')
+    expect(out).not.toContain('/assets/')
   })
 
   it('leaves anchor and external links alone', () => {

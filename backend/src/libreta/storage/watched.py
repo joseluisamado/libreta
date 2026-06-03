@@ -25,8 +25,8 @@ WATCHED_CONFIG_FILENAME = ".meta/watched.json"
 # ---------------------------------------------------------------------------
 
 
-def load_watched_config_sync(content_dir: Path) -> list[dict[str, Any]]:
-    config_path = content_dir / WATCHED_CONFIG_FILENAME
+def load_watched_config_sync(meta_dir: Path) -> list[dict[str, Any]]:
+    config_path = meta_dir / WATCHED_CONFIG_FILENAME
     if not config_path.exists():
         return []
     try:
@@ -39,12 +39,12 @@ def load_watched_config_sync(content_dir: Path) -> list[dict[str, Any]]:
         return []
 
 
-async def load_watched_config(content_dir: Path) -> list[dict[str, Any]]:
-    return await asyncio.to_thread(load_watched_config_sync, content_dir)
+async def load_watched_config(meta_dir: Path) -> list[dict[str, Any]]:
+    return await asyncio.to_thread(load_watched_config_sync, meta_dir)
 
 
-def save_watched_config_sync(content_dir: Path, folders: list[dict[str, Any]]) -> None:
-    config_path = content_dir / WATCHED_CONFIG_FILENAME
+def save_watched_config_sync(meta_dir: Path, folders: list[dict[str, Any]]) -> None:
+    config_path = meta_dir / WATCHED_CONFIG_FILENAME
     config_path.parent.mkdir(parents=True, exist_ok=True)
     config_path.write_text(
         json.dumps(folders, indent=2, ensure_ascii=False, default=str) + "\n",
@@ -52,8 +52,8 @@ def save_watched_config_sync(content_dir: Path, folders: list[dict[str, Any]]) -
     )
 
 
-async def save_watched_config(content_dir: Path, folders: list[dict[str, Any]]) -> None:
-    return await asyncio.to_thread(save_watched_config_sync, content_dir, folders)
+async def save_watched_config(meta_dir: Path, folders: list[dict[str, Any]]) -> None:
+    return await asyncio.to_thread(save_watched_config_sync, meta_dir, folders)
 
 
 # ---------------------------------------------------------------------------
@@ -61,9 +61,9 @@ async def save_watched_config(content_dir: Path, folders: list[dict[str, Any]]) 
 # ---------------------------------------------------------------------------
 
 
-def resolve_watched_file_sync(content_dir: Path, label: str, raw_path: str) -> tuple[Path, Path]:
+def resolve_watched_file_sync(meta_dir: Path, label: str, raw_path: str) -> tuple[Path, Path]:
     """Return (watched_root, resolved_file_path) after validating containment."""
-    config = load_watched_config_sync(content_dir)
+    config = load_watched_config_sync(meta_dir)
     entry = next((e for e in config if e["label"] == label), None)
     if entry is None:
         raise WatchedLabelNotFoundError(label)
@@ -92,8 +92,8 @@ def resolve_watched_file_sync(content_dir: Path, label: str, raw_path: str) -> t
     return watched_root, candidate
 
 
-async def resolve_watched_file(content_dir: Path, label: str, raw_path: str) -> tuple[Path, Path]:
-    return await asyncio.to_thread(resolve_watched_file_sync, content_dir, label, raw_path)
+async def resolve_watched_file(meta_dir: Path, label: str, raw_path: str) -> tuple[Path, Path]:
+    return await asyncio.to_thread(resolve_watched_file_sync, meta_dir, label, raw_path)
 
 
 # ---------------------------------------------------------------------------

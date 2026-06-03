@@ -22,13 +22,11 @@ def _get_lock() -> asyncio.Lock:
     return _lock
 
 
-def open_repo(content_dir: Path) -> pygit2.Repository:
+def open_repo(meta_dir: Path) -> pygit2.Repository:
     try:
-        return pygit2.Repository(str(content_dir))
+        return pygit2.Repository(str(meta_dir))
     except (pygit2.GitError, OSError) as exc:
-        raise ContentRepoUnavailableError(
-            f"cannot open content repo at {content_dir}: {exc}"
-        ) from exc
+        raise ContentRepoUnavailableError(f"cannot open content repo at {meta_dir}: {exc}") from exc
 
 
 def _commit_page_sync(
@@ -115,11 +113,11 @@ def _move_commit_sync(
     if is_directory_move:
         with contextlib.suppress(KeyError):
             index.remove_all([f"{old_rel}*"])
-        content_dir = Path(repo.workdir)
-        new_path = content_dir / new_rel
+        meta_dir = Path(repo.workdir)
+        new_path = meta_dir / new_rel
         for f in new_path.rglob("*"):
             if f.is_file():
-                index.add(str(f.relative_to(content_dir)))
+                index.add(str(f.relative_to(meta_dir)))
     else:
         with contextlib.suppress(KeyError):
             index.remove(old_rel)

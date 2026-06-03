@@ -42,7 +42,7 @@ COPY --from=builder /app/backend/src /app/src
 ENV PATH="/opt/venv/bin:$PATH" \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    LIBRETA_CONTENT_DIR=/content
+    LIBRETA_META_DIR=/var/lib/libreta/meta
 
 WORKDIR /app
 EXPOSE 8080

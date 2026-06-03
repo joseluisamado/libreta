@@ -18,4 +18,4 @@ def test_info(client: TestClient) -> None:
     assert r.status_code == 200
     body = r.json()
     assert body["name"] == "libreta"
-    assert body["content_dir_exists"] is True
+    assert body["meta_dir_exists"] is True

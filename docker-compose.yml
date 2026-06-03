@@ -10,8 +10,8 @@ services:
     restart: unless-stopped
     environment:
       # Meta-store: watched-folder config, sources.json, search index.
-      # Does NOT hold wiki content anymore — git sources do.
-      LIBRETA_CONTENT_DIR: /var/lib/libreta/meta
+      # Does NOT hold wiki content — git sources do.
+      LIBRETA_META_DIR: /var/lib/libreta/meta
       LIBRETA_REPOS_DIR: /var/lib/libreta/repos
       LIBRETA_SSH_KEYS_DIR: /var/lib/libreta/ssh_keys
       # Browser-facing URL — the SPA loads the drawio iframe directly from the
