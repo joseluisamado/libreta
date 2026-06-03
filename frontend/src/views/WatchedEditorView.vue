@@ -69,6 +69,10 @@
     editorRef.value?.openInsertDiagram()
   }
 
+  function onOpenLink(): void {
+    editorRef.value?.openLinkDialog()
+  }
+
   function onDiagramSaved(): void {
     isDirty.value = true
   }
@@ -173,6 +177,7 @@
             :editor="editorRef?.editor ?? null"
             @upload-files="onUploadFiles"
             @insert-diagram="onInsertDiagram"
+            @open-link="onOpenLink"
           />
           <Editor
             ref="editorRef"

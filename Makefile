@@ -24,6 +24,12 @@
 BACKEND   := backend
 FRONTEND  := frontend
 
+# Local, machine-specific overrides (DEPLOY_HOST, etc.). Gitignored; optional.
+# The leading `-` makes a missing file a no-op. Values here win over the `?=`
+# defaults below, but the command line still wins over everything
+# (`make release DEPLOY_HOST=...`).
+-include local.mk
+
 # Single source of truth for the project version. Release targets bump it
 # and propagate to backend/pyproject.toml and frontend/package.json.
 VERSION := $(shell cat VERSION 2>/dev/null)

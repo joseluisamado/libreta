@@ -1,0 +1,10 @@
+# Local Makefile overrides — copy to `local.mk` and edit.
+#
+#   cp local.mk.example local.mk
+#
+# `local.mk` is gitignored. The Makefile `-include`s it, so any variable set
+# here overrides the in-Makefile defaults without touching tracked files.
+# The command line still wins over this file (`make release DEPLOY_HOST=...`).
+
+# SSH target for `make release` / `make release-current` image deployment.
+DEPLOY_HOST = user@homelab

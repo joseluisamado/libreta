@@ -2,13 +2,14 @@
   import { ref } from 'vue'
   import type { Editor } from '@tiptap/core'
 
-  const props = defineProps<{
+  defineProps<{
     editor: Editor | null
   }>()
 
   const emit = defineEmits<{
     'upload-files': [files: File[]]
     'insert-diagram': []
+    'open-link': []
   }>()
 
   const imageInput = ref<HTMLInputElement | null>(null)
@@ -17,16 +18,6 @@
   function run(editor: Editor | null, fn: (ed: Editor) => void): void {
     if (!editor || editor.isDestroyed) return
     fn(editor)
-  }
-
-  function setLink(editor: Editor | null): void {
-    if (!editor || editor.isDestroyed) return
-    const url = window.prompt('URL:')
-    if (url) {
-      editor.commands.setLink({ href: url })
-    } else if (url === '') {
-      editor.commands.unsetLink()
-    }
   }
 
   function pickImage(): void {
@@ -216,7 +207,7 @@
       class="p-1.5 rounded hover:bg-slate-100 text-slate-600"
       :class="{ 'bg-slate-200 text-slate-900': editor?.isActive('link') }"
       title="Link (Ctrl+K)"
-      @click="setLink(editor)"
+      @click="emit('open-link')"
     >
       <svg
         xmlns="http://www.w3.org/2000/svg"

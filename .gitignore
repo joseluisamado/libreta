@@ -30,3 +30,6 @@ frontend/.pnpm-store/
 
 # Claude Code local overrides
 .claude/settings.local.json
+
+# Local Makefile overrides (DEPLOY_HOST, etc.) — see local.mk.example
+local.mk

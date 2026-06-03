@@ -1,13 +1,21 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, beforeEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
+import { createPinia, setActivePinia } from 'pinia'
 import Editor from '@/components/Editor/Editor.vue'
+
+beforeEach(() => {
+  setActivePinia(createPinia())
+})
 
 function createWrapper(content = '# Hello\n\nSome text.') {
   return mount(Editor, {
     props: {
       content,
       path: 'test/page',
+    },
+    global: {
+      plugins: [createPinia()],
     },
   })
 }
@@ -76,5 +84,41 @@ describe('Editor.vue', () => {
   it('exposes editor instance', async () => {
     const wrapper = await waitForEditor(createWrapper('# Test'))
     expect(wrapper.vm.editor).toBeTruthy()
+  })
+
+  it('exposes openLinkDialog and opens the link modal', async () => {
+    const wrapper = await waitForEditor(createWrapper('Plain text'))
+    expect(typeof wrapper.vm.openLinkDialog).toBe('function')
+    expect(wrapper.findComponent({ name: 'LinkModal' }).exists()).toBe(false)
+    wrapper.vm.openLinkDialog()
+    await nextTick()
+    expect(wrapper.findComponent({ name: 'LinkModal' }).exists()).toBe(true)
+  })
+
+  it('inserts an external link as markdown when the modal submits', async () => {
+    const wrapper = await waitForEditor(createWrapper(''))
+    wrapper.vm.openLinkDialog()
+    await nextTick()
+    const modal = wrapper.findComponent({ name: 'LinkModal' })
+    modal.vm.$emit('submit', { href: 'https://example.com', text: 'Example' })
+    await nextTick()
+    await nextTick()
+    const md = wrapper.vm.getMarkdown()
+    expect(md).toContain('[Example](https://example.com)')
+    // Modal closes after submit.
+    expect(wrapper.findComponent({ name: 'LinkModal' }).exists()).toBe(false)
+  })
+
+  it('inserts a relative internal link that round-trips byte-identically', async () => {
+    const wrapper = await waitForEditor(createWrapper(''))
+    wrapper.vm.openLinkDialog()
+    await nextTick()
+    const modal = wrapper.findComponent({ name: 'LinkModal' })
+    // A same-repo .md target one directory up from "test/page".
+    modal.vm.$emit('submit', { href: '../other/guide.md', text: 'Guide' })
+    await nextTick()
+    await nextTick()
+    const md = wrapper.vm.getMarkdown()
+    expect(md).toContain('[Guide](../other/guide.md)')
   })
 })

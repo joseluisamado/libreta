@@ -19,6 +19,11 @@
     onExpand?: (node: PageNode) => Promise<void>
     loadingPaths?: Set<string>
     defaultOpenDepth?: number
+    // Selection mode: instead of navigating via RouterLink, clicking a leaf
+    // calls onSelect. Used by the editor's link picker.
+    selectMode?: boolean
+    onSelect?: (node: PageNode) => void
+    selectedPath?: string | null
   }>()
 
   // ----- Open/closed state ---------------------------------------------------
@@ -218,7 +223,35 @@
           </svg>
         </button>
         <span v-else class="shrink-0 w-4 h-4" aria-hidden="true" />
+        <!-- Selection mode (link picker): clicking selects rather than navigates. -->
+        <button
+          v-if="selectMode"
+          type="button"
+          class="flex-1 truncate flex items-center gap-1 text-left"
+          :class="[
+            node.is_directory || node.children.length || node.has_more
+              ? 'text-slate-800 font-medium hover:text-blue-600'
+              : 'text-slate-700 hover:text-blue-600',
+            selectedPath === node.path ? 'text-blue-700 font-semibold' : '',
+          ]"
+          @click="
+            node.is_directory || node.children.length || node.has_more
+              ? toggle(node.path, node)
+              : onSelect?.(node)
+          "
+        >
+          <span v-if="node.kind === 'pdf'" class="text-[10px] font-semibold text-rose-500 shrink-0"
+            >PDF</span
+          >
+          <span
+            v-else-if="!node.is_directory && !node.children.length && !node.has_more"
+            class="text-[10px] font-semibold text-sky-500 shrink-0"
+            >MD</span
+          >
+          <span class="truncate">{{ node.filename }}</span>
+        </button>
         <RouterLink
+          v-else
           :to="nodeLink(node)"
           class="flex-1 truncate flex items-center gap-1"
           :class="
@@ -250,6 +283,9 @@
         :on-expand="childOnExpand()"
         :loading-paths="childLoadingPaths()"
         :default-open-depth="props.defaultOpenDepth"
+        :select-mode="selectMode"
+        :on-select="onSelect"
+        :selected-path="selectedPath"
         class="ml-3 border-l-2 pl-2"
         :class="railClass(node)"
       />

@@ -28,6 +28,7 @@
   import { resolveAssetUrl } from '@/markdown'
   import { getMarkdownFromStorage } from '@/markdownStorage'
   import DrawioModal from './DrawioModal.vue'
+  import LinkModal from './LinkModal.vue'
 
   const props = defineProps<{
     content: string
@@ -673,6 +674,74 @@
     window.getSelection()?.removeAllRanges()
   }
 
+  // ── link dialog ───────────────────────────────────────────────────────────
+  const linkOpen = ref(false)
+  const linkInitialText = ref('')
+  const linkInitialHref = ref('')
+
+  function openLinkDialog(): void {
+    const ed = editor.value
+    if (!ed || ed.isDestroyed) return
+    const { from, to } = ed.state.selection
+    linkInitialText.value = from === to ? '' : ed.state.doc.textBetween(from, to, ' ')
+    // If the cursor sits on an existing link, pre-fill its href so the user can
+    // edit it rather than start from scratch.
+    const href = ed.getAttributes('link')?.['href']
+    linkInitialHref.value = typeof href === 'string' ? href : ''
+    linkOpen.value = true
+  }
+
+  function onLinkSubmit(payload: { href: string; text: string }): void {
+    linkOpen.value = false
+    const ed = editor.value
+    if (!ed || ed.isDestroyed) return
+    const { from, to } = ed.state.selection
+    const hadSelection = from !== to
+    // Guard the re-entrant onUpdate → props.content → watcher path, matching
+    // the diagram-insert flow.
+    internalUpdateInFlight.value = true
+    try {
+      if (hadSelection) {
+        // Apply the link mark across the existing selection. If the user also
+        // changed the visible text, replace the selection with new linked text.
+        const selectedText = ed.state.doc.textBetween(from, to, ' ')
+        if (payload.text && payload.text !== selectedText) {
+          ed.chain()
+            .insertContentAt(
+              { from, to },
+              {
+                type: 'text',
+                text: payload.text,
+                marks: [{ type: 'link', attrs: { href: payload.href } }],
+              },
+            )
+            .run()
+        } else {
+          ed.chain().extendMarkRange('link').setLink({ href: payload.href }).run()
+        }
+      } else {
+        // No selection: insert fresh linked text at the cursor.
+        ed.chain()
+          .insertContent({
+            type: 'text',
+            text: payload.text,
+            marks: [{ type: 'link', attrs: { href: payload.href } }],
+          })
+          .run()
+      }
+    } finally {
+      void nextTick().then(() => {
+        internalUpdateInFlight.value = false
+        const md = getMarkdownFromStorage(ed)
+        if (md) emit('update', md)
+      })
+    }
+  }
+
+  function onLinkCancel(): void {
+    linkOpen.value = false
+  }
+
   function getMarkdown(): string {
     if (!editor.value || editor.value.isDestroyed) return props.content
     return getMarkdownFromStorage(editor.value) || props.content
@@ -685,6 +754,7 @@
     editor: editorInstance,
     uploadAndInsert,
     openInsertDiagram,
+    openLinkDialog,
   })
 </script>
 
@@ -709,6 +779,15 @@
       :initial-xml="drawioInitialXml"
       @save="onDiagramSave"
       @cancel="onDiagramCancel"
+    />
+    <LinkModal
+      v-if="linkOpen"
+      :page-path="props.path"
+      :source-id="props.sourceId"
+      :initial-text="linkInitialText"
+      :initial-href="linkInitialHref"
+      @submit="onLinkSubmit"
+      @cancel="onLinkCancel"
     />
   </div>
 </template>
