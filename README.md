@@ -4,6 +4,8 @@
 
 **Status**: v1.0 release candidate. Editing, search, diagrams, git-source sync, and the production deployment story are all in. See [`docs/PROGRESS.md`](./docs/PROGRESS.md) for what landed and [`docs/ROADMAP.md`](./docs/ROADMAP.md) for what's beyond v1.
 
+![Libreta home screen — repo tree sidebar with multiple wikis, search, and a page-count dashboard](docs/assets/screenshot-home.png)
+
 ## Why this exists
 
 Self-hosted wiki tools today force a tradeoff:
