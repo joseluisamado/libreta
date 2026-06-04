@@ -3,6 +3,9 @@
   import { pdfjs, PDF_DOC_OPTIONS } from '@/lib/pdf'
   import { renderMarkdown, renderMermaidIn } from '@/markdown'
   import { sanitizeHtmlFile } from '@/lib/html'
+  import { EXT_LANG } from '@/textFiles'
+  import hljs from 'highlight.js'
+  import 'highlight.js/styles/github.css'
 
   // First-page PDF thumbnails, cached as data URLs keyed by raw URL and shared
   // across every tile for the session (module scope, not per-instance), so
@@ -83,6 +86,25 @@
 
   // Container for the rendered markdown, so we can run mermaid inside it.
   const mdEl = ref<HTMLElement | null>(null)
+
+  // Syntax-highlight the text snippet the same way the full viewer (TextView)
+  // does: map the file extension to a hljs language, fall back to auto-detect.
+  const textLang = computed(() => {
+    const name = props.label.toLowerCase()
+    if (name === 'dockerfile') return 'dockerfile'
+    if (name === 'makefile') return 'makefile'
+    const dot = name.lastIndexOf('.')
+    const ext = dot === -1 ? '' : name.slice(dot + 1)
+    const cand = ext ? EXT_LANG[ext] : undefined
+    return cand && hljs.getLanguage(cand) ? cand : ''
+  })
+
+  const highlightedSnippet = computed(() => {
+    if (!rawSnippet.value) return ''
+    return textLang.value
+      ? hljs.highlight(rawSnippet.value, { language: textLang.value }).value
+      : hljs.highlightAuto(rawSnippet.value).value
+  })
 
   async function loadTextual(): Promise<void> {
     if (!props.rawUrl || (!isMarkdown.value && !isText.value && !isHtml.value)) return
@@ -329,14 +351,15 @@
           </div>
         </template>
 
-        <!-- Plain-text snippet -->
+        <!-- Syntax-highlighted text snippet (same colours as TextView) -->
         <template v-else-if="isText">
           <div v-if="loading" class="text-[11px] text-slate-400">Loading…</div>
+          <!-- eslint-disable-next-line vue/no-v-html -->
           <pre
             v-else-if="rawSnippet"
-            class="w-full h-full overflow-hidden p-2 text-[9px] leading-snug text-slate-600 whitespace-pre-wrap break-words"
-            >{{ rawSnippet }}</pre
-          >
+            class="hljs w-full h-full overflow-hidden p-2 text-[9px] leading-snug whitespace-pre-wrap break-words"
+          ><code :class="textLang ? `language-${textLang}` : ''" v-html="highlightedSnippet"
+          /></pre>
           <span v-else class="text-2xl font-bold" :class="badgeColor()">{{ badge() }}</span>
         </template>
 

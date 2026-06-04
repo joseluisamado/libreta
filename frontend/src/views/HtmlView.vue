@@ -91,10 +91,48 @@
 
 <template>
   <PageToolbar />
+  <!-- Rendered/source toggle as a fixed icon button, consistent with the
+       markdown viewer (SourcePageView) and clear of the top-right toolbar. -->
+  <button
+    type="button"
+    class="fixed top-3 right-[68px] z-20 bg-white/90 backdrop-blur border border-slate-200 rounded-md p-2 hover:bg-slate-50 shadow-sm"
+    :title="mode === 'rendered' ? 'View HTML source' : 'View rendered page'"
+    :aria-label="mode === 'rendered' ? 'View HTML source' : 'View rendered page'"
+    @click="mode = mode === 'rendered' ? 'source' : 'rendered'"
+  >
+    <svg
+      v-if="mode === 'rendered'"
+      xmlns="http://www.w3.org/2000/svg"
+      class="w-4 h-4 text-slate-600"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    >
+      <polyline points="16 18 22 12 16 6" />
+      <polyline points="8 6 2 12 8 18" />
+    </svg>
+    <svg
+      v-else
+      xmlns="http://www.w3.org/2000/svg"
+      class="w-4 h-4 text-slate-600"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    >
+      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  </button>
   <a
     :href="assetUrl"
     download
-    class="fixed top-3 right-[68px] z-20 bg-white/90 backdrop-blur border border-slate-200 rounded-md p-2 hover:bg-slate-50 shadow-sm"
+    class="fixed top-3 right-[112px] z-20 bg-white/90 backdrop-blur border border-slate-200 rounded-md p-2 hover:bg-slate-50 shadow-sm"
     title="Download file"
     aria-label="Download file"
   >
@@ -121,24 +159,6 @@
         :source-id="sourceId || undefined"
         :watched-label="watchedLabel || undefined"
       />
-      <div class="flex rounded-md border border-slate-200 overflow-hidden text-xs">
-        <button
-          type="button"
-          class="px-3 py-1 cursor-pointer"
-          :class="mode === 'rendered' ? 'bg-blue-600 text-white' : 'bg-white text-slate-600'"
-          @click="mode = 'rendered'"
-        >
-          Rendered
-        </button>
-        <button
-          type="button"
-          class="px-3 py-1 cursor-pointer border-l border-slate-200"
-          :class="mode === 'source' ? 'bg-blue-600 text-white' : 'bg-white text-slate-600'"
-          @click="mode = 'source'"
-        >
-          Source
-        </button>
-      </div>
     </header>
     <h1 class="text-xl font-mono font-bold mb-1 text-slate-800">{{ title }}</h1>
     <p class="text-xs text-slate-400 mb-4">HTML · scripts removed for safe rendering</p>
@@ -146,11 +166,19 @@
     <p v-if="error" class="text-red-600">Failed to load file: {{ error }}</p>
     <p v-else-if="loading" class="text-slate-400">Loading…</p>
 
-    <!-- Rendered: content is sanitized by sanitizeHtmlFile (R6) before v-html. -->
-    <div
+    <!-- Rendered in a sandboxed iframe (sandbox="", i.e. no allow-scripts and
+         no allow-same-origin): the page's own CSS is isolated to the iframe
+         document so it can't leak into Libreta's chrome, and no JS executes
+         (R6). Content is still sanitized first as defense-in-depth. The frame
+         scrolls internally; we can't measure its height (cross-origin), so it
+         fills the viewport below the header. -->
+    <iframe
       v-else-if="mode === 'rendered'"
-      class="prose max-w-none bg-white rounded-md border border-slate-200 p-6"
-      v-html="sanitizedHtml"
+      :srcdoc="sanitizedHtml"
+      sandbox=""
+      referrerpolicy="no-referrer"
+      title="Rendered HTML"
+      class="w-full bg-white rounded-md border border-slate-200 h-[calc(100vh-9rem)]"
     />
 
     <!-- Source -->

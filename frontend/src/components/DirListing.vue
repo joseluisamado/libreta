@@ -1,5 +1,5 @@
 <script setup lang="ts">
-  import { ref, watch } from 'vue'
+  import { computed, ref, watch } from 'vue'
   import type { OtherFile, PageNode } from '@/api/types'
   import PreviewTile from './PreviewTile.vue'
 
@@ -11,6 +11,7 @@
     getOtherFileUrl?: (filePath: string) => string
     getTextFileUrl?: (filePath: string) => string
     getHtmlFileUrl?: (filePath: string) => string
+    getImageFileUrl?: (filePath: string) => string
     // Raw-content URL for a child page (markdown) or pdf, used by the
     // preview tiles to fetch a snippet / embed the document.
     getChildRawUrl?: (childPath: string) => string
@@ -54,6 +55,55 @@
 
   watch(viewMode, (v) => localStorage.setItem(VIEW_KEY, v))
   watch(tileSize, (v) => localStorage.setItem(SIZE_KEY, String(v)))
+
+  // Client-side pagination: pages ("in this folder") and other files share a
+  // single budget of PAGE_SIZE entries per page, ordered alphabetically. The
+  // global sequence is [sorted children…, sorted other files…]; each page is a
+  // window of PAGE_SIZE over that sequence, and each section shows whichever of
+  // its items fall inside the window. (The API returns the full listing; this
+  // is display-only.)
+  const PAGE_SIZE = 50
+  const page = ref(1)
+
+  // Alphabetical, case-insensitive, stable. Children sort by their on-disk
+  // filename (what the row/tile shows); other files by name.
+  const collator = new Intl.Collator(undefined, { sensitivity: 'base', numeric: true })
+  const sortedChildren = computed(() =>
+    [...props.children].sort((a, b) => collator.compare(a.filename, b.filename)),
+  )
+  const sortedOtherFiles = computed(() =>
+    [...(props.otherFiles ?? [])].sort((a, b) => collator.compare(a.name, b.name)),
+  )
+
+  const totalEntries = computed(() => sortedChildren.value.length + sortedOtherFiles.value.length)
+  const pageCount = computed(() => Math.max(1, Math.ceil(totalEntries.value / PAGE_SIZE)))
+
+  // The global [start, end) window for the current page.
+  const windowStart = computed(() => (page.value - 1) * PAGE_SIZE)
+  const windowEnd = computed(() => windowStart.value + PAGE_SIZE)
+
+  // Children occupy global indices [0, nChildren); other files follow at
+  // [nChildren, total). Slice each section to its overlap with the window.
+  const pagedChildren = computed(() =>
+    sortedChildren.value.slice(windowStart.value, windowEnd.value),
+  )
+  const pagedOtherFiles = computed(() => {
+    const n = sortedChildren.value.length
+    const start = Math.max(0, windowStart.value - n)
+    const end = Math.max(0, windowEnd.value - n)
+    return sortedOtherFiles.value.slice(start, end)
+  })
+
+  // Reset to page 1 on folder change; clamp if entries shrink (e.g. delete).
+  watch(
+    () => props.basePath,
+    () => {
+      page.value = 1
+    },
+  )
+  watch(totalEntries, () => {
+    if (page.value > pageCount.value) page.value = pageCount.value
+  })
 
   const fileInput = ref<HTMLInputElement | null>(null)
   // Files awaiting confirmation because at least one exceeds LARGE_FILE_BYTES.
@@ -134,12 +184,13 @@
     return 'page'
   }
 
-  // 'text' and 'html' open in an in-app viewer (RouterLink); everything else
-  // downloads / opens externally.
+  // text/html/image/drawio open in an in-app viewer (RouterLink); everything
+  // else downloads / opens externally. (drawio is an .svg → ImageView.)
   function isInternal(file: OtherFile): boolean {
     return (
       (file.kind === 'text' && !!props.getTextFileUrl) ||
-      (file.kind === 'html' && !!props.getHtmlFileUrl)
+      (file.kind === 'html' && !!props.getHtmlFileUrl) ||
+      ((file.kind === 'image' || file.kind === 'drawio') && !!props.getImageFileUrl)
     )
   }
 
@@ -147,6 +198,9 @@
   function otherFileHref(file: OtherFile): string {
     if (file.kind === 'html' && props.getHtmlFileUrl) return props.getHtmlFileUrl(file.path)
     if (file.kind === 'text' && props.getTextFileUrl) return props.getTextFileUrl(file.path)
+    if ((file.kind === 'image' || file.kind === 'drawio') && props.getImageFileUrl) {
+      return props.getImageFileUrl(file.path)
+    }
     return props.getOtherFileUrl ? props.getOtherFileUrl(file.path) : '#'
   }
 
@@ -295,8 +349,8 @@
 
     <!-- ── List view ───────────────────────────────────────────── -->
     <template v-if="viewMode === 'list'">
-      <ul v-if="children.length" class="text-sm space-y-1">
-        <li v-for="child in children" :key="child.path" class="flex items-center gap-1 group">
+      <ul v-if="pagedChildren.length" class="text-sm space-y-1">
+        <li v-for="child in pagedChildren" :key="child.path" class="flex items-center gap-1 group">
           <RouterLink
             :to="getChildUrl(child.path)"
             class="flex items-center min-w-0 text-slate-700 hover:text-blue-600 hover:underline"
@@ -375,18 +429,18 @@
           </button>
         </li>
       </ul>
-      <p v-else class="text-sm text-slate-400 italic">Empty folder</p>
+      <p v-else-if="totalEntries === 0" class="text-sm text-slate-400 italic">Empty folder</p>
     </template>
 
     <!-- ── Preview view ────────────────────────────────────────── -->
     <template v-else>
       <div
-        v-if="children.length"
+        v-if="pagedChildren.length"
         class="grid gap-3"
         :style="{ gridTemplateColumns: `repeat(auto-fill, minmax(${tileSize}px, 1fr))` }"
       >
         <PreviewTile
-          v-for="child in children"
+          v-for="child in pagedChildren"
           :key="child.path"
           :to="getChildUrl(child.path)"
           :label="child.filename"
@@ -400,17 +454,17 @@
           @delete="emit('delete', child.path)"
         />
       </div>
-      <p v-else class="text-sm text-slate-400 italic">Empty folder</p>
+      <p v-else-if="totalEntries === 0" class="text-sm text-slate-400 italic">Empty folder</p>
     </template>
   </section>
 
-  <!-- Other files -->
-  <section v-if="otherFiles && otherFiles.length" class="mt-6 border-t border-slate-200 pt-4">
+  <!-- Other files: shown when any of them fall on the current page. -->
+  <section v-if="pagedOtherFiles.length" class="mt-6 border-t border-slate-200 pt-4">
     <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-500 mb-2">Other files</h2>
 
     <!-- List view -->
     <ul v-if="viewMode === 'list'" class="text-sm space-y-1">
-      <li v-for="file in otherFiles" :key="file.path" class="flex items-center gap-1 group">
+      <li v-for="file in pagedOtherFiles" :key="file.path" class="flex items-center gap-1 group">
         <RouterLink
           v-if="isInternal(file)"
           :to="otherFileHref(file)"
@@ -454,7 +508,7 @@
       :style="{ gridTemplateColumns: `repeat(auto-fill, minmax(${tileSize}px, 1fr))` }"
     >
       <PreviewTile
-        v-for="file in otherFiles"
+        v-for="file in pagedOtherFiles"
         :key="file.path"
         :to="otherFileHref(file)"
         :external="!isInternal(file)"
@@ -469,6 +523,33 @@
       />
     </div>
   </section>
+
+  <!-- Single pager across both sections (pages + other files share one budget
+       of PAGE_SIZE per page, alphabetical). Lives at the root so it shows even
+       on a page that happens to contain only one of the two sections. -->
+  <nav
+    v-if="pageCount > 1"
+    class="mt-6 flex items-center justify-center gap-2 text-sm"
+    aria-label="Folder pagination"
+  >
+    <button
+      type="button"
+      class="px-2 py-1 rounded border border-slate-200 disabled:opacity-40 disabled:cursor-default hover:bg-slate-50 cursor-pointer"
+      :disabled="page <= 1"
+      @click="page--"
+    >
+      ‹ Prev
+    </button>
+    <span class="text-slate-500">Page {{ page }} of {{ pageCount }}</span>
+    <button
+      type="button"
+      class="px-2 py-1 rounded border border-slate-200 disabled:opacity-40 disabled:cursor-default hover:bg-slate-50 cursor-pointer"
+      :disabled="page >= pageCount"
+      @click="page++"
+    >
+      Next ›
+    </button>
+  </nav>
 </template>
 
 <style scoped>

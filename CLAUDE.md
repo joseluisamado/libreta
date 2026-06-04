@@ -188,10 +188,19 @@ The drawio container is a vanilla `jgraph/drawio:latest`. We do not fork or modi
 
 ## 6. Commits and branches
 
+### 6.0 Never commit unprompted
+
+**Stage, don't commit.** When work is done and checks pass, `git add` the
+files and then **stop and wait** for the human to say "commit now" (or
+similar). Do not run `git commit` on your own initiative — during iterative
+bug-debugging an auto-commit habit produces a litter of tiny commits. The
+human decides when a coherent commit is ready and what it contains. (You may
+still draft a suggested commit message in your reply.)
+
 ### 6.1 Branches
 
-While development is solo, **commit directly to `main`** — don't create a
-branch for every change. `main` should still stay green (run the pre-flight
+While development is solo, **commit directly to `main`** (when told to
+commit) — don't create a branch for every change. `main` should still stay green (run the pre-flight
 checks before committing). The human will create a branch by hand when a
 change is big or risky enough to warrant one; only branch on explicit
 request.
