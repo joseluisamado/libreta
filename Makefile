@@ -41,7 +41,10 @@ DEPLOY_HOST ?= user@homelab
 
 # Compose invocation: dev stacks layer docker-compose.dev.yml on top of the
 # base file so the api service gets a source bind-mount and uvicorn --reload.
-COMPOSE_DEV := docker compose -f docker-compose.yml -f docker-compose.dev.yml  -f docker-compose.dev.local.yml --profile dev
+# docker-compose.dev.local.yml is an optional, untracked, per-developer overlay
+# (machine-specific paths); include it only when it exists.
+LOCAL_OVERLAY := $(wildcard docker-compose.dev.local.yml)
+COMPOSE_DEV := docker compose -f docker-compose.yml -f docker-compose.dev.yml $(if $(LOCAL_OVERLAY),-f $(LOCAL_OVERLAY),) --profile dev
 
 help: ## Show this help
 	@awk 'BEGIN {FS = ":.*##"; printf "Usage: make <target>\n\nTargets:\n"} \
