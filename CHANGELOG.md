@@ -9,6 +9,28 @@ Entries are generated from [Conventional Commits](https://www.conventionalcommit
 by `scripts/changelog.py` at release time.
 
 
+## [2.2.0] - 2026-06-04
+
+### Added
+
+- **listing:** text/html/video as first-class children; HEIC + video viewers
+- **listing:** images are first-class children, not "other files"
+- **frontend:** image viewer, text-thumbnail highlighting, sandboxed HTML render, combined folder pagination
+- **frontend:** render images/diagrams in previews + JS-stripped HTML viewer
+- Close gaps when previewing markdown files with images or mermaid, drawio diagrams.
+- local volume overrides.
+
+### Fixed
+
+- **frontend:** HTML thumbnail showed head, not body (still-blank fix)
+- **frontend:** HTML preview tile no longer blank for head-heavy files
+- **docker:** make frontend dev image rebuild reliably with current deps
+
+### Documentation
+
+- **claude:** commit to main directly during solo dev
+- update README + DEPLOY for 2.0 and the new release flow
+
 ## [2.1.0] - 2026-06-04
 
 ### Added
