@@ -12,7 +12,7 @@
   import { useWatchedStore } from '@/stores/watched'
   import type { DirChildren, OtherFile, PageNode, PageRead } from '@/api/types'
   import { renderMarkdown, renderMermaidIn } from '@/markdown'
-  import { isTextPath } from '@/textFiles'
+  import { isImagePath, isTextPath } from '@/textFiles'
   import { useReadingWidth } from '@/composables/usePrefs'
   import { useViewMode } from '@/composables/useViewMode'
   import Breadcrumbs from '@/components/Breadcrumbs.vue'
@@ -45,6 +45,10 @@
   async function load(): Promise<void> {
     if (path.value.toLowerCase().endsWith('.pdf')) {
       router.replace(`/pdf-watch/${label.value}/${path.value}`)
+      return
+    }
+    if (isImagePath(path.value)) {
+      router.replace(`/img-watch/${label.value}/${path.value}`)
       return
     }
     if (isTextPath(path.value)) {
@@ -143,6 +147,9 @@
   function getChildUrl(childPath: string): string {
     if (childPath.toLowerCase().endsWith('.pdf')) {
       return `/pdf-watch/${label.value}/${childPath}`
+    }
+    if (isImagePath(childPath)) {
+      return `/img-watch/${label.value}/${childPath}`
     }
     return `/watch/${label.value}/${childPath}`
   }

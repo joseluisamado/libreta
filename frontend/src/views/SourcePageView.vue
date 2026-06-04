@@ -12,7 +12,7 @@
   import { getSourceChildren } from '@/api/client'
   import type { DirChildren, OtherFile, PageNode, PageRead } from '@/api/types'
   import { renderMarkdown, renderMermaidIn } from '@/markdown'
-  import { isTextPath } from '@/textFiles'
+  import { isImagePath, isTextPath } from '@/textFiles'
   import { useReadingWidth } from '@/composables/usePrefs'
   import { useViewMode } from '@/composables/useViewMode'
   import { useSourcesStore } from '@/stores/sources'
@@ -46,6 +46,10 @@
   async function load(): Promise<void> {
     if (path.value.toLowerCase().endsWith('.pdf')) {
       router.replace(`/pdf-source/${sourceId.value}/${path.value}`)
+      return
+    }
+    if (isImagePath(path.value)) {
+      router.replace(`/img-source/${sourceId.value}/${path.value}`)
       return
     }
     if (isTextPath(path.value)) {
@@ -146,6 +150,9 @@
   function getChildUrl(childPath: string): string {
     if (childPath.toLowerCase().endsWith('.pdf')) {
       return `/pdf-source/${sourceId.value}/${childPath}`
+    }
+    if (isImagePath(childPath)) {
+      return `/img-source/${sourceId.value}/${childPath}`
     }
     return `/source/${sourceId.value}/${childPath}`
   }

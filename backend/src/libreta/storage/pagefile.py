@@ -335,6 +335,10 @@ def _build_tree(
     md_names: dict[str, Path] = {}
     dir_names: dict[str, Path] = {}
     pdf_files: list[Path] = []
+    # Images (incl. .drawio.svg) are first-class children: they have a viewer
+    # and a thumbnail, so they belong in the listing alongside pages/PDFs, not
+    # in "other files". The kind ("image"/"drawio") comes from _classify_other.
+    image_files: list[Path] = []
     for entry in entries:
         if entry.name.startswith("."):
             continue
@@ -345,6 +349,8 @@ def _build_tree(
                 md_names[entry.stem] = entry
             elif entry.suffix.lower() == ".pdf":
                 pdf_files.append(entry)
+            elif _classify_other(entry.name) in ("image", "drawio"):
+                image_files.append(entry)
             else:
                 other_entries.append(entry)
         except OSError:
@@ -414,6 +420,19 @@ def _build_tree(
                 is_directory=False,
                 children=[],
                 kind="pdf",
+            )
+        )
+
+    for img in sorted(image_files, key=lambda p: p.name.casefold()):
+        child_url = f"{url_prefix}/{img.name}" if url_prefix else img.name
+        nodes.append(
+            PageNode(
+                path=child_url,
+                title=beautify_stem(img.stem),
+                filename=img.name,
+                is_directory=False,
+                children=[],
+                kind=_classify_other(img.name),  # "image" or "drawio"
             )
         )
 

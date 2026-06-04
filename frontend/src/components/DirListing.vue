@@ -178,10 +178,21 @@
   }
 
   // Best-effort kind for a child node, for preview routing.
-  function childKind(child: PageNode): 'folder' | 'pdf' | 'page' {
+  function childKind(child: PageNode): 'folder' | 'pdf' | 'image' | 'drawio' | 'page' {
     if (isFolder(child)) return 'folder'
     if (child.kind === 'pdf') return 'pdf'
+    if (child.kind === 'image') return 'image'
+    if (child.kind === 'drawio') return 'drawio'
     return 'page'
+  }
+
+  // Raw-content URL for a child's thumbnail. Image/drawio children are assets
+  // (the tile <img> needs the /assets URL); pages/PDFs use the page-raw URL.
+  function childRawUrl(child: PageNode): string | undefined {
+    if (child.kind === 'image' || child.kind === 'drawio') {
+      return props.getOtherFileUrl ? props.getOtherFileUrl(child.path) : undefined
+    }
+    return props.getChildRawUrl ? props.getChildRawUrl(child.path) : undefined
   }
 
   // text/html/image/drawio open in an in-app viewer (RouterLink); everything
@@ -368,12 +379,20 @@
                 d="M2 6a2 2 0 0 1 2-2h5l2 2h9a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6z"
               />
             </svg>
-            <!-- PDF / MD badge -->
+            <!-- PDF badge -->
             <span
               v-else-if="child.kind === 'pdf'"
               class="w-4 shrink-0 mr-1.5 text-[10px] font-semibold text-rose-500 text-center"
               >PDF</span
             >
+            <!-- Image / drawio badge -->
+            <span
+              v-else-if="child.kind === 'image' || child.kind === 'drawio'"
+              class="w-6 shrink-0 mr-1.5 text-[10px] font-semibold text-center"
+              :class="kindColor(child.kind)"
+              >{{ kindBadge(child.kind) }}</span
+            >
+            <!-- MD badge -->
             <span
               v-else
               class="w-4 shrink-0 mr-1.5 text-[10px] font-semibold text-sky-500 text-center"
@@ -445,7 +464,7 @@
           :to="getChildUrl(child.path)"
           :label="child.filename"
           :kind="childKind(child)"
-          :raw-url="getChildRawUrl ? getChildRawUrl(child.path) : undefined"
+          :raw-url="childRawUrl(child)"
           :page-path="child.path"
           :source-id="sourceId"
           :watched-label="watchedLabel"

@@ -30,10 +30,12 @@ function makeChildren(n: number): PageNode[] {
 }
 
 function makeOther(n: number): OtherFile[] {
+  // Images are now first-class children, so "other files" are non-previewable
+  // kinds (binaries, etc.).
   return Array.from({ length: n }, (_, i) => ({
-    name: `o${i}.png`,
-    path: `o${i}.png`,
-    kind: 'image' as const,
+    name: `o${i}.zip`,
+    path: `o${i}.zip`,
+    kind: 'binary' as const,
   }))
 }
 
@@ -83,6 +85,17 @@ describe('DirListing pagination (50 per page, combined + alphabetical)', () => {
     const w = mountListing(makeChildren(60), makeOther(60))
     expect(w.findAll(PAGER).length).toBe(1)
     expect(w.find(PAGER).text()).toContain('Page 1 of 3') // 120 / 50 → 3
+  })
+
+  it('lists image children in "in this folder" with an IMG badge', () => {
+    const children: PageNode[] = [
+      { path: 'a.md', title: 'a', filename: 'a.md', is_directory: false, children: [] },
+      { path: 'pic.png', title: 'pic', filename: 'pic.png', is_directory: false, children: [], kind: 'image' },
+    ]
+    const w = mountListing(children)
+    const rows = w.findAll('li').map((li) => li.text())
+    // image is a child row (alongside the page), not in an "other files" section
+    expect(rows.some((t) => t.includes('pic.png') && t.includes('IMG'))).toBe(true)
   })
 
   it('sorts children alphabetically (case-insensitive, numeric)', () => {

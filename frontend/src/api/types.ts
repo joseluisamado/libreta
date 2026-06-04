@@ -37,7 +37,7 @@ export interface PageNode {
   is_directory: boolean
   children: PageNode[]
   has_more?: boolean
-  kind?: 'page' | 'pdf'
+  kind?: 'page' | 'pdf' | 'image' | 'drawio'
   other_files?: OtherFile[]
 }
 

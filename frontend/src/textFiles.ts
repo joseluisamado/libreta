@@ -73,3 +73,15 @@ export function isTextPath(path: string): boolean {
   if (ext === 'md') return false
   return ext in EXT_LANG
 }
+
+// Image extensions that open in ImageView (incl. .drawio.svg, which renders
+// natively as an SVG). Mirrors the backend's _classify_other image/drawio set.
+const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'bmp', 'ico'])
+
+/** True for image files that should render in ImageView. */
+export function isImagePath(path: string): boolean {
+  const last = path.split('/').pop()?.toLowerCase() ?? ''
+  const dot = last.lastIndexOf('.')
+  if (dot === -1) return false
+  return IMAGE_EXTS.has(last.slice(dot + 1))
+}
