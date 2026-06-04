@@ -165,7 +165,7 @@ class OtherFile(BaseModel):
 
     name: str  # filename with extension
     path: str  # relative path within the source
-    kind: str  # "image" | "drawio" | "text" | "binary"
+    kind: str  # "image" | "drawio" | "html" | "text" | "binary"
 
 
 class DirChildren(BaseModel):

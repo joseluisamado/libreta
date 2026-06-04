@@ -10,6 +10,7 @@
     otherFiles?: OtherFile[]
     getOtherFileUrl?: (filePath: string) => string
     getTextFileUrl?: (filePath: string) => string
+    getHtmlFileUrl?: (filePath: string) => string
     // Raw-content URL for a child page (markdown) or pdf, used by the
     // preview tiles to fetch a snippet / embed the document.
     getChildRawUrl?: (childPath: string) => string
@@ -97,6 +98,8 @@
         return 'IMG'
       case 'drawio':
         return 'DRAW'
+      case 'html':
+        return 'HTML'
       case 'text':
         return 'TXT'
       default:
@@ -110,6 +113,8 @@
         return 'text-emerald-500'
       case 'drawio':
         return 'text-orange-500'
+      case 'html':
+        return 'text-amber-600'
       case 'text':
         return 'text-violet-500'
       default:
@@ -129,8 +134,18 @@
     return 'page'
   }
 
+  // 'text' and 'html' open in an in-app viewer (RouterLink); everything else
+  // downloads / opens externally.
+  function isInternal(file: OtherFile): boolean {
+    return (
+      (file.kind === 'text' && !!props.getTextFileUrl) ||
+      (file.kind === 'html' && !!props.getHtmlFileUrl)
+    )
+  }
+
   // Whichever URL helper applies to an "other file" for opening/downloading.
   function otherFileHref(file: OtherFile): string {
+    if (file.kind === 'html' && props.getHtmlFileUrl) return props.getHtmlFileUrl(file.path)
     if (file.kind === 'text' && props.getTextFileUrl) return props.getTextFileUrl(file.path)
     return props.getOtherFileUrl ? props.getOtherFileUrl(file.path) : '#'
   }
@@ -397,8 +412,8 @@
     <ul v-if="viewMode === 'list'" class="text-sm space-y-1">
       <li v-for="file in otherFiles" :key="file.path" class="flex items-center gap-1 group">
         <RouterLink
-          v-if="file.kind === 'text' && getTextFileUrl"
-          :to="getTextFileUrl(file.path)"
+          v-if="isInternal(file)"
+          :to="otherFileHref(file)"
           class="flex items-center flex-1 min-w-0 text-slate-600 hover:text-blue-600 hover:underline"
         >
           <span
@@ -442,11 +457,14 @@
         v-for="file in otherFiles"
         :key="file.path"
         :to="otherFileHref(file)"
-        :external="file.kind !== 'text'"
-        :download-name="file.kind !== 'text' ? file.name : undefined"
+        :external="!isInternal(file)"
+        :download-name="!isInternal(file) ? file.name : undefined"
         :label="file.name"
         :kind="file.kind"
         :raw-url="otherFileRawUrl(file)"
+        :page-path="file.path"
+        :source-id="sourceId"
+        :watched-label="watchedLabel"
         :size="tileSize"
       />
     </div>

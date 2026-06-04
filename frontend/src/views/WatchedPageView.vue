@@ -125,6 +125,10 @@
     return `/text-watch/${label.value}/${filePath}`
   }
 
+  function getHtmlFileUrl(filePath: string): string {
+    return `/html-watch/${label.value}/${filePath}`
+  }
+
   function getChildRawUrl(childPath: string): string {
     const segments = childPath.split('/').map(encodeURIComponent).join('/')
     return `/api/v1/watch/${encodeURIComponent(label.value)}/raw/${segments}`
@@ -351,6 +355,7 @@
         :other-files="dirOtherFiles"
         :get-other-file-url="getOtherFileUrl"
         :get-text-file-url="getTextFileUrl"
+        :get-html-file-url="getHtmlFileUrl"
         :get-child-raw-url="getChildRawUrl"
         :watched-label="label"
         :uploading="uploading"

@@ -126,6 +126,10 @@
     return `/text-source/${sourceId.value}/${filePath}`
   }
 
+  function getHtmlFileUrl(filePath: string): string {
+    return `/html-source/${sourceId.value}/${filePath}`
+  }
+
   function getChildRawUrl(childPath: string): string {
     const segments = childPath.split('/').map(encodeURIComponent).join('/')
     return `/api/v1/sources/${encodeURIComponent(sourceId.value)}/pages/${segments}/raw`
@@ -378,6 +382,7 @@
         :other-files="dirOtherFiles"
         :get-other-file-url="getOtherFileUrl"
         :get-text-file-url="getTextFileUrl"
+        :get-html-file-url="getHtmlFileUrl"
         :get-child-raw-url="getChildRawUrl"
         :source-id="sourceId"
         :uploading="uploading"

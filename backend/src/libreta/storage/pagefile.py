@@ -266,13 +266,15 @@ def _classify_other(name: str) -> str:
         return "drawio"
     if lower.endswith((".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".bmp", ".ico")):
         return "image"
+    # HTML is rendered (JS-stripped) in its own viewer, distinct from the
+    # raw-source text viewer — see the frontend html viewer / R6.
+    if lower.endswith((".html", ".htm")):
+        return "html"
     if lower in _NOEXT_TEXT_NAMES:
         return "text"
     if lower.endswith(
         (
             ".txt",
-            ".html",
-            ".htm",
             ".css",
             ".js",
             ".ts",

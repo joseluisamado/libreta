@@ -22,7 +22,7 @@ export interface PageRead {
 export interface OtherFile {
   name: string
   path: string
-  kind: 'image' | 'drawio' | 'text' | 'binary'
+  kind: 'image' | 'drawio' | 'html' | 'text' | 'binary'
 }
 
 export interface DirChildren {

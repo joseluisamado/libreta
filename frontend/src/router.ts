@@ -32,6 +32,16 @@ const routes: RouteRecordRaw[] = [
     component: () => import('./views/TextView.vue'),
   },
   {
+    path: '/html-source/:sourceId/:path(.*)*',
+    name: 'html-source',
+    component: () => import('./views/HtmlView.vue'),
+  },
+  {
+    path: '/html-watch/:label/:path(.*)*',
+    name: 'html-watch',
+    component: () => import('./views/HtmlView.vue'),
+  },
+  {
     path: '/search',
     name: 'search',
     component: () => import('./views/SearchView.vue'),
@@ -205,6 +215,8 @@ function isAppPath(path: string): boolean {
     path.startsWith('/pdf-source/') ||
     path.startsWith('/text-watch/') ||
     path.startsWith('/text-source/') ||
+    path.startsWith('/html-watch/') ||
+    path.startsWith('/html-source/') ||
     path.startsWith('/search') ||
     path.startsWith('/-/')
   )

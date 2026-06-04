@@ -2,6 +2,7 @@
   import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
   import { pdfjs, PDF_DOC_OPTIONS } from '@/lib/pdf'
   import { renderMarkdown, renderMermaidIn } from '@/markdown'
+  import { sanitizeHtmlFile } from '@/lib/html'
 
   // First-page PDF thumbnails, cached as data URLs keyed by raw URL and shared
   // across every tile for the session (module scope, not per-instance), so
@@ -13,7 +14,7 @@
   // canvas (no native viewer chrome), the image itself, a raw snippet for
   // plain text — with the filename below. Clicking navigates (RouterLink) or
   // downloads (plain <a>) depending on `external`.
-  type TileKind = 'folder' | 'pdf' | 'page' | 'image' | 'drawio' | 'text' | 'binary'
+  type TileKind = 'folder' | 'pdf' | 'page' | 'image' | 'drawio' | 'html' | 'text' | 'binary'
 
   const props = defineProps<{
     to: string
@@ -62,6 +63,7 @@
 
   // page → rendered markdown HTML; text → raw monospace snippet.
   const isMarkdown = computed(() => props.kind === 'page')
+  const isHtml = computed(() => props.kind === 'html')
   const isText = computed(() => props.kind === 'text')
   // A .drawio.svg *is* an SVG file — render it natively like any image,
   // matching the full viewer, instead of falling back to a badge.
@@ -73,7 +75,7 @@
   const mdEl = ref<HTMLElement | null>(null)
 
   async function loadTextual(): Promise<void> {
-    if (!props.rawUrl || (!isMarkdown.value && !isText.value)) return
+    if (!props.rawUrl || (!isMarkdown.value && !isText.value && !isHtml.value)) return
     loading.value = true
     previewError.value = false
     try {
@@ -98,6 +100,15 @@
           await nextTick()
           if (mdEl.value) await renderMermaidIn(mdEl.value)
         }
+      } else if (isHtml.value) {
+        // Render the HTML file with JS stripped (R6), artifacts rerooted to
+        // the source's /assets endpoint. Same first-page slice as markdown:
+        // a thumbnail, not the whole document.
+        renderedHtml.value = sanitizeHtmlFile(full.slice(0, SNIPPET_CHARS), {
+          pagePath: props.pagePath ?? '',
+          sourceId: props.sourceId,
+          watchedLabel: props.watchedLabel,
+        })
       } else {
         rawSnippet.value = full.slice(0, SNIPPET_CHARS)
       }
@@ -191,6 +202,8 @@
         return 'DRAW'
       case 'image':
         return 'IMG'
+      case 'html':
+        return 'HTML'
       case 'text':
         return 'TXT'
       default:
@@ -208,6 +221,8 @@
         return 'text-orange-500'
       case 'image':
         return 'text-emerald-500'
+      case 'html':
+        return 'text-amber-600'
       case 'text':
         return 'text-violet-500'
       default:
@@ -273,8 +288,8 @@
           />
         </template>
 
-        <!-- Rendered markdown thumbnail -->
-        <template v-else-if="isMarkdown">
+        <!-- Rendered markdown / HTML thumbnail (both produce renderedHtml) -->
+        <template v-else-if="isMarkdown || isHtml">
           <div v-if="loading" class="text-[11px] text-slate-400">Loading…</div>
           <span
             v-else-if="previewError || !renderedHtml"
