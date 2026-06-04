@@ -52,6 +52,16 @@ const routes: RouteRecordRaw[] = [
     component: () => import('./views/ImageView.vue'),
   },
   {
+    path: '/video-source/:sourceId/:path(.*)*',
+    name: 'video-source',
+    component: () => import('./views/VideoView.vue'),
+  },
+  {
+    path: '/video-watch/:label/:path(.*)*',
+    name: 'video-watch',
+    component: () => import('./views/VideoView.vue'),
+  },
+  {
     path: '/search',
     name: 'search',
     component: () => import('./views/SearchView.vue'),
@@ -229,6 +239,8 @@ function isAppPath(path: string): boolean {
     path.startsWith('/html-source/') ||
     path.startsWith('/img-watch/') ||
     path.startsWith('/img-source/') ||
+    path.startsWith('/video-watch/') ||
+    path.startsWith('/video-source/') ||
     path.startsWith('/search') ||
     path.startsWith('/-/')
   )

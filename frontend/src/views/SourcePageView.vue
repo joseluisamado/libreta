@@ -12,7 +12,7 @@
   import { getSourceChildren } from '@/api/client'
   import type { DirChildren, OtherFile, PageNode, PageRead } from '@/api/types'
   import { renderMarkdown, renderMermaidIn } from '@/markdown'
-  import { isImagePath, isTextPath } from '@/textFiles'
+  import { isHtmlPath, isImagePath, isTextPath, isVideoPath } from '@/textFiles'
   import { useReadingWidth } from '@/composables/usePrefs'
   import { useViewMode } from '@/composables/useViewMode'
   import { useSourcesStore } from '@/stores/sources'
@@ -50,6 +50,14 @@
     }
     if (isImagePath(path.value)) {
       router.replace(`/img-source/${sourceId.value}/${path.value}`)
+      return
+    }
+    if (isVideoPath(path.value)) {
+      router.replace(`/video-source/${sourceId.value}/${path.value}`)
+      return
+    }
+    if (isHtmlPath(path.value)) {
+      router.replace(`/html-source/${sourceId.value}/${path.value}`)
       return
     }
     if (isTextPath(path.value)) {
@@ -153,6 +161,15 @@
     }
     if (isImagePath(childPath)) {
       return `/img-source/${sourceId.value}/${childPath}`
+    }
+    if (isVideoPath(childPath)) {
+      return `/video-source/${sourceId.value}/${childPath}`
+    }
+    if (isHtmlPath(childPath)) {
+      return `/html-source/${sourceId.value}/${childPath}`
+    }
+    if (isTextPath(childPath)) {
+      return `/text-source/${sourceId.value}/${childPath}`
     }
     return `/source/${sourceId.value}/${childPath}`
   }

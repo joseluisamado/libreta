@@ -258,14 +258,28 @@ _NOEXT_TEXT_NAMES = {
     "crontab",
 }
 
+# Non-page kinds that have a dedicated viewer and a preview thumbnail, so they
+# are listed as first-class children ("in this folder") rather than in the
+# "other files" bucket. "binary" is the only non-previewable _classify_other
+# result and stays in other_files.
+_PREVIEWABLE_KINDS = frozenset({"image", "drawio", "text", "html", "video"})
+
 
 def _classify_other(name: str) -> str:
     """Classify a non-page file by extension."""
     lower = name.lower()
     if lower.endswith((".drawio.svg", ".drawio.png", ".drawio")):
         return "drawio"
-    if lower.endswith((".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".bmp", ".ico")):
+    if lower.endswith(
+        (".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".bmp", ".ico", ".heic", ".heif")
+    ):
+        # HEIC/HEIF render natively only in Safari; other browsers show a
+        # broken image (same as any unsupported asset). We don't decode them.
         return "image"
+    # Video plays via the browser's native <video> element (no library).
+    # Codec support is the browser's call; broadly mp4/webm/ogg work.
+    if lower.endswith((".mp4", ".webm", ".ogg", ".ogv", ".mov", ".m4v")):
+        return "video"
     # HTML is rendered (JS-stripped) in its own viewer, distinct from the
     # raw-source text viewer — see the frontend html viewer / R6.
     if lower.endswith((".html", ".htm")):
@@ -335,10 +349,11 @@ def _build_tree(
     md_names: dict[str, Path] = {}
     dir_names: dict[str, Path] = {}
     pdf_files: list[Path] = []
-    # Images (incl. .drawio.svg) are first-class children: they have a viewer
-    # and a thumbnail, so they belong in the listing alongside pages/PDFs, not
-    # in "other files". The kind ("image"/"drawio") comes from _classify_other.
-    image_files: list[Path] = []
+    # Non-page files that have a dedicated viewer AND a thumbnail are
+    # first-class children: they belong in the listing alongside pages/PDFs,
+    # not in "other files". The kind comes from _classify_other. Everything
+    # else (binary, etc.) stays in other_files.
+    previewable_files: list[Path] = []
     for entry in entries:
         if entry.name.startswith("."):
             continue
@@ -349,8 +364,8 @@ def _build_tree(
                 md_names[entry.stem] = entry
             elif entry.suffix.lower() == ".pdf":
                 pdf_files.append(entry)
-            elif _classify_other(entry.name) in ("image", "drawio"):
-                image_files.append(entry)
+            elif _classify_other(entry.name) in _PREVIEWABLE_KINDS:
+                previewable_files.append(entry)
             else:
                 other_entries.append(entry)
         except OSError:
@@ -423,16 +438,16 @@ def _build_tree(
             )
         )
 
-    for img in sorted(image_files, key=lambda p: p.name.casefold()):
-        child_url = f"{url_prefix}/{img.name}" if url_prefix else img.name
+    for pv in sorted(previewable_files, key=lambda p: p.name.casefold()):
+        child_url = f"{url_prefix}/{pv.name}" if url_prefix else pv.name
         nodes.append(
             PageNode(
                 path=child_url,
-                title=beautify_stem(img.stem),
-                filename=img.name,
+                title=beautify_stem(pv.stem),
+                filename=pv.name,
                 is_directory=False,
                 children=[],
-                kind=_classify_other(img.name),  # "image" or "drawio"
+                kind=_classify_other(pv.name),  # image|drawio|text|html|video
             )
         )
 

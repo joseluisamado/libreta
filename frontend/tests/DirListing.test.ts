@@ -87,15 +87,26 @@ describe('DirListing pagination (50 per page, combined + alphabetical)', () => {
     expect(w.find(PAGER).text()).toContain('Page 1 of 3') // 120 / 50 → 3
   })
 
-  it('lists image children in "in this folder" with an IMG badge', () => {
+  it('lists previewable children (image/text/video) in-folder with badges', () => {
+    const mk = (filename: string, kind?: PageNode['kind']): PageNode => ({
+      path: filename,
+      title: filename,
+      filename,
+      is_directory: false,
+      children: [],
+      kind,
+    })
     const children: PageNode[] = [
-      { path: 'a.md', title: 'a', filename: 'a.md', is_directory: false, children: [] },
-      { path: 'pic.png', title: 'pic', filename: 'pic.png', is_directory: false, children: [], kind: 'image' },
+      mk('a.md'),
+      mk('pic.png', 'image'),
+      mk('notes.txt', 'text'),
+      mk('clip.mp4', 'video'),
     ]
     const w = mountListing(children)
     const rows = w.findAll('li').map((li) => li.text())
-    // image is a child row (alongside the page), not in an "other files" section
     expect(rows.some((t) => t.includes('pic.png') && t.includes('IMG'))).toBe(true)
+    expect(rows.some((t) => t.includes('notes.txt') && t.includes('TXT'))).toBe(true)
+    expect(rows.some((t) => t.includes('clip.mp4') && t.includes('VID'))).toBe(true)
   })
 
   it('sorts children alphabetically (case-insensitive, numeric)', () => {

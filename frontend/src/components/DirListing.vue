@@ -152,6 +152,8 @@
         return 'HTML'
       case 'text':
         return 'TXT'
+      case 'video':
+        return 'VID'
       default:
         return 'BIN'
     }
@@ -167,6 +169,8 @@
         return 'text-amber-600'
       case 'text':
         return 'text-violet-500'
+      case 'video':
+        return 'text-fuchsia-500'
       default:
         return 'text-slate-500'
     }
@@ -178,18 +182,28 @@
   }
 
   // Best-effort kind for a child node, for preview routing.
-  function childKind(child: PageNode): 'folder' | 'pdf' | 'image' | 'drawio' | 'page' {
+  type ChildTileKind = 'folder' | 'pdf' | 'image' | 'drawio' | 'text' | 'html' | 'video' | 'page'
+  function childKind(child: PageNode): ChildTileKind {
     if (isFolder(child)) return 'folder'
-    if (child.kind === 'pdf') return 'pdf'
-    if (child.kind === 'image') return 'image'
-    if (child.kind === 'drawio') return 'drawio'
-    return 'page'
+    switch (child.kind) {
+      case 'pdf':
+      case 'image':
+      case 'drawio':
+      case 'text':
+      case 'html':
+      case 'video':
+        return child.kind
+      default:
+        return 'page'
+    }
   }
 
-  // Raw-content URL for a child's thumbnail. Image/drawio children are assets
-  // (the tile <img> needs the /assets URL); pages/PDFs use the page-raw URL.
+  // Raw-content URL for a child's thumbnail. Asset-backed kinds (image, drawio,
+  // text, html, video) use the /assets URL the tile fetches/embeds; pages and
+  // PDFs use the page-raw URL.
   function childRawUrl(child: PageNode): string | undefined {
-    if (child.kind === 'image' || child.kind === 'drawio') {
+    const assetKinds = ['image', 'drawio', 'text', 'html', 'video']
+    if (child.kind && assetKinds.includes(child.kind)) {
       return props.getOtherFileUrl ? props.getOtherFileUrl(child.path) : undefined
     }
     return props.getChildRawUrl ? props.getChildRawUrl(child.path) : undefined
@@ -385,9 +399,11 @@
               class="w-4 shrink-0 mr-1.5 text-[10px] font-semibold text-rose-500 text-center"
               >PDF</span
             >
-            <!-- Image / drawio badge -->
+            <!-- image / drawio / text / html / video badge -->
             <span
-              v-else-if="child.kind === 'image' || child.kind === 'drawio'"
+              v-else-if="
+                child.kind && ['image', 'drawio', 'text', 'html', 'video'].includes(child.kind)
+              "
               class="w-6 shrink-0 mr-1.5 text-[10px] font-semibold text-center"
               :class="kindColor(child.kind)"
               >{{ kindBadge(child.kind) }}</span

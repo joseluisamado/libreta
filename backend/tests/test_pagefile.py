@@ -22,20 +22,36 @@ from libreta.storage.pagefile import _classify_other, walk_children
         ("style.css", "text"),
         ("Dockerfile", "text"),
         ("archive.zip", "binary"),
-        ("movie.mp4", "binary"),
+        ("data.bin", "binary"),
     ],
 )
 def test_classify_other(name: str, expected: str) -> None:
     assert _classify_other(name) == expected
 
 
-def test_images_are_children_not_other_files(tmp_path: Path) -> None:
-    """Images (and .drawio.svg) are first-class child nodes, not other_files —
-    they have a viewer and a thumbnail, so they belong in the listing."""
+@pytest.mark.parametrize(
+    ("name", "expected"),
+    [
+        ("clip.mp4", "video"),
+        ("clip.webm", "video"),
+        ("clip.MOV", "video"),
+        ("photo.heic", "image"),  # rendered by Safari; broken elsewhere (no decode)
+        ("photo.HEIF", "image"),
+    ],
+)
+def test_classify_video_and_heic(name: str, expected: str) -> None:
+    assert _classify_other(name) == expected
+
+
+def test_previewable_files_are_children_not_other_files(tmp_path: Path) -> None:
+    """Files with a viewer + thumbnail (image, drawio, text, html, video) are
+    first-class child nodes; only non-previewable binaries land in other_files."""
     (tmp_path / "page.md").write_text("# Page\n")
     (tmp_path / "photo.png").write_bytes(b"\x89PNG")
     (tmp_path / "chart.drawio.svg").write_text("<svg/>")
     (tmp_path / "notes.txt").write_text("hi")
+    (tmp_path / "report.html").write_text("<p>x</p>")
+    (tmp_path / "clip.mp4").write_bytes(b"\x00\x00\x00\x18ftyp")
     (tmp_path / "archive.zip").write_bytes(b"PK")
 
     nodes, other = walk_children(tmp_path, "")
@@ -43,8 +59,10 @@ def test_images_are_children_not_other_files(tmp_path: Path) -> None:
     kinds = {n.filename: n.kind for n in nodes}
     assert kinds["photo.png"] == "image"
     assert kinds["chart.drawio.svg"] == "drawio"
+    assert kinds["notes.txt"] == "text"
+    assert kinds["report.html"] == "html"
+    assert kinds["clip.mp4"] == "video"
     assert "page.md" in kinds  # the markdown page is still a node
 
-    other_names = {o.name for o in other}
-    assert other_names == {"notes.txt", "archive.zip"}
-    assert "photo.png" not in other_names
+    # Only the genuinely non-previewable binary remains in other_files.
+    assert {o.name for o in other} == {"archive.zip"}

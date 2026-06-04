@@ -75,8 +75,20 @@ export function isTextPath(path: string): boolean {
 }
 
 // Image extensions that open in ImageView (incl. .drawio.svg, which renders
-// natively as an SVG). Mirrors the backend's _classify_other image/drawio set.
-const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'bmp', 'ico'])
+// natively as an SVG, and HEIC/HEIF which only Safari can display). Mirrors
+// the backend's _classify_other image/drawio set.
+const IMAGE_EXTS = new Set([
+  'png',
+  'jpg',
+  'jpeg',
+  'gif',
+  'svg',
+  'webp',
+  'bmp',
+  'ico',
+  'heic',
+  'heif',
+])
 
 /** True for image files that should render in ImageView. */
 export function isImagePath(path: string): boolean {
@@ -84,4 +96,22 @@ export function isImagePath(path: string): boolean {
   const dot = last.lastIndexOf('.')
   if (dot === -1) return false
   return IMAGE_EXTS.has(last.slice(dot + 1))
+}
+
+/** True for HTML files, which render in HtmlView (not the raw TextView). */
+export function isHtmlPath(path: string): boolean {
+  const last = path.split('/').pop()?.toLowerCase() ?? ''
+  return last.endsWith('.html') || last.endsWith('.htm')
+}
+
+// Video extensions that open in VideoView (native <video>). Mirrors the
+// backend's _classify_other video set.
+const VIDEO_EXTS = new Set(['mp4', 'webm', 'ogg', 'ogv', 'mov', 'm4v'])
+
+/** True for video files that should render in VideoView. */
+export function isVideoPath(path: string): boolean {
+  const last = path.split('/').pop()?.toLowerCase() ?? ''
+  const dot = last.lastIndexOf('.')
+  if (dot === -1) return false
+  return VIDEO_EXTS.has(last.slice(dot + 1))
 }

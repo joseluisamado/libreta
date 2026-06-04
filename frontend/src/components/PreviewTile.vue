@@ -17,7 +17,16 @@
   // canvas (no native viewer chrome), the image itself, a raw snippet for
   // plain text — with the filename below. Clicking navigates (RouterLink) or
   // downloads (plain <a>) depending on `external`.
-  type TileKind = 'folder' | 'pdf' | 'page' | 'image' | 'drawio' | 'html' | 'text' | 'binary'
+  type TileKind =
+    | 'folder'
+    | 'pdf'
+    | 'page'
+    | 'image'
+    | 'drawio'
+    | 'html'
+    | 'text'
+    | 'video'
+    | 'binary'
 
   const props = defineProps<{
     to: string
@@ -82,6 +91,7 @@
   // matching the full viewer, instead of falling back to a badge.
   const isImage = computed(() => props.kind === 'image' || props.kind === 'drawio')
   const isPdf = computed(() => props.kind === 'pdf')
+  const isVideo = computed(() => props.kind === 'video')
   const isFolder = computed(() => props.kind === 'folder')
 
   // Container for the rendered markdown, so we can run mermaid inside it.
@@ -247,6 +257,8 @@
         return 'HTML'
       case 'text':
         return 'TXT'
+      case 'video':
+        return 'VID'
       default:
         return 'BIN'
     }
@@ -266,6 +278,8 @@
         return 'text-amber-600'
       case 'text':
         return 'text-violet-500'
+      case 'video':
+        return 'text-fuchsia-500'
       default:
         return 'text-slate-500'
     }
@@ -310,6 +324,21 @@
           :alt="label"
           class="w-full h-full object-cover"
           loading="lazy"
+        />
+
+        <!-- Video: first frame as a poster. preload="metadata" makes the
+             browser paint frame 0 with no JS; #t=0.1 nudges it to actually
+             show a frame on browsers that won't paint t=0. No controls and
+             pointer-events-none so a click falls through to the tile link
+             (→ viewer), consistent with every other kind. -->
+        <video
+          v-else-if="isVideo && rawUrl"
+          :key="rawUrl"
+          :src="`${rawUrl}#t=0.1`"
+          preload="metadata"
+          muted
+          playsinline
+          class="w-full h-full object-cover bg-black pointer-events-none"
         />
 
         <!-- PDF first page, rendered by us (no native viewer chrome), cached -->

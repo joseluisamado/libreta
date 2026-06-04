@@ -12,7 +12,7 @@
   import { useWatchedStore } from '@/stores/watched'
   import type { DirChildren, OtherFile, PageNode, PageRead } from '@/api/types'
   import { renderMarkdown, renderMermaidIn } from '@/markdown'
-  import { isImagePath, isTextPath } from '@/textFiles'
+  import { isHtmlPath, isImagePath, isTextPath, isVideoPath } from '@/textFiles'
   import { useReadingWidth } from '@/composables/usePrefs'
   import { useViewMode } from '@/composables/useViewMode'
   import Breadcrumbs from '@/components/Breadcrumbs.vue'
@@ -49,6 +49,14 @@
     }
     if (isImagePath(path.value)) {
       router.replace(`/img-watch/${label.value}/${path.value}`)
+      return
+    }
+    if (isVideoPath(path.value)) {
+      router.replace(`/video-watch/${label.value}/${path.value}`)
+      return
+    }
+    if (isHtmlPath(path.value)) {
+      router.replace(`/html-watch/${label.value}/${path.value}`)
       return
     }
     if (isTextPath(path.value)) {
@@ -150,6 +158,15 @@
     }
     if (isImagePath(childPath)) {
       return `/img-watch/${label.value}/${childPath}`
+    }
+    if (isVideoPath(childPath)) {
+      return `/video-watch/${label.value}/${childPath}`
+    }
+    if (isHtmlPath(childPath)) {
+      return `/html-watch/${label.value}/${childPath}`
+    }
+    if (isTextPath(childPath)) {
+      return `/text-watch/${label.value}/${childPath}`
     }
     return `/watch/${label.value}/${childPath}`
   }
