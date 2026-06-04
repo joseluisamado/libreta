@@ -31,19 +31,14 @@ services:
     image: libreta-frontend:dev
     environment:
       VITE_API_BASE: http://api:8080
-      # Keep pnpm's content-addressable store out of the bind-mounted source
-      # tree — without these the store ends up at frontend/.pnpm-store and
-      # pollutes git status with thousands of files.
-      PNPM_STORE_DIR: /pnpm-store
-      PNPM_HOME: /pnpm-home
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
-      - pnpm-store:/pnpm-store
     ports:
       - "8091:5173"
     depends_on:
       - api
+    # No volumes here: the image carries its own node_modules + source, so it
+    # runs standalone (parity with how prod runs a self-contained image). The
+    # dev overlay (docker-compose.dev.yml) bind-mounts *source only* on top,
+    # for hot-reload — never node_modules, which stays the image's artifact.
 
   drawio:
     image: jgraph/drawio:latest
@@ -55,4 +50,3 @@ volumes:
   # Single named volume holds repos, ssh_keys, and meta.
   # Back up this volume to back up all cloned repos and key material.
   libreta-data:
-  pnpm-store:

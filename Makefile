@@ -136,12 +136,8 @@ up-dev: ## Start the dev stack, detached
 rebuild: ## Rebuild images and start the prod-style stack, detached
 	docker compose up -d --build
 
-rebuild-dev: ## Rebuild images and start the dev stack, detached
+rebuild-dev: ## Rebuild images and start the dev stack, detached (run this after changing deps)
 	$(COMPOSE_DEV) up -d --build
-
-sync-frontend-deps: ## Sync host pnpm changes into the running dev frontend container
-	docker exec -e CI=true libreta-frontend-1 pnpm install
-	$(COMPOSE_DEV) restart frontend
 
 down: ## Stop the stack
 	docker compose down

@@ -6,10 +6,12 @@
 # Or via the Makefile:
 #   make dev / make up-dev / make rebuild-dev
 #
-# This file overlays `api` to bind-mount the source tree and run uvicorn with
-# --reload, so backend edits hot-reload in the container exactly like the Vite
-# dev server does for the frontend. The base docker-compose.yml is unchanged
-# and is used as-is in production.
+# This file overlays `api` and `frontend` to bind-mount their *source* (not
+# their installed dependencies) so host edits hot-reload in the container,
+# while the build-time-installed artifact (pip wheel / node_modules) baked
+# into the image stays authoritative. A dependency change therefore means
+# rebuilding the image (`make rebuild-dev`) — exactly like production. The
+# base docker-compose.yml is unchanged and used as-is in production.
 services:
   api:
     volumes:
@@ -33,3 +35,17 @@ services:
         "--port",
         "8080",
       ]
+
+  # Bind-mount frontend *source* (never node_modules) over the image, so host
+  # edits hot-reload via Vite while the image's installed deps stay
+  # authoritative. Same contract as the api overlay above.
+  frontend:
+    volumes:
+      - ./frontend/src:/app/src
+      - ./frontend/public:/app/public
+      - ./frontend/index.html:/app/index.html
+      - ./frontend/vite.config.ts:/app/vite.config.ts
+      - ./frontend/tsconfig.json:/app/tsconfig.json
+      - ./frontend/tailwind.config.js:/app/tailwind.config.js
+      - ./frontend/postcss.config.js:/app/postcss.config.js
+      - ./frontend/eslint.config.js:/app/eslint.config.js
