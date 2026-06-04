@@ -2,7 +2,7 @@
 
 > A self-hosted wiki where the source of truth is a directory of plain markdown files in a git repository — with a Confluence-grade WYSIWYG editor and first-class diagrams.net integration on top.
 
-**Status**: v1.0 release candidate. Editing, search, diagrams, git-source sync, and the production deployment story are all in. See [`docs/PROGRESS.md`](./docs/PROGRESS.md) for what landed and [`docs/ROADMAP.md`](./docs/ROADMAP.md) for what's beyond v1.
+**Status**: released — current version in [`VERSION`](./VERSION). Editing, search, diagrams, git-source sync, watched folders, and the production deployment story are all in. See [`CHANGELOG.md`](./CHANGELOG.md) for what changed per release, [`docs/PROGRESS.md`](./docs/PROGRESS.md) for the running work log, and [`docs/ROADMAP.md`](./docs/ROADMAP.md) for what's beyond v1.
 
 ![Libreta home screen — repo tree sidebar with multiple wikis, search, and a page-count dashboard](docs/assets/screenshot-home.png)
 
@@ -73,13 +73,13 @@ make import-dokuwiki       # Import a DokuWiki installation into your wiki
                            #   override: SOURCE=/path/to/dokuwiki/storage/data make import-dokuwiki
 ```
 
-## Features (target for v1)
+## Features
 
 - 📝 **Pages stored as markdown files** with YAML frontmatter — your content is portable, greppable, and survives Libreta.
 - 🔀 **Git as the source of truth** — every save is a commit. Optional remote push to GitHub / Gitea / Forgejo.
 - ✨ **WYSIWYG editor** with markdown round-trip via Tiptap.
 - 🎨 **diagrams.net integrated** — toolbar button opens the editor inline, diagrams saved as `.drawio.svg`.
-- 🖼️ **Image and arbitrary file uploads** — stored in `_attachments/` next to pages.
+- 🖼️ **Image and arbitrary file uploads** — stored in a per-page sidecar directory (`.<page>.md/`) next to the page.
 - 📊 **Confluence-style tables** — resizable columns, header rows, cell colours.
 - 🔍 **Full-text search** — SQLite FTS5 index, regenerable from the file tree at any time.
 - 📱 **Responsive** — works on mobile and desktop.
@@ -108,8 +108,9 @@ Reference and project docs:
 |---|---|
 | [`docs/PROJECT.md`](./docs/PROJECT.md) | Motivation, principles, non-goals, success criteria |
 | [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) | Components, data model, tech stack, deployment topology |
-| [`docs/ROADMAP.md`](./docs/ROADMAP.md) | Milestones M0 → M5 |
-| [`docs/PROGRESS.md`](./docs/PROGRESS.md) | Current state of execution |
+| [`docs/ROADMAP.md`](./docs/ROADMAP.md) | Milestones M0 → M5 (and beyond-v1) |
+| [`docs/PROGRESS.md`](./docs/PROGRESS.md) | Running work log — what landed, when, and why |
+| [`CHANGELOG.md`](./CHANGELOG.md) | Per-release notes (Keep a Changelog), generated from commits |
 | [`docs/DEPLOY.md`](./docs/DEPLOY.md) | Production deployment (Docker Compose + Caddy + TLS) |
 | [`docs/BACKUP.md`](./docs/BACKUP.md) | Backup & restore — what to snapshot, how to recover |
 | [`docs/MIGRATION-APPLE-NOTES.md`](./docs/MIGRATION-APPLE-NOTES.md) | Migrating from Apple Notes (importer + caveats) |

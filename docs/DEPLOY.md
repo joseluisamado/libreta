@@ -299,36 +299,38 @@ issue a fresh one on the target.
 
 ## 8b. Cutting a release (maintainers)
 
-The `VERSION` file is the single source of truth. The version bump and the
-`CHANGELOG.md` update both happen in **one step** (`scripts/changelog.py`,
-wrapped by `make changelog`), driven from [Conventional Commit](https://www.conventionalcommits.org)
-subjects. `make release` no longer bumps the version — it ships whatever
-`VERSION` currently says.
-
-Run each step by hand, in order:
+The `VERSION` file is the single source of truth. One command — `make release` —
+drives the whole cut, with the version bump and `CHANGELOG.md` update derived
+from [Conventional Commit](https://www.conventionalcommits.org) subjects.
 
 ```bash
 # 1. Commit your code changes (Conventional Commits — feat:, fix:, refactor!:, …).
 
-# 2. Cut the version: bump VERSION + package.json, write the CHANGELOG section
-#    from the commits since the last tag.
-make changelog LEVEL=minor          # or patch | major
-#    Review CHANGELOG.md; hand-edit the new section if a commit subject needs
-#    polishing. (Dry run first: python scripts/changelog.py --level minor --dry-run)
+# 2. Cut the release.
+make release
+# It runs, in order:
+#   - abort if there are no commits since the last tag
+#   - prompt for the bump level (patch / minor / major) — or pass LEVEL=minor
+#   - write VERSION + frontend/package.json + the new CHANGELOG section
+#   - build the prod images; if the build FAILS, revert VERSION + CHANGELOG
+#   - commit "chore(release): vX.Y.Z", tag vX.Y.Z, deploy to DEPLOY_HOST
 
-# 3. Build images, commit VERSION+CHANGELOG, tag, deploy.
-make release                        # commits "chore(release): vX.Y.Z", tags vX.Y.Z
-
-# 4. Publish.
+# 3. Publish.
 git push --follow-tags
 ```
+
+To preview the version + changelog section without writing anything:
+`python scripts/changelog.py --level minor --dry-run`. To re-ship the current
+`VERSION` as-is (no bump, no changelog, no commit — e.g. deploying to a fresh
+host): `make release-current`.
 
 `CHANGELOG.md` follows [Keep a Changelog](https://keepachangelog.com/). Only
 user-facing commit types appear (`feat`→Added, `fix`→Fixed, `perf`/`refactor`→
 Changed, `docs`→Documentation, breaking `!` →BREAKING CHANGES); `chore`, `test`,
 `ci`, `build`, and `style` are dropped. A version with no user-facing commits
 renders `_No user-facing changes._`. To reseed the whole file from tags:
-`make changelog-backfill`.
+`make changelog-backfill`. To cut the version + changelog *without* building or
+deploying (e.g. to review first): `make changelog` (prompts, or `LEVEL=`).
 
 ---
 
