@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Entries are generated from [Conventional Commits](https://www.conventionalcommits.org)
 by `scripts/changelog.py` at release time.
 
+
+## [2.1.0] - 2026-06-04
+
+### Added
+
+- **frontend:** add preview/grid view mode + fix scanned-PDF rendering
+
+### Fixed
+
+- **ssh:** honor allowed_types in git SSH credentials callback
+
 ## [2.0.0] - 2026-06-03
 
 Major cleanup release. The original single-content-repo "main wiki" — which had
