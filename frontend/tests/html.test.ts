@@ -50,6 +50,17 @@ describe('sanitizeHtmlFile — R6 (no executable content)', () => {
     expect(out).toContain('.q{color:red}')
   })
 
+  it('surfaces body content even with a large <head> (thumbnail-blank regression)', () => {
+    // "Save Page As" docs put <body> thousands of chars past the start, after
+    // a huge <head>. Sanitizing must return the body, not an empty head-only
+    // fragment — otherwise the preview tile renders blank.
+    const bigHead = '<meta name="x" content="' + 'a'.repeat(6000) + '">'
+    const doc = `<!DOCTYPE html><html><head>${bigHead}</head><body><h1>Visible Title</h1><p>real content</p></body></html>`
+    const out = sanitizeHtmlFile(doc)
+    expect(out).toContain('Visible Title')
+    expect(out).toContain('real content')
+  })
+
   it('keeps benign markup, text, and styling', () => {
     const out = sanitizeHtmlFile('<h1>Title</h1><p class="lead" style="color:red">body</p>')
     expect(out).toContain('<h1>Title</h1>')

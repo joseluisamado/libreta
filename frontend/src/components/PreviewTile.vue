@@ -56,6 +56,16 @@
     return m ? text.slice(m[0].length) : text
   }
 
+  // Trim already-sanitized HTML to ~max chars for a small thumbnail DOM,
+  // cutting back to the last complete tag so we never leave a half-open
+  // `<div cla\u2026` fragment. The browser auto-closes any elements left open by
+  // the cut, and the tile's overflow-hidden box clips what's off-screen.
+  function trimHtml(html: string, max: number): string {
+    const slice = html.slice(0, max)
+    const lastClose = slice.lastIndexOf('>')
+    return lastClose === -1 ? slice : slice.slice(0, lastClose + 1)
+  }
+
   const renderedHtml = ref<string>('')
   const rawSnippet = ref<string>('')
   const previewError = ref(false)
@@ -102,13 +112,19 @@
         }
       } else if (isHtml.value) {
         // Render the HTML file with JS stripped (R6), artifacts rerooted to
-        // the source's /assets endpoint. Same first-page slice as markdown:
-        // a thumbnail, not the whole document.
-        renderedHtml.value = sanitizeHtmlFile(full.slice(0, SNIPPET_CHARS), {
+        // the source's /assets endpoint. Unlike markdown we must NOT slice the
+        // raw text first: an HTML file's first thousands of chars are <head>
+        // boilerplate (a "Save Page As" doc puts <body> well past 4 KB), so a
+        // raw slice yields head-only → empty body → blank tile. Sanitize the
+        // whole document (DOMPurify drops <head>/<script> and returns the
+        // body), then trim the *result* to keep the per-tile DOM small; the
+        // tile's overflow-hidden box clips the rest visually.
+        const clean = sanitizeHtmlFile(full, {
           pagePath: props.pagePath ?? '',
           sourceId: props.sourceId,
           watchedLabel: props.watchedLabel,
         })
+        renderedHtml.value = clean.length > SNIPPET_CHARS ? trimHtml(clean, SNIPPET_CHARS) : clean
       } else {
         rawSnippet.value = full.slice(0, SNIPPET_CHARS)
       }
