@@ -126,6 +126,11 @@
     return `/text-source/${sourceId.value}/${filePath}`
   }
 
+  function getChildRawUrl(childPath: string): string {
+    const segments = childPath.split('/').map(encodeURIComponent).join('/')
+    return `/api/v1/sources/${encodeURIComponent(sourceId.value)}/pages/${segments}/raw`
+  }
+
   const nameDialog = useNameDialog()
 
   const basePath = computed(() => (path.value === '' ? '' : path.value))
@@ -373,6 +378,7 @@
         :other-files="dirOtherFiles"
         :get-other-file-url="getOtherFileUrl"
         :get-text-file-url="getTextFileUrl"
+        :get-child-raw-url="getChildRawUrl"
         :uploading="uploading"
         @create-page="onCreatePage"
         @create-folder="onCreateFolder"

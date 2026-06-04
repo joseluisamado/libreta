@@ -1,14 +1,11 @@
 <script setup lang="ts">
   import { computed, onBeforeUnmount, onMounted, ref, watch, nextTick } from 'vue'
   import { useRoute } from 'vue-router'
-  import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs'
-  import workerUrl from 'pdfjs-dist/legacy/build/pdf.worker.mjs?url'
+  import { pdfjs, PDF_DOC_OPTIONS } from '@/lib/pdf'
   import Breadcrumbs from '@/components/Breadcrumbs.vue'
   import OutlineList from '@/components/OutlineList.vue'
   import PageToolbar from '@/components/PageToolbar.vue'
   import { usePdfLayout, useReadingWidth } from '@/composables/usePrefs'
-
-  pdfjs.GlobalWorkerOptions.workerSrc = workerUrl
 
   // Cap on canvases kept in DOM at once. Hundreds of pages × full-resolution
   // bitmaps eats hundreds of MB; we evict the oldest rendered pages once we
@@ -290,6 +287,7 @@
         disableAutoFetch: false,
         disableStream: false,
         disableRange: false,
+        ...PDF_DOC_OPTIONS,
       }).promise
       if (myToken !== renderToken) {
         doc.destroy()
