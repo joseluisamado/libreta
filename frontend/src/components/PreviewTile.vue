@@ -123,6 +123,9 @@
           pagePath: props.pagePath ?? '',
           sourceId: props.sourceId,
           watchedLabel: props.watchedLabel,
+          // Drop head leftovers (title/link/style) so the snippet budget
+          // reaches visible body content instead of <link> soup.
+          bodyOnly: true,
         })
         renderedHtml.value = clean.length > SNIPPET_CHARS ? trimHtml(clean, SNIPPET_CHARS) : clean
       } else {

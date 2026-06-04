@@ -56,7 +56,16 @@ export interface SanitizeContext {
   pagePath?: string
   sourceId?: string
   watchedLabel?: string
+  // Thumbnail mode: drop non-visible head leftovers (title/link/style/meta)
+  // so a small char budget reaches actual body content. A "Save Page As"
+  // doc keeps dozens of <link rel=stylesheet> after sanitizing, which would
+  // otherwise fill the whole snippet with invisible markup → blank tile.
+  bodyOnly?: boolean
 }
+
+// Tags that survive sanitizing but render nothing visible on their own; in
+// bodyOnly mode we strip them so the thumbnail shows body content.
+const NON_VISIBLE_TAGS = new Set(['TITLE', 'LINK', 'STYLE', 'META', 'HEAD', 'BASE'])
 
 // Sanitize an HTML document/fragment for safe rendering via v-html, and
 // reroot relative asset references so co-located artifacts load. Returns a
@@ -70,6 +79,12 @@ export function sanitizeHtmlFile(raw: string, ctx: SanitizeContext = {}): string
   // the like are already gone by the time we see them.
   const ATTRS = ['src', 'href', 'poster'] as const
   const hook = (node: Element): void => {
+    // Thumbnail mode: strip head-only / non-visible elements so the snippet
+    // budget reaches real body content.
+    if (ctx.bodyOnly && NON_VISIBLE_TAGS.has(node.tagName)) {
+      node.remove()
+      return
+    }
     // <link> is only safe as a stylesheet; drop preload/prefetch/import/etc.
     // (R5: no surprise remote fetches; R6: rel="import" could execute).
     if (node.tagName === 'LINK') {

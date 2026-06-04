@@ -61,6 +61,18 @@ describe('sanitizeHtmlFile — R6 (no executable content)', () => {
     expect(out).toContain('real content')
   })
 
+  it('bodyOnly drops head leftovers (title/link/style) so body content leads', () => {
+    // Without bodyOnly a "Save Page As" doc keeps a long run of
+    // <link rel=stylesheet> after sanitizing, filling the thumbnail snippet
+    // with invisible markup → blank tile. bodyOnly strips those.
+    const doc = `<!DOCTYPE html><html><head><title>T</title>${'<link rel="stylesheet" href="a.css">'.repeat(50)}<style>.x{}</style></head><body><h1>Heading</h1></body></html>`
+    const out = sanitizeHtmlFile(doc, { bodyOnly: true })
+    expect(out).toContain('Heading')
+    expect(out.toLowerCase()).not.toContain('<link')
+    expect(out.toLowerCase()).not.toContain('<style')
+    expect(out.toLowerCase()).not.toContain('<title')
+  })
+
   it('keeps benign markup, text, and styling', () => {
     const out = sanitizeHtmlFile('<h1>Title</h1><p class="lead" style="color:red">body</p>')
     expect(out).toContain('<h1>Title</h1>')
