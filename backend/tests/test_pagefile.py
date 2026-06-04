@@ -4,7 +4,16 @@ from pathlib import Path
 
 import pytest
 
-from libreta.storage.pagefile import _classify_other, walk_children
+from libreta.storage.pagefile import _classify_other, _read_webloc_url, walk_children
+
+_WEBLOC_XML = (
+    '<?xml version="1.0" encoding="UTF-8"?>\n'
+    '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" '
+    '"http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n'
+    '<plist version="1.0">\n'
+    "<dict><key>URL</key><string>{url}</string></dict>\n"
+    "</plist>\n"
+)
 
 
 @pytest.mark.parametrize(
@@ -64,6 +73,63 @@ def test_classify_video_and_heic(name: str, expected: str) -> None:
 )
 def test_classify_ebook(name: str, expected: str) -> None:
     assert _classify_other(name) == expected
+
+
+@pytest.mark.parametrize(
+    ("name", "expected"),
+    [
+        ("bookmark.webloc", "weblink"),
+        ("Bookmark.WEBLOC", "weblink"),
+        # A generic .plist is still text, not a weblink.
+        ("settings.plist", "text"),
+    ],
+)
+def test_classify_weblink(name: str, expected: str) -> None:
+    assert _classify_other(name) == expected
+
+
+def test_read_webloc_url_xml(tmp_path: Path) -> None:
+    f = tmp_path / "link.webloc"
+    f.write_text(_WEBLOC_XML.format(url="https://example.com/page"))
+    assert _read_webloc_url(f) == "https://example.com/page"
+
+
+def test_read_webloc_url_binary(tmp_path: Path) -> None:
+    import plistlib
+
+    f = tmp_path / "link.webloc"
+    f.write_bytes(plistlib.dumps({"URL": "https://example.org"}, fmt=plistlib.FMT_BINARY))
+    assert _read_webloc_url(f) == "https://example.org"
+
+
+@pytest.mark.parametrize(
+    "url",
+    ["file:///etc/passwd", "javascript:alert(1)", "ftp://host/x", ""],
+)
+def test_read_webloc_url_rejects_unsafe(tmp_path: Path, url: str) -> None:
+    f = tmp_path / "link.webloc"
+    f.write_text(_WEBLOC_XML.format(url=url))
+    assert _read_webloc_url(f) is None
+
+
+def test_read_webloc_url_malformed(tmp_path: Path) -> None:
+    f = tmp_path / "broken.webloc"
+    f.write_text("not a plist at all")
+    assert _read_webloc_url(f) is None
+
+
+def test_weblink_is_first_class_child_with_target(tmp_path: Path) -> None:
+    """A .webloc is a clickable child node carrying its resolved target URL,
+    not a thumbnail-bearing previewable and not an other_file."""
+    (tmp_path / "page.md").write_text("# Page\n")
+    (tmp_path / "site.webloc").write_text(_WEBLOC_XML.format(url="https://example.com"))
+
+    nodes, other = walk_children(tmp_path, "")
+
+    by_name = {n.filename: n for n in nodes}
+    assert by_name["site.webloc"].kind == "weblink"
+    assert by_name["site.webloc"].target == "https://example.com"
+    assert "site.webloc" not in {o.name for o in other}
 
 
 def test_previewable_files_are_children_not_other_files(tmp_path: Path) -> None:

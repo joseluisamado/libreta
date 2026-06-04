@@ -156,6 +156,8 @@
         return 'VID'
       case 'ebook':
         return 'BOOK'
+      case 'weblink':
+        return 'LINK'
       default:
         return 'BIN'
     }
@@ -175,6 +177,8 @@
         return 'text-fuchsia-500'
       case 'ebook':
         return 'text-teal-500'
+      case 'weblink':
+        return 'text-blue-500'
       default:
         return 'text-slate-500'
     }
@@ -183,6 +187,14 @@
   // Is this child a folder? (mirrors the list-view test)
   function isFolder(child: PageNode): boolean {
     return child.is_directory || child.children.length > 0
+  }
+
+  // A .webloc child: clicking opens its external target in a new tab, so it
+  // renders as a plain <a>, not a RouterLink. A weblink whose target couldn't
+  // be resolved (null) falls through to normal handling (a dead internal link),
+  // which is rare and acceptable.
+  function isWeblink(child: PageNode): boolean {
+    return child.kind === 'weblink' && !!child.target
   }
 
   // Best-effort kind for a child node, for preview routing.
@@ -195,6 +207,7 @@
     | 'html'
     | 'video'
     | 'ebook'
+    | 'weblink'
     | 'page'
   function childKind(child: PageNode): ChildTileKind {
     if (isFolder(child)) return 'folder'
@@ -206,6 +219,7 @@
       case 'html':
       case 'video':
       case 'ebook':
+      case 'weblink':
         return child.kind
       default:
         return 'page'
@@ -390,8 +404,14 @@
     <template v-if="viewMode === 'list'">
       <ul v-if="pagedChildren.length" class="text-sm space-y-1">
         <li v-for="child in pagedChildren" :key="child.path" class="flex items-center gap-1 group">
-          <RouterLink
-            :to="getChildUrl(child.path)"
+          <!-- weblinks open their external target in a new tab (plain <a>);
+               everything else navigates in-app via RouterLink. -->
+          <component
+            :is="isWeblink(child) ? 'a' : 'RouterLink'"
+            :to="isWeblink(child) ? undefined : getChildUrl(child.path)"
+            :href="isWeblink(child) ? child.target : undefined"
+            :target="isWeblink(child) ? '_blank' : undefined"
+            :rel="isWeblink(child) ? 'noopener noreferrer' : undefined"
             class="flex items-center min-w-0 text-slate-700 hover:text-blue-600 hover:underline"
           >
             <!-- Folder icon -->
@@ -413,11 +433,13 @@
               class="w-4 shrink-0 mr-1.5 text-[10px] font-semibold text-rose-500 text-center"
               >PDF</span
             >
-            <!-- image / drawio / text / html / video badge -->
+            <!-- image / drawio / text / html / video / ebook / weblink badge -->
             <span
               v-else-if="
                 child.kind &&
-                ['image', 'drawio', 'text', 'html', 'video', 'ebook'].includes(child.kind)
+                ['image', 'drawio', 'text', 'html', 'video', 'ebook', 'weblink'].includes(
+                  child.kind,
+                )
               "
               class="w-6 shrink-0 mr-1.5 text-[10px] font-semibold text-center"
               :class="kindColor(child.kind)"
@@ -430,7 +452,7 @@
               >MD</span
             >
             <span class="truncate">{{ child.filename }}</span>
-          </RouterLink>
+          </component>
           <button
             type="button"
             class="shrink-0 opacity-30 group-hover:opacity-100 text-slate-400 hover:text-slate-600 p-0.5 rounded transition-opacity cursor-pointer"
@@ -492,7 +514,8 @@
         <PreviewTile
           v-for="child in pagedChildren"
           :key="child.path"
-          :to="getChildUrl(child.path)"
+          :to="isWeblink(child) ? child.target! : getChildUrl(child.path)"
+          :external="isWeblink(child)"
           :label="child.filename"
           :kind="childKind(child)"
           :raw-url="childRawUrl(child)"

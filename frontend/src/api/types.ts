@@ -37,8 +37,11 @@ export interface PageNode {
   is_directory: boolean
   children: PageNode[]
   has_more?: boolean
-  kind?: 'page' | 'pdf' | 'image' | 'drawio' | 'text' | 'html' | 'video' | 'ebook'
+  kind?: 'page' | 'pdf' | 'image' | 'drawio' | 'text' | 'html' | 'video' | 'ebook' | 'weblink'
   other_files?: OtherFile[]
+  // For kind === 'weblink' (.webloc): the external URL it points at, resolved
+  // server-side. Clicking the node opens this in a new tab.
+  target?: string | null
 }
 
 export interface HistoryEntry {

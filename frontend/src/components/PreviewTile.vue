@@ -34,6 +34,7 @@
     | 'text'
     | 'video'
     | 'ebook'
+    | 'weblink'
     | 'binary'
 
   const props = defineProps<{
@@ -309,6 +310,8 @@
         return 'VID'
       case 'ebook':
         return 'BOOK'
+      case 'weblink':
+        return 'LINK'
       default:
         return 'BIN'
     }
@@ -332,6 +335,8 @@
         return 'text-fuchsia-500'
       case 'ebook':
         return 'text-teal-500'
+      case 'weblink':
+        return 'text-blue-500'
       default:
         return 'text-slate-500'
     }
@@ -349,7 +354,9 @@
       :is="external ? 'a' : 'RouterLink'"
       :to="external ? undefined : to"
       :href="external ? to : undefined"
-      :download="downloadName"
+      :download="kind === 'weblink' ? undefined : downloadName"
+      :target="kind === 'weblink' ? '_blank' : undefined"
+      :rel="kind === 'weblink' ? 'noopener noreferrer' : undefined"
       class="block rounded-lg border border-slate-200 overflow-hidden bg-white hover:border-blue-400 hover:shadow-sm transition"
     >
       <!-- Preview pane -->

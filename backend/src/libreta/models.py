@@ -182,8 +182,11 @@ class PageNode(BaseModel):
     is_directory: bool
     children: list[PageNode] = Field(default_factory=list)
     has_more: bool = False
-    kind: str = "page"  # page | pdf | image | drawio | text | html | video | ebook
+    kind: str = "page"  # page | pdf | image | drawio | text | html | video | ebook | weblink
     other_files: list[OtherFile] = Field(default_factory=list)
+    # For kind == "weblink" (.webloc bookmark): the external URL the file points
+    # at, extracted from its plist. Clients open it directly. None otherwise.
+    target: str | None = None
 
 
 class HistoryEntry(BaseModel):

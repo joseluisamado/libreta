@@ -185,6 +185,13 @@
     }
     return `${prefix}/${node.path}`
   }
+
+  // A .webloc node opens its external target in a new tab, so it renders as a
+  // plain <a> rather than a RouterLink. Falls back to in-app handling when the
+  // target couldn't be resolved (null).
+  function isWeblink(node: PageNode): boolean {
+    return node.kind === 'weblink' && !!node.target
+  }
 </script>
 
 <template>
@@ -252,15 +259,26 @@
             >BOOK</span
           >
           <span
+            v-else-if="node.kind === 'weblink'"
+            class="text-[10px] font-semibold text-blue-500 shrink-0"
+            >LINK</span
+          >
+          <span
             v-else-if="!node.is_directory && !node.children.length && !node.has_more"
             class="text-[10px] font-semibold text-sky-500 shrink-0"
             >MD</span
           >
           <span class="truncate">{{ node.filename }}</span>
         </button>
-        <RouterLink
+        <!-- weblinks (.webloc) open their external target in a new tab; all
+             other nodes navigate in-app via RouterLink. -->
+        <component
+          :is="isWeblink(node) ? 'a' : 'RouterLink'"
           v-else
-          :to="nodeLink(node)"
+          :to="isWeblink(node) ? undefined : nodeLink(node)"
+          :href="isWeblink(node) ? node.target : undefined"
+          :target="isWeblink(node) ? '_blank' : undefined"
+          :rel="isWeblink(node) ? 'noopener noreferrer' : undefined"
           class="flex-1 truncate flex items-center gap-1"
           :class="
             node.is_directory || node.children.length || node.has_more
@@ -278,12 +296,17 @@
             >BOOK</span
           >
           <span
+            v-else-if="node.kind === 'weblink'"
+            class="text-[10px] font-semibold text-blue-500 shrink-0"
+            >LINK</span
+          >
+          <span
             v-else-if="!node.is_directory && !node.children.length && !node.has_more"
             class="text-[10px] font-semibold text-sky-500 shrink-0"
             >MD</span
           >
           <span class="truncate">{{ node.filename }}</span>
-        </RouterLink>
+        </component>
       </div>
       <PageTree
         v-if="(node.is_directory || node.children.length || node.has_more) && isOpen(node.path)"

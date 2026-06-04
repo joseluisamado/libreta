@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import plistlib
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -299,6 +300,10 @@ def _classify_other(name: str) -> str:
     # Codec support is the browser's call; broadly mp4/webm/ogg work.
     if lower.endswith((".mp4", ".webm", ".ogg", ".ogv", ".mov", ".m4v")):
         return "video"
+    # macOS .webloc bookmark: a plist pointing at a URL. No viewer/thumbnail —
+    # clicking it just opens the target URL (resolved in _read_webloc_url).
+    if lower.endswith(".webloc"):
+        return "weblink"
     # HTML is rendered (JS-stripped) in its own viewer, distinct from the
     # raw-source text viewer — see the frontend html viewer / R6.
     if lower.endswith((".html", ".htm")):
@@ -346,6 +351,29 @@ def _classify_other(name: str) -> str:
     return "binary"
 
 
+def _read_webloc_url(path: Path) -> str | None:
+    """Extract the target URL from a macOS ``.webloc`` bookmark.
+
+    A ``.webloc`` is a plist (XML or binary) with a top-level ``URL`` key.
+    Returns the URL string, or ``None`` if the file is unreadable, malformed,
+    or the URL isn't a safe http(s) link (we don't surface ``file:``/``javascript:``
+    targets as clickable links).
+    """
+    try:
+        with path.open("rb") as fh:
+            data = plistlib.load(fh)
+    except (OSError, plistlib.InvalidFileException, ValueError):
+        logger.warning("cannot read webloc %s", path)
+        return None
+    url = data.get("URL") if isinstance(data, dict) else None
+    if not isinstance(url, str):
+        return None
+    url = url.strip()
+    if not url.lower().startswith(("http://", "https://")):
+        return None
+    return url
+
+
 def _build_tree(
     dir_path: Path,
     url_prefix: str,
@@ -373,6 +401,10 @@ def _build_tree(
     # not in "other files". The kind comes from _classify_other. Everything
     # else (binary, etc.) stays in other_files.
     previewable_files: list[Path] = []
+    # .webloc bookmarks: first-class clickable children, but with no thumbnail
+    # or viewer (the click opens the target URL), so they're kept apart from
+    # previewable_files.
+    weblink_files: list[Path] = []
     for entry in entries:
         if entry.name.startswith("."):
             continue
@@ -383,6 +415,8 @@ def _build_tree(
                 md_names[entry.stem] = entry
             elif entry.suffix.lower() == ".pdf":
                 pdf_files.append(entry)
+            elif _classify_other(entry.name) == "weblink":
+                weblink_files.append(entry)
             elif _classify_other(entry.name) in _PREVIEWABLE_KINDS:
                 previewable_files.append(entry)
             else:
@@ -467,6 +501,20 @@ def _build_tree(
                 is_directory=False,
                 children=[],
                 kind=_classify_other(pv.name),  # image|drawio|text|html|video|ebook
+            )
+        )
+
+    for wl in sorted(weblink_files, key=lambda p: p.name.casefold()):
+        child_url = f"{url_prefix}/{wl.name}" if url_prefix else wl.name
+        nodes.append(
+            PageNode(
+                path=child_url,
+                title=beautify_stem(wl.stem),
+                filename=wl.name,
+                is_directory=False,
+                children=[],
+                kind="weblink",
+                target=_read_webloc_url(wl),
             )
         )
 

@@ -14,6 +14,29 @@ Living document. Update as work progresses. Latest at the top.
 
 ---
 
+## 2026-06-04 — Feature: .webloc bookmarks as first-class clickable children
+
+**What**: macOS `.webloc` files (a plist pointing at a URL) are now a supported
+file kind. They list as first-class children but, unlike other kinds, have **no
+thumbnail and no viewer** — clicking one opens its target URL in a new tab.
+
+- **Backend** (`storage/pagefile.py`): `.webloc` → `_classify_other` returns
+  `"weblink"`; a dedicated build loop (not previewable, not other_files) emits a
+  `PageNode(kind="weblink", target=…)`. `_read_webloc_url` parses the plist
+  (XML or binary via stdlib `plistlib`) and only surfaces `http(s)` targets —
+  `file:`/`javascript:`/malformed return `None` (no clickable link). New
+  `target: str | None` field on `PageNode`. Tests in `test_pagefile.py`.
+- **Frontend**: `weblink` kind threaded through types + `DirListing` (list &
+  preview), `PageTree` (sidebar), and `PreviewTile`. Weblinks render as a plain
+  `<a href=target target=_blank rel=noopener noreferrer>` (no RouterLink, no
+  preview fetch) with a blue `LINK` badge. No thumbnail render → no compute.
+  Test in `DirListing.test.ts`.
+
+No new dependency. R-rules unaffected (no content stored outside the file; the
+URL is recomputed from the `.webloc` on every listing).
+
+---
+
 ## 2026-06-04 — Feature: e-book support (EPUB + MOBI/AZW3/FB2/CBZ) with viewer + cover thumbnails
 
 **What**: e-book formats are now first-class, mirroring the PDF feature. EPUB,

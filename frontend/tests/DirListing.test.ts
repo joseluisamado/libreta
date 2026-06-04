@@ -109,6 +109,29 @@ describe('DirListing pagination (50 per page, combined + alphabetical)', () => {
     expect(rows.some((t) => t.includes('clip.mp4') && t.includes('VID'))).toBe(true)
   })
 
+  it('renders a .webloc child as an external new-tab link to its target', () => {
+    const children: PageNode[] = [
+      {
+        path: 'site.webloc',
+        title: 'site',
+        filename: 'site.webloc',
+        is_directory: false,
+        children: [],
+        kind: 'weblink',
+        target: 'https://example.com',
+      },
+    ]
+    const w = mountListing(children)
+    const rows = w.findAll('li').map((li) => li.text())
+    expect(rows.some((t) => t.includes('site.webloc') && t.includes('LINK'))).toBe(true)
+    // A real <a> to the external target, opening in a new tab (not a stubbed
+    // RouterLink — those carry no href here).
+    const ext = w.find('a[href="https://example.com"]')
+    expect(ext.exists()).toBe(true)
+    expect(ext.attributes('target')).toBe('_blank')
+    expect(ext.attributes('rel')).toContain('noopener')
+  })
+
   it('sorts children alphabetically (case-insensitive, numeric)', () => {
     const children: PageNode[] = ['banana.md', 'Apple.md', 'cherry.md'].map((f) => ({
       path: f,
