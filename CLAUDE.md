@@ -190,7 +190,14 @@ The drawio container is a vanilla `jgraph/drawio:latest`. We do not fork or modi
 
 ### 6.1 Branches
 
-- `main` — protected, always green CI
+While development is solo, **commit directly to `main`** — don't create a
+branch for every change. `main` should still stay green (run the pre-flight
+checks before committing). The human will create a branch by hand when a
+change is big or risky enough to warrant one; only branch on explicit
+request.
+
+When a branch *is* used, name it by kind:
+
 - `feat/<short-name>` — feature work
 - `fix/<short-name>` — bugfix
 - `refactor/<short-name>` — non-functional change
