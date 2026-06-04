@@ -379,6 +379,7 @@
         :get-other-file-url="getOtherFileUrl"
         :get-text-file-url="getTextFileUrl"
         :get-child-raw-url="getChildRawUrl"
+        :source-id="sourceId"
         :uploading="uploading"
         @create-page="onCreatePage"
         @create-folder="onCreateFolder"

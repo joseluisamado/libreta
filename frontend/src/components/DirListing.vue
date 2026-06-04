@@ -13,6 +13,11 @@
     // Raw-content URL for a child page (markdown) or pdf, used by the
     // preview tiles to fetch a snippet / embed the document.
     getChildRawUrl?: (childPath: string) => string
+    // Source context for the markdown thumbnails so relative asset links
+    // (images, .drawio.svg) inside a page resolve to the right /assets URL,
+    // exactly as the full viewer does. Exactly one of these is set.
+    sourceId?: string
+    watchedLabel?: string
     uploading?: boolean
   }>()
 
@@ -372,6 +377,9 @@
           :label="child.filename"
           :kind="childKind(child)"
           :raw-url="getChildRawUrl ? getChildRawUrl(child.path) : undefined"
+          :page-path="child.path"
+          :source-id="sourceId"
+          :watched-label="watchedLabel"
           :size="tileSize"
           @rename="emit('rename', child.path)"
           @delete="emit('delete', child.path)"

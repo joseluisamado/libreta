@@ -1,7 +1,7 @@
 <script setup lang="ts">
-  import { computed, onBeforeUnmount, ref, watch } from 'vue'
+  import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
   import { pdfjs, PDF_DOC_OPTIONS } from '@/lib/pdf'
-  import { renderMarkdown } from '@/markdown'
+  import { renderMarkdown, renderMermaidIn } from '@/markdown'
 
   // First-page PDF thumbnails, cached as data URLs keyed by raw URL and shared
   // across every tile for the session (module scope, not per-instance), so
@@ -21,6 +21,12 @@
     kind: TileKind
     size: number
     rawUrl?: string
+    // Page path + source context, so relative asset links (images,
+    // .drawio.svg) inside a markdown thumbnail resolve to the same /assets
+    // URL the full viewer uses. Only meaningful for kind === 'page'.
+    pagePath?: string
+    sourceId?: string
+    watchedLabel?: string
     // When true, render a plain <a> (download / open external viewer)
     // instead of a RouterLink.
     external?: boolean
@@ -57,9 +63,14 @@
   // page → rendered markdown HTML; text → raw monospace snippet.
   const isMarkdown = computed(() => props.kind === 'page')
   const isText = computed(() => props.kind === 'text')
-  const isImage = computed(() => props.kind === 'image')
+  // A .drawio.svg *is* an SVG file — render it natively like any image,
+  // matching the full viewer, instead of falling back to a badge.
+  const isImage = computed(() => props.kind === 'image' || props.kind === 'drawio')
   const isPdf = computed(() => props.kind === 'pdf')
   const isFolder = computed(() => props.kind === 'folder')
+
+  // Container for the rendered markdown, so we can run mermaid inside it.
+  const mdEl = ref<HTMLElement | null>(null)
 
   async function loadTextual(): Promise<void> {
     if (!props.rawUrl || (!isMarkdown.value && !isText.value)) return
@@ -71,9 +82,22 @@
       const full = await r.text()
       if (isMarkdown.value) {
         // Strip frontmatter first so it doesn't eat the snippet budget, then
-        // render. No source context: relative asset links won't resolve, which
-        // is fine for a thumbnail and avoids broken-image fetch storms.
-        renderedHtml.value = renderMarkdown(stripFrontmatter(full).slice(0, SNIPPET_CHARS))
+        // render. Pass page/source context so relative asset links (images,
+        // .drawio.svg) resolve to the same /assets URL as the full viewer.
+        // We only render the first ~SNIPPET_CHARS, so embedded assets past the
+        // first page never enter the DOM — no fetch storm.
+        renderedHtml.value = renderMarkdown(
+          stripFrontmatter(full).slice(0, SNIPPET_CHARS),
+          props.pagePath ?? '',
+          props.sourceId,
+          props.watchedLabel,
+        )
+        // Run mermaid only when the snippet actually contains a diagram, so a
+        // grid of plain-prose tiles pays nothing.
+        if (renderedHtml.value.includes('class="mermaid"')) {
+          await nextTick()
+          if (mdEl.value) await renderMermaidIn(mdEl.value)
+        }
       } else {
         rawSnippet.value = full.slice(0, SNIPPET_CHARS)
       }
@@ -267,7 +291,7 @@
               transform: `scale(${renderScale})`,
             }"
           >
-            <div class="prose prose-sm p-3" v-html="renderedHtml" />
+            <div ref="mdEl" class="prose prose-sm p-3" v-html="renderedHtml" />
           </div>
         </template>
 
