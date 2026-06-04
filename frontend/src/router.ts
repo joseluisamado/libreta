@@ -62,6 +62,16 @@ const routes: RouteRecordRaw[] = [
     component: () => import('./views/VideoView.vue'),
   },
   {
+    path: '/ebook-source/:sourceId/:path(.*)*',
+    name: 'ebook-source',
+    component: () => import('./views/EbookView.vue'),
+  },
+  {
+    path: '/ebook-watch/:label/:path(.*)*',
+    name: 'ebook-watch',
+    component: () => import('./views/EbookView.vue'),
+  },
+  {
     path: '/search',
     name: 'search',
     component: () => import('./views/SearchView.vue'),
@@ -241,6 +251,8 @@ function isAppPath(path: string): boolean {
     path.startsWith('/img-source/') ||
     path.startsWith('/video-watch/') ||
     path.startsWith('/video-source/') ||
+    path.startsWith('/ebook-watch/') ||
+    path.startsWith('/ebook-source/') ||
     path.startsWith('/search') ||
     path.startsWith('/-/')
   )

@@ -171,13 +171,16 @@
   // route depends on context (main wiki vs. source vs. watched-not-supported).
   function nodeLink(node: PageNode): string {
     const prefix = props.linkPrefix ?? '/w'
-    if (node.kind === 'pdf') {
+    // Non-page kinds with a dedicated viewer route. The viewer slug differs
+    // from the kind for a couple ("pdf"→pdf, "ebook"→ebook), so map explicitly.
+    const viewerSlug = node.kind === 'pdf' ? 'pdf' : node.kind === 'ebook' ? 'ebook' : null
+    if (viewerSlug) {
       const sourceMatch = /^\/source\/([^/]+)$/.exec(prefix)
-      if (sourceMatch) return `/pdf-source/${sourceMatch[1]}/${node.path}`
-      if (prefix === '/w') return `/pdf/${node.path}`
+      if (sourceMatch) return `/${viewerSlug}-source/${sourceMatch[1]}/${node.path}`
+      if (prefix === '/w') return `/${viewerSlug}/${node.path}`
       const watchedMatch = /^\/watch\/([^/]+)$/.exec(prefix)
       if (watchedMatch) {
-        return `/pdf-watch/${watchedMatch[1]}/${node.path}`
+        return `/${viewerSlug}-watch/${watchedMatch[1]}/${node.path}`
       }
     }
     return `${prefix}/${node.path}`
@@ -244,6 +247,11 @@
             >PDF</span
           >
           <span
+            v-else-if="node.kind === 'ebook'"
+            class="text-[10px] font-semibold text-teal-500 shrink-0"
+            >BOOK</span
+          >
+          <span
             v-else-if="!node.is_directory && !node.children.length && !node.has_more"
             class="text-[10px] font-semibold text-sky-500 shrink-0"
             >MD</span
@@ -263,6 +271,11 @@
         >
           <span v-if="node.kind === 'pdf'" class="text-[10px] font-semibold text-rose-500 shrink-0"
             >PDF</span
+          >
+          <span
+            v-else-if="node.kind === 'ebook'"
+            class="text-[10px] font-semibold text-teal-500 shrink-0"
+            >BOOK</span
           >
           <span
             v-else-if="!node.is_directory && !node.children.length && !node.has_more"

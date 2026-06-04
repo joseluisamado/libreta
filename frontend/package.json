@@ -27,6 +27,7 @@
     "@tiptap/vue-3": "^3.22.5",
     "@types/katex": "^0.16.8",
     "dompurify": "^3.4.8",
+    "foliate-js": "1.0.1",
     "highlight.js": "^11.10.0",
     "katex": "^0.16.45",
     "lowlight": "^3.3.0",

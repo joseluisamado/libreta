@@ -14,6 +14,40 @@ Living document. Update as work progresses. Latest at the top.
 
 ---
 
+## 2026-06-04 — Feature: e-book support (EPUB + MOBI/AZW3/FB2/CBZ) with viewer + cover thumbnails
+
+**What**: e-book formats are now first-class, mirroring the PDF feature. EPUB,
+MOBI, KF8/AZW3 (`.azw`, `.azw3`, `.kf8`, `.prc`), FictionBook (`.fb2`,
+`.fb2.zip`, `.fbz`), and comic archives (`.cbz`) get a dedicated reader and a
+cover thumbnail in the folder preview grid. All map to a single backend
+`kind="ebook"`; the concrete format is sniffed client-side by
+[`foliate-js`](https://github.com/johnfactotum/foliate-js) (new frontend dep,
+pinned `1.0.1`).
+
+- **Backend** (`storage/pagefile.py`): `_EBOOK_EXTS` → `_classify_other`
+  returns `"ebook"`, added to `_PREVIEWABLE_KINDS` so ebooks list as first-class
+  children (not "other files"). Tests in `test_pagefile.py`.
+- **Viewer** (`views/EbookView.vue`): a `<foliate-view>` web component; foliate
+  owns pagination + the content iframe. Surfaces a flattened TOC panel
+  (href-based `goTo`), keyboard/click page nav, reading-progress bar, download.
+  Routes `/ebook-source/…` and `/ebook-watch/…`.
+- **Thumbnails** (`PreviewTile.vue`): `book.getCover()` → object URL, cached at
+  module scope (like `pdfThumbCache`); books with no cover fall back to a teal
+  `BOOK` badge.
+- **Shared setup** (`lib/ebook.ts`): single foliate import point + the R6 note.
+- **Custom element**: `vite.config.ts` `isCustomElement` hook + `*.d.ts`
+  augmentations so Vue/vue-tsc accept `<foliate-view>`.
+
+**R6 (no user-JS execution)**: holds out of the box. foliate's EPUB loader
+defaults to `allowScript = false` and drops every script-type resource at load
+(`if (isScript && !this.allowScript) return null`); MOBI/FB2/CBZ have no script
+concept. The content iframe's `allow-scripts` is only for foliate's own
+pagination runtime — book JS never reaches it. `lib/ebook.ts` documents that
+`allowScript` must never be flipped on. foliate's experimental PDF path is
+deliberately unused (we keep the richer pdf.js `PdfView`).
+
+---
+
 ## 2026-06-04 — Tooling: CHANGELOG.md + commit-driven release cut
 
 **What**: added `CHANGELOG.md` (Keep a Changelog format) and a release mechanism

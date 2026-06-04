@@ -262,7 +262,24 @@ _NOEXT_TEXT_NAMES = {
 # are listed as first-class children ("in this folder") rather than in the
 # "other files" bucket. "binary" is the only non-previewable _classify_other
 # result and stays in other_files.
-_PREVIEWABLE_KINDS = frozenset({"image", "drawio", "text", "html", "video"})
+_PREVIEWABLE_KINDS = frozenset({"image", "drawio", "text", "html", "video", "ebook"})
+
+# E-book / e-reader formats rendered client-side by foliate-js (see the
+# frontend EbookView): EPUB, MOBI, Kindle KF8/AZW, FictionBook, and comic-book
+# archives. All map to a single ``kind="ebook"``; foliate sniffs the concrete
+# format itself, so the backend doesn't need to distinguish them.
+_EBOOK_EXTS = (
+    ".epub",
+    ".mobi",
+    ".azw",
+    ".azw3",
+    ".kf8",
+    ".prc",
+    ".fb2",
+    ".fbz",
+    ".fb2.zip",
+    ".cbz",
+)
 
 
 def _classify_other(name: str) -> str:
@@ -270,6 +287,8 @@ def _classify_other(name: str) -> str:
     lower = name.lower()
     if lower.endswith((".drawio.svg", ".drawio.png", ".drawio")):
         return "drawio"
+    if lower.endswith(_EBOOK_EXTS):
+        return "ebook"
     if lower.endswith(
         (".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".bmp", ".ico", ".heic", ".heif")
     ):
@@ -447,7 +466,7 @@ def _build_tree(
                 filename=pv.name,
                 is_directory=False,
                 children=[],
-                kind=_classify_other(pv.name),  # image|drawio|text|html|video
+                kind=_classify_other(pv.name),  # image|drawio|text|html|video|ebook
             )
         )
 

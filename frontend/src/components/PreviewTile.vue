@@ -1,6 +1,7 @@
 <script setup lang="ts">
   import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
   import { pdfjs, PDF_DOC_OPTIONS } from '@/lib/pdf'
+  import { coverObjectUrl } from '@/lib/ebook'
   import { renderMarkdown, renderMermaidIn } from '@/markdown'
   import { sanitizeHtmlFile } from '@/lib/html'
   import { EXT_LANG } from '@/textFiles'
@@ -11,6 +12,12 @@
   // across every tile for the session (module scope, not per-instance), so
   // re-entering a folder / toggling view / resizing skips the re-parse.
   const pdfThumbCache = new Map<string, string>()
+
+  // E-book cover thumbnails, cached as object URLs keyed by raw URL, shared
+  // across tiles for the session (same rationale as pdfThumbCache). The value
+  // is `null` for books that have no cover, so we don't re-unzip them on every
+  // re-render just to rediscover the absence.
+  const ebookCoverCache = new Map<string, string | null>()
 
   // A tile in the preview grid. Renders a self-generated preview of the file
   // content — rendered markdown for pages, the first page of a PDF drawn to a
@@ -26,6 +33,7 @@
     | 'html'
     | 'text'
     | 'video'
+    | 'ebook'
     | 'binary'
 
   const props = defineProps<{
@@ -92,6 +100,7 @@
   const isImage = computed(() => props.kind === 'image' || props.kind === 'drawio')
   const isPdf = computed(() => props.kind === 'pdf')
   const isVideo = computed(() => props.kind === 'video')
+  const isEbook = computed(() => props.kind === 'ebook')
   const isFolder = computed(() => props.kind === 'folder')
 
   // Container for the rendered markdown, so we can run mermaid inside it.
@@ -225,14 +234,53 @@
     }
   }
 
+  // ── E-book cover render ──────────────────────────────────────────────────
+  //
+  // foliate-js unzips the book client-side and exposes its cover via
+  // book.getCover() (a Blob). We turn it into an object URL, cached at module
+  // scope (ebookCoverCache) so re-entering a folder or toggling views skips the
+  // re-parse. Books with no cover cache `null` and fall back to the badge.
+  const ebookCover = ref<string>('')
+
+  async function loadEbook(): Promise<void> {
+    if (!props.rawUrl || !isEbook.value) return
+    const url = props.rawUrl
+    const myToken = ++renderToken
+
+    if (ebookCoverCache.has(url)) {
+      ebookCover.value = ebookCoverCache.get(url) ?? ''
+      loading.value = false
+      previewError.value = false
+      return
+    }
+
+    loading.value = true
+    previewError.value = false
+    try {
+      const objUrl = await coverObjectUrl(url)
+      if (myToken !== renderToken) {
+        if (objUrl) URL.revokeObjectURL(objUrl)
+        return
+      }
+      ebookCoverCache.set(url, objUrl)
+      ebookCover.value = objUrl ?? ''
+    } catch {
+      if (myToken === renderToken) previewError.value = true
+    } finally {
+      if (myToken === renderToken) loading.value = false
+    }
+  }
+
   watch(
     () => [props.rawUrl, props.kind] as const,
     () => {
       renderedHtml.value = ''
       rawSnippet.value = ''
       pdfThumbnail.value = ''
+      ebookCover.value = ''
       void loadTextual()
       void loadPdf()
+      void loadEbook()
     },
     { immediate: true },
   )
@@ -259,6 +307,8 @@
         return 'TXT'
       case 'video':
         return 'VID'
+      case 'ebook':
+        return 'BOOK'
       default:
         return 'BIN'
     }
@@ -280,6 +330,8 @@
         return 'text-violet-500'
       case 'video':
         return 'text-fuchsia-500'
+      case 'ebook':
+        return 'text-teal-500'
       default:
         return 'text-slate-500'
     }
@@ -356,6 +408,19 @@
             :alt="label"
             class="w-full h-full object-contain object-top bg-white"
           />
+        </template>
+
+        <!-- E-book cover (extracted by foliate-js), cached. Books with no
+             cover fall back to the BOOK badge. -->
+        <template v-else-if="isEbook">
+          <div v-if="loading && !ebookCover" class="text-[11px] text-slate-400">Loading…</div>
+          <img
+            v-else-if="ebookCover"
+            :src="ebookCover"
+            :alt="label"
+            class="w-full h-full object-contain bg-white"
+          />
+          <span v-else class="text-2xl font-bold" :class="badgeColor()">{{ badge() }}</span>
         </template>
 
         <!-- Rendered markdown / HTML thumbnail (both produce renderedHtml) -->

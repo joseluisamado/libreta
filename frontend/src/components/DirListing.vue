@@ -154,6 +154,8 @@
         return 'TXT'
       case 'video':
         return 'VID'
+      case 'ebook':
+        return 'BOOK'
       default:
         return 'BIN'
     }
@@ -171,6 +173,8 @@
         return 'text-violet-500'
       case 'video':
         return 'text-fuchsia-500'
+      case 'ebook':
+        return 'text-teal-500'
       default:
         return 'text-slate-500'
     }
@@ -182,7 +186,16 @@
   }
 
   // Best-effort kind for a child node, for preview routing.
-  type ChildTileKind = 'folder' | 'pdf' | 'image' | 'drawio' | 'text' | 'html' | 'video' | 'page'
+  type ChildTileKind =
+    | 'folder'
+    | 'pdf'
+    | 'image'
+    | 'drawio'
+    | 'text'
+    | 'html'
+    | 'video'
+    | 'ebook'
+    | 'page'
   function childKind(child: PageNode): ChildTileKind {
     if (isFolder(child)) return 'folder'
     switch (child.kind) {
@@ -192,6 +205,7 @@
       case 'text':
       case 'html':
       case 'video':
+      case 'ebook':
         return child.kind
       default:
         return 'page'
@@ -202,7 +216,7 @@
   // text, html, video) use the /assets URL the tile fetches/embeds; pages and
   // PDFs use the page-raw URL.
   function childRawUrl(child: PageNode): string | undefined {
-    const assetKinds = ['image', 'drawio', 'text', 'html', 'video']
+    const assetKinds = ['image', 'drawio', 'text', 'html', 'video', 'ebook']
     if (child.kind && assetKinds.includes(child.kind)) {
       return props.getOtherFileUrl ? props.getOtherFileUrl(child.path) : undefined
     }
@@ -402,7 +416,8 @@
             <!-- image / drawio / text / html / video badge -->
             <span
               v-else-if="
-                child.kind && ['image', 'drawio', 'text', 'html', 'video'].includes(child.kind)
+                child.kind &&
+                ['image', 'drawio', 'text', 'html', 'video', 'ebook'].includes(child.kind)
               "
               class="w-6 shrink-0 mr-1.5 text-[10px] font-semibold text-center"
               :class="kindColor(child.kind)"

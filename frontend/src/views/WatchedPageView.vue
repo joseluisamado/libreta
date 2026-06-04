@@ -12,7 +12,7 @@
   import { useWatchedStore } from '@/stores/watched'
   import type { DirChildren, OtherFile, PageNode, PageRead } from '@/api/types'
   import { renderMarkdown, renderMermaidIn } from '@/markdown'
-  import { isHtmlPath, isImagePath, isTextPath, isVideoPath } from '@/textFiles'
+  import { isEbookPath, isHtmlPath, isImagePath, isTextPath, isVideoPath } from '@/textFiles'
   import { useReadingWidth } from '@/composables/usePrefs'
   import { useViewMode } from '@/composables/useViewMode'
   import Breadcrumbs from '@/components/Breadcrumbs.vue'
@@ -53,6 +53,10 @@
     }
     if (isVideoPath(path.value)) {
       router.replace(`/video-watch/${label.value}/${path.value}`)
+      return
+    }
+    if (isEbookPath(path.value)) {
+      router.replace(`/ebook-watch/${label.value}/${path.value}`)
       return
     }
     if (isHtmlPath(path.value)) {
@@ -161,6 +165,9 @@
     }
     if (isVideoPath(childPath)) {
       return `/video-watch/${label.value}/${childPath}`
+    }
+    if (isEbookPath(childPath)) {
+      return `/ebook-watch/${label.value}/${childPath}`
     }
     if (isHtmlPath(childPath)) {
       return `/html-watch/${label.value}/${childPath}`

@@ -12,7 +12,7 @@
   import { getSourceChildren } from '@/api/client'
   import type { DirChildren, OtherFile, PageNode, PageRead } from '@/api/types'
   import { renderMarkdown, renderMermaidIn } from '@/markdown'
-  import { isHtmlPath, isImagePath, isTextPath, isVideoPath } from '@/textFiles'
+  import { isEbookPath, isHtmlPath, isImagePath, isTextPath, isVideoPath } from '@/textFiles'
   import { useReadingWidth } from '@/composables/usePrefs'
   import { useViewMode } from '@/composables/useViewMode'
   import { useSourcesStore } from '@/stores/sources'
@@ -54,6 +54,10 @@
     }
     if (isVideoPath(path.value)) {
       router.replace(`/video-source/${sourceId.value}/${path.value}`)
+      return
+    }
+    if (isEbookPath(path.value)) {
+      router.replace(`/ebook-source/${sourceId.value}/${path.value}`)
       return
     }
     if (isHtmlPath(path.value)) {
@@ -164,6 +168,9 @@
     }
     if (isVideoPath(childPath)) {
       return `/video-source/${sourceId.value}/${childPath}`
+    }
+    if (isEbookPath(childPath)) {
+      return `/ebook-source/${sourceId.value}/${childPath}`
     }
     if (isHtmlPath(childPath)) {
       return `/html-source/${sourceId.value}/${childPath}`

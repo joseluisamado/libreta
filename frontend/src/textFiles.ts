@@ -115,3 +115,17 @@ export function isVideoPath(path: string): boolean {
   if (dot === -1) return false
   return VIDEO_EXTS.has(last.slice(dot + 1))
 }
+
+// E-book / e-reader formats opened in EbookView (rendered by foliate-js).
+// Mirrors the backend's _EBOOK_EXTS. Single-extension members live in the set;
+// the compound .fb2.zip is checked separately since it has two dots.
+const EBOOK_EXTS = new Set(['epub', 'mobi', 'azw', 'azw3', 'kf8', 'prc', 'fb2', 'fbz', 'cbz'])
+
+/** True for e-book files that should render in EbookView. */
+export function isEbookPath(path: string): boolean {
+  const last = path.split('/').pop()?.toLowerCase() ?? ''
+  if (last.endsWith('.fb2.zip')) return true
+  const dot = last.lastIndexOf('.')
+  if (dot === -1) return false
+  return EBOOK_EXTS.has(last.slice(dot + 1))
+}

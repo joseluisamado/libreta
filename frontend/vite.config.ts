@@ -50,7 +50,12 @@ const inDocker = process.env.VITE_API_BASE !== undefined
 const port = inDocker ? 5173 : 8091
 
 export default defineConfig({
-  plugins: [vue(), pdfWasmAssets()],
+  plugins: [
+    // foliate-js registers a <foliate-view> web component (see EbookView);
+    // tell Vue to treat it as a custom element, not a Vue component.
+    vue({ template: { compilerOptions: { isCustomElement: (tag) => tag === 'foliate-view' } } }),
+    pdfWasmAssets(),
+  ],
   resolve: {
     alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
   },
