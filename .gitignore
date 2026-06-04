@@ -33,3 +33,4 @@ frontend/.pnpm-store/
 
 # Local Makefile overrides (DEPLOY_HOST, etc.) — see local.mk.example
 local.mk
+docker-compose.dev.local.yml
