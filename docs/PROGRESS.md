@@ -14,6 +14,81 @@ Living document. Update as work progresses. Latest at the top.
 
 ---
 
+## 2026-06-04 — Tooling: CHANGELOG.md + commit-driven release cut
+
+**What**: added `CHANGELOG.md` (Keep a Changelog format) and a release mechanism
+that ties the version bump to the changelog update.
+
+- New `scripts/changelog.py`: parses Conventional Commit subjects since the last
+  tag into grouped sections (feat→Added, fix→Fixed, perf/refactor→Changed,
+  docs→Documentation, breaking `!`→BREAKING CHANGES; chore/test/ci/build/style
+  dropped), bumps `VERSION` (`--level`/`--set`, reusing `sync_version`'s
+  semver + package.json propagation), and prepends the new dated section.
+  `--backfill` seeds from every tag; `--dry-run` prints without writing.
+- Backfilled the changelog from all 18 tags (1.0.0 → 2.0.0); hand-polished the
+  2.0.0 (the big refactor) and 1.0.0 (genesis) entries.
+- **Release responsibility moved**: the version bump now lives in
+  `scripts/changelog.py`, not `make release`. New `make changelog` /
+  `changelog-backfill` targets; `make release` ships the current VERSION and
+  auto-commits VERSION+CHANGELOG (`chore(release): vX.Y.Z`) before tagging.
+  Procedure documented in DEPLOY.md §8b: commit → `make changelog LEVEL=…` →
+  `make release` → `git push --follow-tags`.
+
+---
+
+## 2026-06-04 — Fix: scanned (JBIG2) PDFs rendered blank + preview-tile polish
+
+**What**: scanned/image-only PDFs (e.g. CAE practice sheets — one JBIG2 image per
+page) showed the right page count but every page was blank, in both the full viewer
+and the new preview thumbnails. Root cause: pdf.js 5.x decodes JBIG2/JPEG2000/ICC via
+separate wasm modules in `pdfjs-dist/wasm/` and fetches each by its literal filename
+from a configured `wasmUrl`; we never set `wasmUrl`, so decoding failed with
+"JBig2 failed to initialize". Vector/text PDFs need no wasm, hence the file-specific
+symptom.
+
+**Fix**: centralised pdf.js setup in `src/lib/pdf.ts` (worker + shared
+`PDF_DOC_OPTIONS` with `wasmUrl: '/pdf-wasm/'`), consumed by both `PdfView` and
+`PreviewTile` so they can't drift. A small inline Vite plugin (`pdfjs-wasm-assets` in
+`vite.config.ts`) copies the wasm dir verbatim — *unhashed* names, which pdf.js
+requires — to `/pdf-wasm/`: emitted into `dist/` for prod (nginx 1.27 serves
+`application/wasm` from its stock mime.types) and served from node_modules via dev
+middleware. Verified: dev serves `/pdf-wasm/jbig2.wasm` as `application/wasm` with the
+`\0asm` magic; build emits `dist/pdf-wasm/*.wasm` with original names. No new npm dep.
+
+**Also** (preview-tile feedback): strip YAML frontmatter before rendering markdown
+thumbnails (so the body shows, not `created/…` meta — matches the editor); cache PDF
+first-page thumbnails as data URLs keyed by raw URL (module-scope, session-shared) to
+skip re-parsing on re-entry/resize/view-toggle; bumped default tile size 200 → 240;
+replaced the native range thumb (rendered "funky" at non-integer DPR) with an
+explicit cross-browser styled slider.
+
+**Checks**: frontend typecheck, lint (0 errors), 63 tests, production build all green.
+
+---
+
+## 2026-06-04 — Feature: preview/grid view mode for the folder listing
+
+**What**: added a second view mode to the directory listing (`DirListing.vue`). A
+selector at the top-right of the "In this folder" section toggles between the existing
+**list** view and a new **preview** grid of icons with embedded content previews; a size
+slider (120–360 px, shown only in preview mode) scales the tiles. Both choices persist in
+`localStorage` (`libreta.dirView` / `libreta.dirTileSize`) so they stick while browsing.
+
+**Frontend**: new `components/PreviewTile.vue` renders one tile — text snippet fetched from
+the raw endpoint for markdown/text (`page`/`text` kinds, first 1200 chars), the image itself
+for `image`, a non-interactive `<embed>` for `pdf`, a folder glyph for directories, and a
+coloured kind badge as fallback (binary/drawio/fetch error). Tiles route via RouterLink
+(internal) or `<a download>` (external assets), mirroring the list view's link logic, and
+carry the same rename/delete row actions for owned children. `DirListing` grew a
+`getChildRawUrl` prop; both `SourcePageView` and `WatchedPageView` supply it (pointing at
+the existing `/pages/{path}/raw` and `/watch/{label}/raw/{path}` endpoints, which already
+serve any suffixed file byte-for-byte). No backend changes.
+
+**Checks**: `pnpm typecheck`, `lint`, `format`, `test` (63 pass) all green. No new round-trip
+surface (read-only previews; the markdown round-trip is untouched).
+
+---
+
 ## 2026-06-03 — Removal: legacy "main wiki" + `content_dir` → `meta_dir` rename
 
 **What**: removed the original single-content-repo "main wiki" entirely (it no longer

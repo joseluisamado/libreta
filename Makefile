@@ -19,7 +19,8 @@
         import-apple-notes import-apple-notes-dry \
         compute-tags compute-tags-dry \
         version version-bump version-set sync-version \
-        build-prod build-prod-frontend release release-current
+        changelog changelog-backfill \
+        build-prod build-prod-frontend release release-current _tag-and-deploy
 
 BACKEND   := backend
 FRONTEND  := frontend
@@ -215,13 +216,47 @@ build-prod-frontend: ## Build the frontend static bundle into a runnable image
 	@echo "→ building libreta-frontend:$(VERSION)"
 	docker build -f $(FRONTEND)/Dockerfile.prod -t libreta-frontend:$(VERSION) -t libreta-frontend:latest $(FRONTEND)
 
-release: ## Bump VERSION (LEVEL=patch|minor|major), build images, tag git, deploy to DEPLOY_HOST
-	@if [ -z "$(LEVEL)" ]; then echo "usage: make release LEVEL=patch|minor|major" && exit 2; fi
-	$(MAKE) version-bump LEVEL=$(LEVEL)
-	$(MAKE) release-current
+changelog: ## Bump VERSION + write CHANGELOG from commits, without releasing (prompts, or LEVEL=)
+	cd $(BACKEND) && uv run python ../scripts/changelog.py $(if $(LEVEL),--level $(LEVEL),)
 
-release-current: ## Release the CURRENT VERSION as-is (no bump): build images, tag git, deploy to DEPLOY_HOST
+changelog-backfill: ## Reseed CHANGELOG.md from every git tag (one-off)
+	cd $(BACKEND) && uv run python ../scripts/changelog.py --backfill
+
+# One-command release. Run it after committing your code changes; it drives the
+# whole cut:
+#   1. abort if there are no commits since the last tag
+#   2. prompt for the bump LEVEL, then write VERSION + CHANGELOG
+#      (pass LEVEL=patch|minor|major to skip the prompt, e.g. CI)
+#   3. build the prod images — if the build fails, revert VERSION/CHANGELOG
+#   4. commit VERSION+CHANGELOG, tag vX.Y.Z, deploy to DEPLOY_HOST
+# Then publish manually:  git push --follow-tags
+release: ## Cut a release: check commits → prompt LEVEL → build → commit+tag+deploy
+	@CL="cd $(BACKEND) && uv run python ../scripts/changelog.py"; \
+	echo "→ checking for unreleased commits"; \
+	if ! sh -c "$$CL --check"; then exit 0; fi; \
+	echo "→ cutting version"; \
+	sh -c "$$CL $(if $(LEVEL),--level $(LEVEL),)" || { echo "release aborted"; exit 1; }; \
+	new=$$(cat VERSION); \
+	echo "→ building prod images for v$$new"; \
+	if ! $(MAKE) build-prod; then \
+	  echo "✗ build failed — reverting VERSION + CHANGELOG"; \
+	  sh -c "$$CL --revert"; \
+	  exit 1; \
+	fi; \
+	echo "→ committing VERSION + CHANGELOG for v$$new"; \
+	git add VERSION CHANGELOG.md frontend/package.json; \
+	git commit -m "chore(release): v$$new" >/dev/null; \
+	$(MAKE) _tag-and-deploy
+
+# Blindly (re)release whatever VERSION currently says: build, tag, deploy. No
+# commit check, no bump, no changelog, no commit — for re-shipping a version or
+# deploying to a fresh host.
+release-current: ## Re-release the CURRENT VERSION as-is: build, tag, deploy (no bump/commit)
 	$(MAKE) build-prod
+	$(MAKE) _tag-and-deploy
+
+# Shared tail: tag the current VERSION and ship the images to DEPLOY_HOST.
+_tag-and-deploy:
 	@new=$$(cat VERSION); \
 	echo "→ tagging git as v$$new"; \
 	git tag -a "v$$new" -m "release v$$new" || echo "  (skipped: already tagged?)"
@@ -231,4 +266,4 @@ release-current: ## Release the CURRENT VERSION as-is (no bump): build images, t
 	  | ssh $(DEPLOY_HOST) docker load
 	@echo ""
 	@echo "Release v$$(cat VERSION) built locally and loaded into docker on $(DEPLOY_HOST)."
-	@echo "Run: git push --tags"
+	@echo "Run: git push --follow-tags"

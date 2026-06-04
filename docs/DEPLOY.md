@@ -297,6 +297,41 @@ issue a fresh one on the target.
 
 ---
 
+## 8b. Cutting a release (maintainers)
+
+The `VERSION` file is the single source of truth. The version bump and the
+`CHANGELOG.md` update both happen in **one step** (`scripts/changelog.py`,
+wrapped by `make changelog`), driven from [Conventional Commit](https://www.conventionalcommits.org)
+subjects. `make release` no longer bumps the version — it ships whatever
+`VERSION` currently says.
+
+Run each step by hand, in order:
+
+```bash
+# 1. Commit your code changes (Conventional Commits — feat:, fix:, refactor!:, …).
+
+# 2. Cut the version: bump VERSION + package.json, write the CHANGELOG section
+#    from the commits since the last tag.
+make changelog LEVEL=minor          # or patch | major
+#    Review CHANGELOG.md; hand-edit the new section if a commit subject needs
+#    polishing. (Dry run first: python scripts/changelog.py --level minor --dry-run)
+
+# 3. Build images, commit VERSION+CHANGELOG, tag, deploy.
+make release                        # commits "chore(release): vX.Y.Z", tags vX.Y.Z
+
+# 4. Publish.
+git push --follow-tags
+```
+
+`CHANGELOG.md` follows [Keep a Changelog](https://keepachangelog.com/). Only
+user-facing commit types appear (`feat`→Added, `fix`→Fixed, `perf`/`refactor`→
+Changed, `docs`→Documentation, breaking `!` →BREAKING CHANGES); `chore`, `test`,
+`ci`, `build`, and `style` are dropped. A version with no user-facing commits
+renders `_No user-facing changes._`. To reseed the whole file from tags:
+`make changelog-backfill`.
+
+---
+
 ## 9. Upgrades
 
 ```bash
