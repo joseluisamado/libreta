@@ -198,7 +198,25 @@ def make_callbacks(
             url: str,
             username_from_url: str | None,
             allowed_types: int,
-        ) -> pygit2.Keypair:
+        ) -> pygit2.Keypair | pygit2.Username:
+            # libgit2 calls this in (up to) two phases for SSH. It first
+            # probes for the username with USERNAME set in allowed_types
+            # (whether it does so depends on the remote/URL form), then asks
+            # for the key with SSH_KEY set. Returning a Keypair during the
+            # username phase raises "invalid credential type" — so dispatch
+            # on the bitmask rather than always returning the Keypair.
+            if allowed_types & pygit2.enums.CredentialType.USERNAME:
+                return pygit2.Username(username_from_url or "git")
+            if not (allowed_types & pygit2.enums.CredentialType.SSH_KEY):
+                # The transport doesn't accept an SSH key — almost always an
+                # https:// remote_url paired with an ssh_key_id. Fail with an
+                # actionable message instead of letting libgit2 surface a bare
+                # "invalid credential type".
+                raise SshKeyInvalidError(
+                    "source is configured with an SSH key but the remote does not "
+                    "accept SSH auth — check that remote_url is an SSH URL "
+                    "(git@host:org/repo.git or ssh://…), not an https:// URL"
+                )
             return keypair
 
         def certificate_check(
