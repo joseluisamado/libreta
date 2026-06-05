@@ -14,6 +14,34 @@ Living document. Update as work progresses. Latest at the top.
 
 ---
 
+## 2026-06-05 — Design: thumbnail strategy (M11) — XDG cache + quickthumb library
+
+**What**: settled the design for fixing folder-preview performance (tiles
+currently download full-res originals — see the symptom in `PreviewTile.vue`).
+No code yet; the plan is captured as **ROADMAP M11** (Beyond-v1). Highlights:
+
+- Survey of OS thumbnail schemes: macOS QuickLook and Windows thumbcache are
+  **not adoptable** (proprietary blobs, OS-internal keys, inaccessible from
+  Docker); **freedesktop XDG** (file-per-thumb, hash-keyed) is the one we adopt.
+- **Server-side** thumbnails in a **dedicated Docker volume**, XDG-style layout,
+  lazy-filled (empty on fresh deploy is fine), regenerable via a new
+  `libreta thumbs gc` (respects R2).
+- **Cache key = `blake3(file-bytes)`**, computed during the decode read.
+  Rejected **imohash/sampled hashing** — its sampling can map different same-size
+  files to the same key (RAW/HEIC/edited photos), i.e. *show the wrong
+  thumbnail*; the speed it buys is unusable since we must read the file to decode
+  anyway. BLAKE3 gives collision-safety + free dedup + rename-resistance.
+- **Embedded-thumbnail-first** (EXIF thumb / PDF-EPUB cover) before any full
+  decode — ~40× cheaper for the iPhone-photo case that motivated this.
+- New **`quickthumb`** library (separate project/session): pure, stateless,
+  sync, fixture-testable; owns *only* fast decode + embedded extraction, not the
+  cache. v1 = images incl. HEIC (Pillow + pillow-heif); v2 = PDF/EPUB covers via
+  a pluggable extractor registry. Next step is its `FOUNDATION.md`.
+
+See ROADMAP **M11** for the full decision record and open questions.
+
+---
+
 ## 2026-06-04 — Feature: .webloc bookmarks as first-class clickable children
 
 **What**: macOS `.webloc` files (a plist pointing at a URL) are now a supported

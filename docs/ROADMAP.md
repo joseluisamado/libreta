@@ -185,6 +185,94 @@ The hardest item, deliberately last. Not real-time CRDT collab — just optimist
 
 A typed extension API for client-side editor extensions and server-side render hooks. **Not a plugin marketplace.** Just a stable surface for power users to add features without forking.
 
+### M11 — Thumbnails (image preview performance)
+
+**Problem**: folder preview tiles currently render by pointing a native
+`<img loading="lazy">` at the **full-resolution original** served raw from
+`/assets` (`PreviewTile.vue` + the asset endpoints in `api/sources.py` /
+`api/watch.py` — no server-side resize). A folder of 50 phone photos downloads
+hundreds of MB to paint 50 small tiles; the browser's ~6-connection cap makes
+them trickle in and "pop" together seconds later. This is a bandwidth + memory
+problem, not just a load-ordering one — batching the same full downloads would
+not fix it.
+
+**Decision**: generate real thumbnails server-side, cached as files, with a
+fast path that reuses thumbnails already embedded in the source files.
+Design settled in the 2026-06-05 design conversation; implementation deferred.
+
+**Prior-art survey (so it isn't redone)**:
+- **macOS QuickLook** (`thumbnails.data` blob + `index.sqlite`, keyed by inode
+  `file_id`, under an ephemeral SIP-protected `/var/folders/...` path) — **not
+  adoptable**: proprietary, inode-keyed, inaccessible from a Linux container,
+  and reusing it would violate R5. The "reuse the OS cache" idea is a dead end.
+- **Windows thumbcache** (`thumbcache_*.db`, Compound File, Windows-only path) —
+  same verdict.
+- **freedesktop XDG Thumbnail Managing Standard** (one PNG per thumbnail,
+  filename = `md5(file-URI)`, sorted into `normal/large/x-large/...` size dirs,
+  plus a `fail/` marker dir) — **the one adoptable scheme**: file-per-thumb,
+  hash-keyed, deletable, regenerable. We adopt its *layout*, adapted below.
+
+**Architecture**:
+- **XDG-style sidecar cache** under a **dedicated Docker volume** (separate from
+  `libreta-data`; a fresh deploy starts with it empty — that's fine, it fills
+  lazily). File-per-thumbnail, sorted into size-bucket dirs, with a `fail/`
+  marker so un-thumbnailable files are tried once, not every visit. The backend
+  owns the volume, layout, hashing, the serving endpoint, the concurrency
+  limit, and GC.
+- **Content-addressed cache key — `blake3(file-bytes)`**, computed during the
+  decode read we have to do anyway (so ~0 extra cost). Chosen over:
+  - *imohash / sampled hashing*: rejected — its start/mid/end 16 KB sampling can
+    give **the same hash to different same-size files** (RAW/HEIC/edited photos
+    with differing interiors share headers + size buckets), i.e. *show the wrong
+    thumbnail* — a silent correctness bug exactly where thumbnails sit side by
+    side. Its one advantage (hash without reading the whole file) is unusable
+    here since we must read the file to decode it.
+  - *mtime+size+path*: no dedup, not rename-resistant.
+  - BLAKE3 gives collision-safe keys, **free dedup** (same photo in N folders →
+    one thumbnail) and **rename-resistance**, riding the decode read for free.
+    (SHA-256 is the stdlib fallback if we'd rather not add the `blake3` dep.)
+  - Key is computed from the **original file's bytes**, not the produced
+    thumbnail (clean 1:1 source→entry mapping; dedup reflects identical sources).
+- **Embedded-thumbnail-first**: before any full decode, try the thumbnail
+  already inside the file — **EXIF thumbnail in JPEGs** (~160px, ~2-5 ms vs
+  ~120-250 ms to decode a 12 MP image — ~40× cheaper, and it's the
+  iPhone-photo case that motivated this), PDF/EPUB cover later. Honor EXIF
+  orientation; skip the embedded thumb if its aspect ratio disagrees with the
+  full image (guards against stale/misrotated embedded thumbs).
+- **Invalidation is automatic** (content-addressed: an edit changes the key),
+  so stale thumbnails become **orphans** swept by a new GC command
+  (`libreta thumbs gc` — walk live files, recompute keys, delete unreferenced
+  thumbs). Mirrors the existing `libreta gc` for assets. Respects **R2**: the
+  cache is a derived index, fully regenerable from the filesystem by one CLI
+  command, never authoritative.
+
+**`quickthumb` — extracted library (separate project, own session)**:
+The fast-decode logic (embedded-thumbnail extraction, EXIF orientation, the
+HEIC/format zoo) is extracted into a standalone, **pure, stateless,
+filesystem-agnostic** Python library: *given bytes/path + target size → return
+thumbnail bytes, or `None` if unsupported*. It knows **nothing** about the
+cache, the volume, hashing, XDG layout, or HTTP — those stay in the backend, so
+the caching strategy is swappable and `quickthumb` is testable on fixtures
+alone. Contract: a **synchronous, CPU-bound** function the backend calls via
+`asyncio.to_thread` behind a semaphore (the lib never owns an event loop).
+- **v1 scope**: images — JPEG/PNG/WebP/GIF + **HEIC/HEIF** (Pillow +
+  `pillow-heif`), EXIF-embedded-thumbnail fast path, EXIF orientation.
+- **v2 (designed-for, deferred)**: PDF/EPUB cover extraction, via a **pluggable
+  extractor registry** so new source kinds slot in without touching the core.
+- **Next step**: a `quickthumb` `FOUNDATION.md` (own session) — problem
+  statement, this OS-survey, the public API + dataclasses + extractor protocol
+  (typed stubs), a mock/reference impl so the backend integration can be built
+  and tested before the real lib exists, the decode-cost numbers, dep choices,
+  test-fixture plan, and open questions.
+
+**Open questions for implementation**:
+- Thumbnail output format/size bucket(s): one ~256-480px WebP is likely enough;
+  confirm against the tile sizes `PreviewTile` actually requests.
+- Serving: still set `Cache-Control`/`ETag` (mtime- or key-based) on the thumb
+  endpoint so the browser caches too — assets are currently served with no
+  caching headers, so this is a cheap independent win regardless of M11.
+- GC trigger: manual CLI only at first (like `libreta gc`), UI affordance later.
+
 ### `libreta gc` — orphan asset cleanup ✅ (2026-05-08)
 
 Shipped as part of M4 cleanup. CLI subcommand that lists (and optionally deletes + commits) sidecar assets that no page references. Default is dry-run; `--delete` performs one commit per page covering all orphans. Targets a git source (`--source <id>`) or an arbitrary repo (`--repo <path>`). UI affordance still TODO.
