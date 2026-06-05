@@ -9,6 +9,12 @@ Entries are generated from [Conventional Commits](https://www.conventionalcommit
 by `scripts/changelog.py` at release time.
 
 
+## [2.3.1] - 2026-06-05
+
+### Fixed
+
+- **assets:** serve page-scoped attachments from pages/ subdir
+
 ## [2.3.0] - 2026-06-05
 
 ### Added
