@@ -9,6 +9,12 @@ Entries are generated from [Conventional Commits](https://www.conventionalcommit
 by `scripts/changelog.py` at release time.
 
 
+## [2.3.3] - 2026-06-05
+
+### Fixed
+
+- **editor:** wire toolbar image upload to the editor
+
 ## [2.3.2] - 2026-06-05
 
 ### Fixed
