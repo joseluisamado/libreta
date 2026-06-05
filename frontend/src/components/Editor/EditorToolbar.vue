@@ -28,9 +28,18 @@
     fileInput.value?.click()
   }
 
+  // Image extensions we accept even when the browser reports no usable MIME
+  // type. HEIC/HEIF in particular often arrive with an empty `file.type` on
+  // non-Apple platforms, so a MIME-only filter silently drops them.
+  const IMAGE_EXT_RE = /\.(png|jpe?g|gif|webp|svg|bmp|ico|avif|heic|heif|tiff?)$/i
+
+  function isImageFile(f: File): boolean {
+    return f.type.startsWith('image/') || IMAGE_EXT_RE.test(f.name)
+  }
+
   function onImagePicked(e: Event): void {
     const target = e.target as HTMLInputElement
-    const files = Array.from(target.files ?? []).filter((f) => f.type.startsWith('image/'))
+    const files = Array.from(target.files ?? []).filter(isImageFile)
     if (files.length > 0) emit('upload-files', files)
     target.value = ''
   }
@@ -268,7 +277,7 @@
     <input
       ref="imageInput"
       type="file"
-      accept="image/*"
+      accept="image/*,.heic,.heif,.avif,.tif,.tiff"
       multiple
       class="hidden"
       @change="onImagePicked"

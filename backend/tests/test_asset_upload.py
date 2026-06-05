@@ -54,6 +54,23 @@ def test_upload_into_flat_repo_is_fetchable(client: TestClient, repos_dir: Path)
     assert g.content == PNG
 
 
+def test_heic_uploads_and_classifies_as_image(client: TestClient, repos_dir: Path) -> None:
+    # HEIC can't render in most browsers, but it must still upload and be
+    # embedded as an image (![]()), not misclassified as a download link.
+    make_source(repos_dir, "src1", {"pages/note.md": "# hi\n"})
+    r = client.post(
+        "/api/v1/sources/src1/pages/note/assets",
+        files={"file": ("DDR4-3200.HEIC", b"\x00\x00\x00\x18ftypheic", "")},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["kind"] == "image"
+    assert body["filename"] == ".note.md/DDR4-3200.HEIC"
+
+    g = client.get(f"/api/v1/sources/src1/assets/{body['filename']}")
+    assert g.status_code == 200, g.text
+
+
 def test_asset_fetch_rejects_traversal(client: TestClient, repos_dir: Path) -> None:
     make_source(repos_dir, "src1", {"pages/note.md": "# hi\n"})
     g = client.get("/api/v1/sources/src1/assets/..%2f..%2fetc%2fpasswd")

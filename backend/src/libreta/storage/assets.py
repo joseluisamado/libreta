@@ -87,11 +87,34 @@ def _unique_filename(directory: Path, base_name: str) -> str:
     return f"{stem}-{n}{suffix}"
 
 
+# Extensions classified as embeddable images. HEIC/HEIF and AVIF are included
+# even though Chrome/Firefox can't render them in <img> (Safari can): the file
+# is stored and committed correctly and the markdown is `![]()`, which is the
+# honest representation — a broken-image icon, not a misclassified download link.
+_IMAGE_EXTS = frozenset(
+    {
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".gif",
+        ".webp",
+        ".svg",
+        ".bmp",
+        ".ico",
+        ".avif",
+        ".heic",
+        ".heif",
+        ".tif",
+        ".tiff",
+    }
+)
+
+
 def _kind_for(content_type: str | None, filename: str) -> str:
     if content_type and content_type.startswith("image/"):
         return "image"
     ext = PurePosixPath(filename).suffix.lower()
-    if ext in {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".ico"}:
+    if ext in _IMAGE_EXTS:
         return "image"
     return "file"
 
