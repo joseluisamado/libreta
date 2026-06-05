@@ -9,6 +9,21 @@ Entries are generated from [Conventional Commits](https://www.conventionalcommit
 by `scripts/changelog.py` at release time.
 
 
+## [2.3.0] - 2026-06-05
+
+### Added
+
+- **listing:** .webloc bookmarks as first-class external links
+- **listing:** e-book viewer + cover thumbnails (EPUB, MOBI, AZW3, FB2, CBZ)
+
+### Fixed
+
+- **build:** make docker-compose.dev.local.yml overlay optional
+
+### Documentation
+
+- **roadmap:** add M11 thumbnail strategy (XDG cache + quickthumb)
+
 ## [2.2.0] - 2026-06-04
 
 ### Added
