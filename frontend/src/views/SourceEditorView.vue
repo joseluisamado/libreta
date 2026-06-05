@@ -102,8 +102,13 @@
   }
 
   async function onUploadFiles(files: File[]): Promise<void> {
-    // Upload not yet supported for git source pages
-    void files
+    // Hand each picked file to the editor, which uploads it as a page-scoped
+    // attachment and inserts the resulting image/link at the cursor.
+    const ed = editorRef.value
+    if (!ed) return
+    for (const file of files) {
+      await ed.uploadAndInsert(file)
+    }
   }
 
   function onInsertDiagram(): void {

@@ -61,8 +61,14 @@
   }
 
   async function onUploadFiles(files: File[]): Promise<void> {
-    // Upload not supported for watched pages — silently skip
-    void files
+    // Watched pages have no git-source attachment home; the editor's
+    // uploadAndInsert surfaces a clear message rather than silently doing
+    // nothing.
+    const ed = editorRef.value
+    if (!ed) return
+    for (const file of files) {
+      await ed.uploadAndInsert(file)
+    }
   }
 
   function onInsertDiagram(): void {

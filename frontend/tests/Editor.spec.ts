@@ -1,8 +1,9 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 import Editor from '@/components/Editor/Editor.vue'
+import * as client from '@/api/client'
 
 beforeEach(() => {
   setActivePinia(createPinia())
@@ -107,6 +108,32 @@ describe('Editor.vue', () => {
     expect(md).toContain('[Example](https://example.com)')
     // Modal closes after submit.
     expect(wrapper.findComponent({ name: 'LinkModal' }).exists()).toBe(false)
+  })
+
+  it('uploadAndInsert uploads a picked image and inserts image markdown', async () => {
+    const spy = vi.spyOn(client, 'uploadSourceAsset').mockResolvedValue({
+      filename: '.page.md/photo.heic',
+      size: 10,
+      sha256: 'deadbeef',
+      kind: 'image',
+      deduped: false,
+    })
+    const wrapper = await waitForEditor(
+      mount(Editor, {
+        props: { content: '', path: 'test/page', sourceId: 'src1' },
+        global: { plugins: [createPinia()] },
+      }),
+    )
+    const file = new File([new Uint8Array([1, 2, 3])], 'photo.heic', { type: '' })
+    await wrapper.vm.uploadAndInsert(file)
+    await nextTick()
+    await nextTick()
+    expect(spy).toHaveBeenCalledOnce()
+    const md = wrapper.vm.getMarkdown()
+    // Page-relative src (no pages/ prefix) so the markdown round-trips.
+    expect(md).toContain('.page.md/photo.heic')
+    expect(md).toMatch(/!\[[^\]]*\]\(\.page\.md\/photo\.heic\)/)
+    spy.mockRestore()
   })
 
   it('inserts a relative internal link that round-trips byte-identically', async () => {
