@@ -586,14 +586,30 @@ def resolve_asset(root: Path, raw_path: str) -> Path:
 
     Validates containment, rejects ``.md`` files and path traversal.
     Returns the absolute ``Path`` to the asset.
+
+    Asset references embedded in markdown are *page-relative* — a page-scoped
+    attachment is ``.note.md/photo.png`` (the sidecar dir next to the page),
+    with no ``pages/`` prefix, so the markdown stays portable. But a source
+    repo with a top-level ``pages/`` directory stores that page (and its
+    sidecar) under ``pages/`` on disk. Mirror :func:`page_to_file`: when the
+    bare path doesn't resolve and *root* has a ``pages/`` subdir, retry there.
     """
     validate_path_segments(raw_path)
     suffix = Path(raw_path).suffix.lower()
     if suffix == ".md":
         raise InvalidPathError("markdown pages are not served via /assets")
-    candidate = (root / raw_path).resolve()
-    if root not in candidate.parents and candidate != root:
-        raise InvalidPathError("asset path escapes root directory")
-    if not candidate.is_file():
+
+    def _candidate(base: Path) -> Path | None:
+        c = (base / raw_path).resolve()
+        if root not in c.parents and c != root:
+            raise InvalidPathError("asset path escapes root directory")
+        return c if c.is_file() else None
+
+    candidate = _candidate(root)
+    if candidate is None:
+        pages_dir = root / "pages"
+        if not raw_path.startswith("pages/") and pages_dir.is_dir():
+            candidate = _candidate(pages_dir)
+    if candidate is None:
         raise PageNotFoundError(raw_path)
     return candidate
