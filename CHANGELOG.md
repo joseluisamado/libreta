@@ -9,6 +9,12 @@ Entries are generated from [Conventional Commits](https://www.conventionalcommit
 by `scripts/changelog.py` at release time.
 
 
+## [2.3.2] - 2026-06-05
+
+### Fixed
+
+- **editor:** accept HEIC/HEIF and other extension-only images on insert
+
 ## [2.3.1] - 2026-06-05
 
 ### Fixed
