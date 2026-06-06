@@ -56,6 +56,23 @@ async def save_watched_config(meta_dir: Path, folders: list[dict[str, Any]]) -> 
     return await asyncio.to_thread(save_watched_config_sync, meta_dir, folders)
 
 
+def reorder_watched_sync(meta_dir: Path, ordered_labels: list[str]) -> None:
+    """Persist watched folders in the given order. ``ordered_labels`` must be a
+    permutation of the existing labels."""
+    config = load_watched_config_sync(meta_dir)
+    existing = [e["label"] for e in config]
+    if sorted(ordered_labels) != sorted(existing):
+        raise WatchedLabelNotFoundError(
+            "reorder list must be a permutation of existing watched labels"
+        )
+    by_label = {e["label"]: e for e in config}
+    save_watched_config_sync(meta_dir, [by_label[lbl] for lbl in ordered_labels])
+
+
+async def reorder_watched(meta_dir: Path, ordered_labels: list[str]) -> None:
+    return await asyncio.to_thread(reorder_watched_sync, meta_dir, ordered_labels)
+
+
 # ---------------------------------------------------------------------------
 # Path resolution & validation (watched-specific)
 # ---------------------------------------------------------------------------

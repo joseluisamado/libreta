@@ -164,6 +164,17 @@ def remove_server_sync(servers_dir: Path, server_id: str) -> None:
     _save_index_sync(servers_dir, [e for e in index if e["id"] != server_id])
 
 
+def reorder_servers_sync(servers_dir: Path, ordered_ids: list[str]) -> None:
+    """Persist servers in the given order. ``ordered_ids`` must be a
+    permutation of the existing server ids."""
+    index = _load_index_sync(servers_dir)
+    existing = [e["id"] for e in index]
+    if sorted(ordered_ids) != sorted(existing):
+        raise GiteaServerNotFoundError("reorder list must be a permutation of existing server ids")
+    by_id = {e["id"]: e for e in index}
+    _save_index_sync(servers_dir, [by_id[i] for i in ordered_ids])
+
+
 def get_server_sync(servers_dir: Path, server_id: str) -> dict[str, Any]:
     index = _load_index_sync(servers_dir)
     entry = next((e for e in index if e["id"] == server_id), None)
@@ -222,6 +233,10 @@ async def update_server(
 
 async def remove_server(servers_dir: Path, server_id: str) -> None:
     return await asyncio.to_thread(remove_server_sync, servers_dir, server_id)
+
+
+async def reorder_servers(servers_dir: Path, ordered_ids: list[str]) -> None:
+    return await asyncio.to_thread(reorder_servers_sync, servers_dir, ordered_ids)
 
 
 async def get_server(servers_dir: Path, server_id: str) -> dict[str, Any]:

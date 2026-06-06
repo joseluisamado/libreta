@@ -283,17 +283,58 @@ async def update_source(
     return await asyncio.to_thread(update_source_sync, meta_dir, repos_dir, source_id, body)
 
 
-def remove_source_sync(meta_dir: Path, source_id: str) -> None:
+def remove_source_sync(
+    meta_dir: Path, repos_dir: Path, source_id: str, *, purge: bool = False
+) -> None:
+    """Remove a source from the registry and dispose of its local clone.
+
+    By default the clone is *archived* — renamed in place to a dot-prefixed
+    ``.<id>_<timestamp>`` directory so unpushed local commits remain
+    recoverable (R2). With ``purge=True`` the clone is deleted outright. A
+    missing clone (already-orphaned source) is tolerated either way.
+    """
     with _config_lock:
         sources = load_sources_sync(meta_dir)
         if not any(s["id"] == source_id for s in sources):
             raise GitSourceNotFoundError(source_id)
         save_sources_sync(meta_dir, [s for s in sources if s["id"] != source_id])
+    # Serialise against any in-flight clone/fetch for this source before we
+    # touch its working tree.
+    with _get_sync_lock(source_id):
+        local = _local_path(repos_dir, source_id)
+        if local.exists():
+            if purge:
+                shutil.rmtree(local, ignore_errors=True)
+            else:
+                stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+                archive = repos_dir / f".{source_id}_{stamp}"
+                os.replace(local, archive)
     _locks.pop(source_id, None)
 
 
-async def remove_source(meta_dir: Path, source_id: str) -> None:
-    await asyncio.to_thread(remove_source_sync, meta_dir, source_id)
+async def remove_source(
+    meta_dir: Path, repos_dir: Path, source_id: str, *, purge: bool = False
+) -> None:
+    await asyncio.to_thread(remove_source_sync, meta_dir, repos_dir, source_id, purge=purge)
+
+
+def reorder_sources_sync(meta_dir: Path, ordered_ids: list[str]) -> None:
+    """Persist sources in the given order. ``ordered_ids`` must be exactly the
+    set of existing source ids (a permutation) — otherwise the request is
+    rejected so we never silently drop or duplicate an entry."""
+    with _config_lock:
+        sources = load_sources_sync(meta_dir)
+        existing = [s["id"] for s in sources]
+        if sorted(ordered_ids) != sorted(existing):
+            raise GitSourceNotFoundError(
+                "reorder list must be a permutation of existing source ids"
+            )
+        by_id = {s["id"]: s for s in sources}
+        save_sources_sync(meta_dir, [by_id[i] for i in ordered_ids])
+
+
+async def reorder_sources(meta_dir: Path, ordered_ids: list[str]) -> None:
+    await asyncio.to_thread(reorder_sources_sync, meta_dir, ordered_ids)
 
 
 def record_sync_result_sync(

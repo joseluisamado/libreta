@@ -1,11 +1,35 @@
 <script setup lang="ts">
   import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+  import draggable from 'vuedraggable'
   import { useSourcesStore } from '@/stores/sources'
   import { useWatchedStore } from '@/stores/watched'
-  import type { GitSource, GitSourceCreate, GiteaRepo, GiteaServerCreate } from '@/api/types'
+  import type {
+    GitSource,
+    GitSourceCreate,
+    GiteaRepo,
+    GiteaServer,
+    GiteaServerCreate,
+    WatchedFolder,
+  } from '@/api/types'
 
   const store = useSourcesStore()
   const watched = useWatchedStore()
+
+  // Drag-reorder bindings. vuedraggable writes the reordered array back through
+  // the setter; we forward the new key order to the store (which persists it and
+  // reverts on error). Reads return the live store array.
+  const sourcesOrder = computed<GitSource[]>({
+    get: () => store.sources,
+    set: (list) => void store.reorderSources(list.map((s) => s.id)),
+  })
+  const giteaOrder = computed<GiteaServer[]>({
+    get: () => store.giteaServers,
+    set: (list) => void store.reorderGiteaServers(list.map((s) => s.id)),
+  })
+  const watchedOrder = computed<WatchedFolder[]>({
+    get: () => watched.folders,
+    set: (list) => void watched.reorderFolders(list.map((f) => f.label)),
+  })
 
   // ---- Add source form ------------------------------------------------
   const showSourceForm = ref(false)
@@ -58,10 +82,29 @@
     }
   }
 
+  // Remove a source. Default is to *archive* the local clone (rename in place,
+  // recoverable). A second prompt offers permanent deletion; if the clone has
+  // unpushed commits we warn about exactly how many would be lost.
   async function removeSource(id: string, label: string): Promise<void> {
-    if (!window.confirm(`Remove git source "${label}"? The local clone will NOT be deleted.`))
+    if (
+      !window.confirm(
+        `Remove git source "${label}"?\n\nThe local clone will be archived ` +
+          `(renamed, recoverable) and the source unregistered.`,
+      )
+    )
       return
-    await store.removeSource(id)
+    const src = store.sources.find((s) => s.id === id)
+    const pending = src?.pending_count ?? 0
+    const warn =
+      pending > 0
+        ? `\n\n⚠ This clone has ${pending} unpushed commit(s) that would be lost forever.`
+        : ''
+    const purge = window.confirm(
+      `Permanently DELETE the local clone for "${label}" instead of archiving it?` +
+        warn +
+        `\n\nOK = delete permanently · Cancel = archive (recoverable).`,
+    )
+    await store.removeSource(id, purge)
   }
 
   async function syncSource(id: string): Promise<void> {
@@ -267,10 +310,10 @@
   async function removeRepoSource(repo: GiteaRepo): Promise<void> {
     const src = sourceForRepo(repo.clone_url)
     if (!src) return
-    if (!window.confirm(`Remove git source "${src.label}"? The local clone will NOT be deleted.`))
-      return
-    await store.removeSource(src.id)
-    // Reflect the removal in the picker: the row is no longer "already added".
+    await removeSource(src.id, src.label)
+    // Reflect the removal in the picker only if it actually happened (the user
+    // may have cancelled the confirm).
+    if (store.sources.some((s) => s.id === src.id)) return
     const match = discoveredRepos.value.find((r) => r.full_name === repo.full_name)
     if (match) match.already_added = false
   }
@@ -552,122 +595,139 @@
         </button>
       </div>
 
-      <!-- Source list -->
-      <div v-if="store.sources.length" class="space-y-3">
-        <div
-          v-for="src in store.sources"
-          :key="src.id"
-          class="p-4 border border-slate-200 rounded-lg"
-        >
-          <!-- Edit mode -->
-          <div v-if="editSourceId === src.id">
-            <p v-if="editSourceError" class="text-red-600 text-sm mb-2">{{ editSourceError }}</p>
-            <p class="text-xs text-slate-400 mb-2 font-mono">{{ src.remote_url }}</p>
-            <div class="grid grid-cols-2 gap-3 mb-3">
-              <div class="col-span-2">
-                <label class="block text-xs text-slate-500 mb-1">Label</label>
-                <input
-                  v-model.trim="editSourceForm.label"
-                  type="text"
-                  class="w-full border border-slate-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
-                />
+      <!-- Source list (drag to reorder) -->
+      <draggable
+        v-if="store.sources.length"
+        v-model="sourcesOrder"
+        item-key="id"
+        tag="div"
+        handle=".drag-handle"
+        class="space-y-3"
+      >
+        <template #item="{ element: src }">
+          <div class="p-4 border border-slate-200 rounded-lg flex gap-3">
+            <span
+              class="drag-handle cursor-grab select-none text-slate-300 hover:text-slate-500"
+              title="Drag to reorder"
+              aria-label="Drag to reorder"
+              >⠿</span
+            >
+            <div class="flex-1">
+              <!-- Edit mode -->
+              <div v-if="editSourceId === src.id">
+                <p v-if="editSourceError" class="text-red-600 text-sm mb-2">
+                  {{ editSourceError }}
+                </p>
+                <p class="text-xs text-slate-400 mb-2 font-mono">{{ src.remote_url }}</p>
+                <div class="grid grid-cols-2 gap-3 mb-3">
+                  <div class="col-span-2">
+                    <label class="block text-xs text-slate-500 mb-1">Label</label>
+                    <input
+                      v-model.trim="editSourceForm.label"
+                      type="text"
+                      class="w-full border border-slate-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+                    />
+                  </div>
+                  <div>
+                    <label class="block text-xs text-slate-500 mb-1">Branch</label>
+                    <input
+                      v-model.trim="editSourceForm.branch"
+                      type="text"
+                      class="w-full border border-slate-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+                    />
+                  </div>
+                  <div>
+                    <label class="block text-xs text-slate-500 mb-1">Sync interval (minutes)</label>
+                    <input
+                      v-model.number="editSourceForm.sync_interval_minutes"
+                      type="number"
+                      min="1"
+                      max="1440"
+                      class="w-full border border-slate-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+                    />
+                  </div>
+                </div>
+                <div class="flex gap-2">
+                  <button
+                    type="button"
+                    class="px-4 py-1.5 text-sm rounded bg-blue-600 text-white hover:bg-blue-700 cursor-pointer"
+                    @click="saveEditSource"
+                  >
+                    Save
+                  </button>
+                  <button
+                    type="button"
+                    class="px-4 py-1.5 text-sm rounded border border-slate-300 text-slate-600 hover:bg-slate-50 cursor-pointer"
+                    @click="editSourceId = null"
+                  >
+                    Cancel
+                  </button>
+                </div>
               </div>
-              <div>
-                <label class="block text-xs text-slate-500 mb-1">Branch</label>
-                <input
-                  v-model.trim="editSourceForm.branch"
-                  type="text"
-                  class="w-full border border-slate-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
-                />
-              </div>
-              <div>
-                <label class="block text-xs text-slate-500 mb-1">Sync interval (minutes)</label>
-                <input
-                  v-model.number="editSourceForm.sync_interval_minutes"
-                  type="number"
-                  min="1"
-                  max="1440"
-                  class="w-full border border-slate-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
-                />
-              </div>
-            </div>
-            <div class="flex gap-2">
-              <button
-                type="button"
-                class="px-4 py-1.5 text-sm rounded bg-blue-600 text-white hover:bg-blue-700 cursor-pointer"
-                @click="saveEditSource"
-              >
-                Save
-              </button>
-              <button
-                type="button"
-                class="px-4 py-1.5 text-sm rounded border border-slate-300 text-slate-600 hover:bg-slate-50 cursor-pointer"
-                @click="editSourceId = null"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
 
-          <!-- Read mode -->
-          <div v-else class="flex items-start justify-between">
-            <div>
-              <p class="font-medium text-sm">{{ src.label }}</p>
-              <p class="text-xs text-slate-500 mt-0.5">{{ src.remote_url }}</p>
-              <p class="text-xs text-slate-400 mt-0.5">
-                branch: {{ src.branch }} &bull; sync every {{ src.sync_interval_minutes }} min
-              </p>
-              <p
-                class="text-xs mt-1"
-                :class="src.last_sync_error ? 'text-amber-600' : 'text-emerald-600'"
-              >
-                <template v-if="src.last_sync_error"> Error: {{ src.last_sync_error }} </template>
-                <template v-else-if="src.last_synced_at">
-                  Synced: {{ new Date(src.last_synced_at).toLocaleString() }}
-                </template>
-                <template v-else> Not synced yet </template>
-              </p>
-              <p
-                v-if="src.cloning"
-                class="text-xs text-sky-600 mt-0.5 italic flex items-center gap-1"
-              >
-                <span class="inline-block w-2 h-2 rounded-full bg-sky-400 animate-pulse"></span>
-                Cloning… large repos can take a few minutes — no need to re-add.
-              </p>
-              <p
-                v-else-if="!src.cloned && !src.last_sync_error"
-                class="text-xs text-slate-400 mt-0.5 italic"
-              >
-                Not cloned yet — will start on the next sync.
-              </p>
-            </div>
-            <div class="flex gap-2 shrink-0 ml-4">
-              <button
-                type="button"
-                class="text-xs px-2 py-1 rounded border border-slate-300 text-slate-600 hover:bg-slate-50 cursor-pointer"
-                title="Sync now"
-                @click="syncSource(src.id)"
-              >
-                Sync
-              </button>
-              <button
-                type="button"
-                class="text-xs px-2 py-1 rounded border border-slate-300 text-slate-600 hover:bg-slate-50 cursor-pointer"
-                @click="startEditSource(src)"
-              >
-                Edit
-              </button>
-              <button
-                type="button"
-                class="text-xs px-2 py-1 rounded border border-red-200 text-red-600 hover:bg-red-50 cursor-pointer"
-                @click="removeSource(src.id, src.label)"
-              >
-                Remove
-              </button>
+              <!-- Read mode -->
+              <div v-else class="flex items-start justify-between">
+                <div>
+                  <p class="font-medium text-sm">{{ src.label }}</p>
+                  <p class="text-xs text-slate-500 mt-0.5">{{ src.remote_url }}</p>
+                  <p class="text-xs text-slate-400 mt-0.5">
+                    branch: {{ src.branch }} &bull; sync every {{ src.sync_interval_minutes }} min
+                  </p>
+                  <p
+                    class="text-xs mt-1"
+                    :class="src.last_sync_error ? 'text-amber-600' : 'text-emerald-600'"
+                  >
+                    <template v-if="src.last_sync_error">
+                      Error: {{ src.last_sync_error }}
+                    </template>
+                    <template v-else-if="src.last_synced_at">
+                      Synced: {{ new Date(src.last_synced_at).toLocaleString() }}
+                    </template>
+                    <template v-else> Not synced yet </template>
+                  </p>
+                  <p
+                    v-if="src.cloning"
+                    class="text-xs text-sky-600 mt-0.5 italic flex items-center gap-1"
+                  >
+                    <span class="inline-block w-2 h-2 rounded-full bg-sky-400 animate-pulse"></span>
+                    Cloning… large repos can take a few minutes — no need to re-add.
+                  </p>
+                  <p
+                    v-else-if="!src.cloned && !src.last_sync_error"
+                    class="text-xs text-slate-400 mt-0.5 italic"
+                  >
+                    Not cloned yet — will start on the next sync.
+                  </p>
+                </div>
+                <div class="flex gap-2 shrink-0 ml-4">
+                  <button
+                    type="button"
+                    class="text-xs px-2 py-1 rounded border border-slate-300 text-slate-600 hover:bg-slate-50 cursor-pointer"
+                    title="Sync now"
+                    @click="syncSource(src.id)"
+                  >
+                    Sync
+                  </button>
+                  <button
+                    type="button"
+                    class="text-xs px-2 py-1 rounded border border-slate-300 text-slate-600 hover:bg-slate-50 cursor-pointer"
+                    @click="startEditSource(src)"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    class="text-xs px-2 py-1 rounded border border-red-200 text-red-600 hover:bg-red-50 cursor-pointer"
+                    @click="removeSource(src.id, src.label)"
+                  >
+                    Remove
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
-        </div>
-      </div>
+        </template>
+      </draggable>
       <p v-else-if="store.loaded" class="text-sm text-slate-400">No git sources configured yet.</p>
     </section>
 
@@ -740,187 +800,203 @@
         </button>
       </div>
 
-      <!-- Server list -->
-      <div v-if="store.giteaServers.length" class="space-y-3">
-        <div
-          v-for="gs in store.giteaServers"
-          :key="gs.id"
-          class="p-4 border border-slate-200 rounded-lg"
-        >
-          <!-- Edit mode -->
-          <div v-if="editGiteaId === gs.id">
-            <p v-if="editGiteaError" class="text-red-600 text-sm mb-2">{{ editGiteaError }}</p>
-            <div class="grid grid-cols-2 gap-3 mb-3">
-              <div>
-                <label class="block text-xs text-slate-500 mb-1">Label</label>
-                <input
-                  v-model.trim="editGiteaForm.label"
-                  type="text"
-                  class="w-full border border-slate-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
-                />
-              </div>
-              <div>
-                <label class="block text-xs text-slate-500 mb-1">Base URL</label>
-                <input
-                  v-model.trim="editGiteaForm.base_url"
-                  type="text"
-                  class="w-full border border-slate-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
-                />
-              </div>
-              <div>
-                <label class="block text-xs text-slate-500 mb-1">Username</label>
-                <input
-                  v-model.trim="editGiteaForm.username"
-                  type="text"
-                  class="w-full border border-slate-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
-                />
-              </div>
-              <div>
-                <label class="block text-xs text-slate-500 mb-1">Access token</label>
-                <input
-                  v-model="editGiteaForm.token"
-                  type="password"
-                  placeholder="leave blank to keep current"
-                  class="w-full border border-slate-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
-                />
-              </div>
-            </div>
-            <div class="flex gap-2">
-              <button
-                type="button"
-                class="px-4 py-1.5 text-sm rounded bg-blue-600 text-white hover:bg-blue-700 cursor-pointer"
-                @click="saveEditGitea"
-              >
-                Save
-              </button>
-              <button
-                type="button"
-                class="px-4 py-1.5 text-sm rounded border border-slate-300 text-slate-600 hover:bg-slate-50 cursor-pointer"
-                @click="editGiteaId = null"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-
-          <!-- Read mode -->
-          <div v-else class="flex items-start justify-between">
-            <div>
-              <p class="font-medium text-sm">{{ gs.label }}</p>
-              <p class="text-xs text-slate-500 mt-0.5">{{ gs.base_url }}</p>
-              <p class="text-xs text-slate-400 mt-0.5">user: {{ gs.username }}</p>
-            </div>
-            <div class="flex gap-2 shrink-0 ml-4">
-              <button
-                type="button"
-                class="text-xs px-2 py-1 rounded border border-slate-300 text-slate-600 hover:bg-slate-50 cursor-pointer"
-                @click="toggleDiscover(gs.id, gs.username)"
-              >
-                {{ discoverServerId === gs.id ? 'Close' : 'Browse repos' }}
-              </button>
-              <button
-                type="button"
-                class="text-xs px-2 py-1 rounded border border-slate-300 text-slate-600 hover:bg-slate-50 cursor-pointer"
-                @click="startEditGitea(gs.id, gs.label, gs.base_url, gs.username)"
-              >
-                Edit
-              </button>
-              <button
-                type="button"
-                class="text-xs px-2 py-1 rounded border border-red-200 text-red-600 hover:bg-red-50 cursor-pointer"
-                @click="removeGiteaServer(gs.id, gs.label)"
-              >
-                Remove
-              </button>
-            </div>
-          </div>
-
-          <!-- Discover + import picker -->
-          <div v-if="discoverServerId === gs.id" class="mt-4 pt-4 border-t border-slate-200">
-            <p v-if="discoverError" class="text-red-600 text-sm mb-2">{{ discoverError }}</p>
-            <div class="flex gap-2 items-end mb-3">
-              <div class="flex-1">
-                <label class="block text-xs text-slate-500 mb-1">Org or user</label>
-                <input
-                  v-model.trim="discoverOwner"
-                  type="text"
-                  placeholder="team-name"
-                  class="w-full border border-slate-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
-                  @keyup.enter="runDiscover(gs.id)"
-                />
-              </div>
-              <button
-                type="button"
-                :disabled="discoverBusy"
-                class="px-3 py-1.5 text-sm rounded bg-slate-700 text-white hover:bg-slate-800 cursor-pointer disabled:opacity-50"
-                @click="runDiscover(gs.id)"
-              >
-                {{ discoverBusy ? 'Listing…' : 'List repos' }}
-              </button>
-            </div>
-
-            <div
-              v-if="discoveredRepos.length"
-              class="flex items-center justify-between mb-2 pb-2 border-b border-slate-100"
+      <!-- Server list (drag to reorder) -->
+      <draggable
+        v-if="store.giteaServers.length"
+        v-model="giteaOrder"
+        item-key="id"
+        tag="div"
+        handle=".drag-handle"
+        class="space-y-3"
+      >
+        <template #item="{ element: gs }">
+          <div class="p-4 border border-slate-200 rounded-lg flex gap-3">
+            <span
+              class="drag-handle cursor-grab select-none text-slate-300 hover:text-slate-500"
+              title="Drag to reorder"
+              aria-label="Drag to reorder"
+              >⠿</span
             >
-              <button
-                type="button"
-                :disabled="!selectableRepos.length"
-                class="text-xs px-2 py-1 rounded border border-slate-300 text-slate-600 hover:bg-slate-50 cursor-pointer disabled:opacity-50"
-                @click="toggleSelectAll"
-              >
-                {{ allSelectableSelected ? 'Deselect all' : 'Select all' }}
-              </button>
-              <span class="text-xs text-slate-400">
-                {{ selectedRepos.size }} of {{ selectableRepos.length }} selected
-              </span>
-            </div>
+            <div class="flex-1">
+              <!-- Edit mode -->
+              <div v-if="editGiteaId === gs.id">
+                <p v-if="editGiteaError" class="text-red-600 text-sm mb-2">{{ editGiteaError }}</p>
+                <div class="grid grid-cols-2 gap-3 mb-3">
+                  <div>
+                    <label class="block text-xs text-slate-500 mb-1">Label</label>
+                    <input
+                      v-model.trim="editGiteaForm.label"
+                      type="text"
+                      class="w-full border border-slate-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+                    />
+                  </div>
+                  <div>
+                    <label class="block text-xs text-slate-500 mb-1">Base URL</label>
+                    <input
+                      v-model.trim="editGiteaForm.base_url"
+                      type="text"
+                      class="w-full border border-slate-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+                    />
+                  </div>
+                  <div>
+                    <label class="block text-xs text-slate-500 mb-1">Username</label>
+                    <input
+                      v-model.trim="editGiteaForm.username"
+                      type="text"
+                      class="w-full border border-slate-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+                    />
+                  </div>
+                  <div>
+                    <label class="block text-xs text-slate-500 mb-1">Access token</label>
+                    <input
+                      v-model="editGiteaForm.token"
+                      type="password"
+                      placeholder="leave blank to keep current"
+                      class="w-full border border-slate-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+                    />
+                  </div>
+                </div>
+                <div class="flex gap-2">
+                  <button
+                    type="button"
+                    class="px-4 py-1.5 text-sm rounded bg-blue-600 text-white hover:bg-blue-700 cursor-pointer"
+                    @click="saveEditGitea"
+                  >
+                    Save
+                  </button>
+                  <button
+                    type="button"
+                    class="px-4 py-1.5 text-sm rounded border border-slate-300 text-slate-600 hover:bg-slate-50 cursor-pointer"
+                    @click="editGiteaId = null"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
 
-            <div v-if="discoveredRepos.length" class="space-y-1 mb-3 max-h-72 overflow-y-auto">
-              <div
-                v-for="repo in discoveredRepos"
-                :key="repo.full_name"
-                class="flex items-center gap-2 px-2 py-1 rounded hover:bg-slate-50"
-              >
-                <label class="flex items-center gap-2 flex-1 min-w-0 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    :checked="selectedRepos.has(repo.full_name)"
-                    :disabled="repo.already_added"
-                    @change="toggleRepo(repo.full_name)"
-                  />
-                  <span class="text-sm font-mono" :class="{ 'text-slate-400': repo.already_added }">
-                    {{ repo.full_name }}
-                  </span>
-                  <span v-if="repo.already_added" class="text-xs text-slate-400">added</span>
-                  <span v-else-if="repo.empty" class="text-xs text-amber-600">empty</span>
-                  <span v-if="repo.description" class="text-xs text-slate-400 truncate">
-                    — {{ repo.description }}
-                  </span>
-                </label>
-                <button
-                  v-if="repo.already_added && sourceForRepo(repo.clone_url)"
-                  type="button"
-                  class="text-xs px-2 py-0.5 rounded border border-red-200 text-red-600 hover:bg-red-50 cursor-pointer shrink-0"
-                  @click="removeRepoSource(repo)"
+              <!-- Read mode -->
+              <div v-else class="flex items-start justify-between">
+                <div>
+                  <p class="font-medium text-sm">{{ gs.label }}</p>
+                  <p class="text-xs text-slate-500 mt-0.5">{{ gs.base_url }}</p>
+                  <p class="text-xs text-slate-400 mt-0.5">user: {{ gs.username }}</p>
+                </div>
+                <div class="flex gap-2 shrink-0 ml-4">
+                  <button
+                    type="button"
+                    class="text-xs px-2 py-1 rounded border border-slate-300 text-slate-600 hover:bg-slate-50 cursor-pointer"
+                    @click="toggleDiscover(gs.id, gs.username)"
+                  >
+                    {{ discoverServerId === gs.id ? 'Close' : 'Browse repos' }}
+                  </button>
+                  <button
+                    type="button"
+                    class="text-xs px-2 py-1 rounded border border-slate-300 text-slate-600 hover:bg-slate-50 cursor-pointer"
+                    @click="startEditGitea(gs.id, gs.label, gs.base_url, gs.username)"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    class="text-xs px-2 py-1 rounded border border-red-200 text-red-600 hover:bg-red-50 cursor-pointer"
+                    @click="removeGiteaServer(gs.id, gs.label)"
+                  >
+                    Remove
+                  </button>
+                </div>
+              </div>
+
+              <!-- Discover + import picker -->
+              <div v-if="discoverServerId === gs.id" class="mt-4 pt-4 border-t border-slate-200">
+                <p v-if="discoverError" class="text-red-600 text-sm mb-2">{{ discoverError }}</p>
+                <div class="flex gap-2 items-end mb-3">
+                  <div class="flex-1">
+                    <label class="block text-xs text-slate-500 mb-1">Org or user</label>
+                    <input
+                      v-model.trim="discoverOwner"
+                      type="text"
+                      placeholder="team-name"
+                      class="w-full border border-slate-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+                      @keyup.enter="runDiscover(gs.id)"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    :disabled="discoverBusy"
+                    class="px-3 py-1.5 text-sm rounded bg-slate-700 text-white hover:bg-slate-800 cursor-pointer disabled:opacity-50"
+                    @click="runDiscover(gs.id)"
+                  >
+                    {{ discoverBusy ? 'Listing…' : 'List repos' }}
+                  </button>
+                </div>
+
+                <div
+                  v-if="discoveredRepos.length"
+                  class="flex items-center justify-between mb-2 pb-2 border-b border-slate-100"
                 >
-                  Remove
+                  <button
+                    type="button"
+                    :disabled="!selectableRepos.length"
+                    class="text-xs px-2 py-1 rounded border border-slate-300 text-slate-600 hover:bg-slate-50 cursor-pointer disabled:opacity-50"
+                    @click="toggleSelectAll"
+                  >
+                    {{ allSelectableSelected ? 'Deselect all' : 'Select all' }}
+                  </button>
+                  <span class="text-xs text-slate-400">
+                    {{ selectedRepos.size }} of {{ selectableRepos.length }} selected
+                  </span>
+                </div>
+
+                <div v-if="discoveredRepos.length" class="space-y-1 mb-3 max-h-72 overflow-y-auto">
+                  <div
+                    v-for="repo in discoveredRepos"
+                    :key="repo.full_name"
+                    class="flex items-center gap-2 px-2 py-1 rounded hover:bg-slate-50"
+                  >
+                    <label class="flex items-center gap-2 flex-1 min-w-0 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        :checked="selectedRepos.has(repo.full_name)"
+                        :disabled="repo.already_added"
+                        @change="toggleRepo(repo.full_name)"
+                      />
+                      <span
+                        class="text-sm font-mono"
+                        :class="{ 'text-slate-400': repo.already_added }"
+                      >
+                        {{ repo.full_name }}
+                      </span>
+                      <span v-if="repo.already_added" class="text-xs text-slate-400">added</span>
+                      <span v-else-if="repo.empty" class="text-xs text-amber-600">empty</span>
+                      <span v-if="repo.description" class="text-xs text-slate-400 truncate">
+                        — {{ repo.description }}
+                      </span>
+                    </label>
+                    <button
+                      v-if="repo.already_added && sourceForRepo(repo.clone_url)"
+                      type="button"
+                      class="text-xs px-2 py-0.5 rounded border border-red-200 text-red-600 hover:bg-red-50 cursor-pointer shrink-0"
+                      @click="removeRepoSource(repo)"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </div>
+
+                <button
+                  v-if="discoveredRepos.length"
+                  type="button"
+                  :disabled="importBusy || !selectedRepos.size"
+                  class="px-4 py-1.5 text-sm rounded bg-blue-600 text-white hover:bg-blue-700 cursor-pointer disabled:opacity-50"
+                  @click="runImport(gs.id)"
+                >
+                  {{ importBusy ? 'Importing…' : `Import ${selectedRepos.size} selected` }}
                 </button>
               </div>
             </div>
-
-            <button
-              v-if="discoveredRepos.length"
-              type="button"
-              :disabled="importBusy || !selectedRepos.size"
-              class="px-4 py-1.5 text-sm rounded bg-blue-600 text-white hover:bg-blue-700 cursor-pointer disabled:opacity-50"
-              @click="runImport(gs.id)"
-            >
-              {{ importBusy ? 'Importing…' : `Import ${selectedRepos.size} selected` }}
-            </button>
           </div>
-        </div>
-      </div>
+        </template>
+      </draggable>
       <p v-else-if="store.loaded" class="text-sm text-slate-400">No Gitea servers configured.</p>
     </section>
 
@@ -973,79 +1049,92 @@
         </button>
       </div>
 
-      <!-- Watch list -->
-      <div v-if="watched.folders.length" class="space-y-3">
-        <div
-          v-for="f in watched.folders"
-          :key="f.label"
-          class="p-4 border border-slate-200 rounded-lg"
-        >
-          <!-- Edit mode -->
-          <div v-if="editWatchLabel === f.label">
-            <p v-if="editWatchError" class="text-red-600 text-sm mb-2">{{ editWatchError }}</p>
-            <div class="grid grid-cols-2 gap-3 mb-3">
-              <div>
-                <label class="block text-xs text-slate-500 mb-1">Label</label>
-                <input
-                  v-model.trim="editWatchForm.label"
-                  type="text"
-                  class="w-full border border-slate-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
-                />
+      <!-- Watch list (drag to reorder) -->
+      <draggable
+        v-if="watched.folders.length"
+        v-model="watchedOrder"
+        item-key="label"
+        tag="div"
+        handle=".drag-handle"
+        class="space-y-3"
+      >
+        <template #item="{ element: f }">
+          <div class="p-4 border border-slate-200 rounded-lg flex gap-3">
+            <span
+              class="drag-handle cursor-grab select-none text-slate-300 hover:text-slate-500"
+              title="Drag to reorder"
+              aria-label="Drag to reorder"
+              >⠿</span
+            >
+            <div class="flex-1">
+              <!-- Edit mode -->
+              <div v-if="editWatchLabel === f.label">
+                <p v-if="editWatchError" class="text-red-600 text-sm mb-2">{{ editWatchError }}</p>
+                <div class="grid grid-cols-2 gap-3 mb-3">
+                  <div>
+                    <label class="block text-xs text-slate-500 mb-1">Label</label>
+                    <input
+                      v-model.trim="editWatchForm.label"
+                      type="text"
+                      class="w-full border border-slate-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+                    />
+                  </div>
+                  <div class="col-span-2">
+                    <label class="block text-xs text-slate-500 mb-1">Path</label>
+                    <input
+                      v-model.trim="editWatchForm.path"
+                      type="text"
+                      class="w-full border border-slate-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+                    />
+                  </div>
+                </div>
+                <div class="flex gap-2">
+                  <button
+                    type="button"
+                    class="px-4 py-1.5 text-sm rounded bg-blue-600 text-white hover:bg-blue-700 cursor-pointer"
+                    @click="saveEditWatch"
+                  >
+                    Save
+                  </button>
+                  <button
+                    type="button"
+                    class="px-4 py-1.5 text-sm rounded border border-slate-300 text-slate-600 hover:bg-slate-50 cursor-pointer"
+                    @click="editWatchLabel = null"
+                  >
+                    Cancel
+                  </button>
+                </div>
               </div>
-              <div class="col-span-2">
-                <label class="block text-xs text-slate-500 mb-1">Path</label>
-                <input
-                  v-model.trim="editWatchForm.path"
-                  type="text"
-                  class="w-full border border-slate-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
-                />
-              </div>
-            </div>
-            <div class="flex gap-2">
-              <button
-                type="button"
-                class="px-4 py-1.5 text-sm rounded bg-blue-600 text-white hover:bg-blue-700 cursor-pointer"
-                @click="saveEditWatch"
-              >
-                Save
-              </button>
-              <button
-                type="button"
-                class="px-4 py-1.5 text-sm rounded border border-slate-300 text-slate-600 hover:bg-slate-50 cursor-pointer"
-                @click="editWatchLabel = null"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
 
-          <!-- Read mode -->
-          <div v-else class="flex items-center justify-between">
-            <div>
-              <p class="font-medium text-sm">{{ f.label }}</p>
-              <p class="text-xs text-slate-400 mt-0.5 truncate max-w-lg" :title="f.path">
-                {{ f.path }}
-              </p>
-            </div>
-            <div class="flex gap-2 shrink-0 ml-4">
-              <button
-                type="button"
-                class="text-xs px-2 py-1 rounded border border-slate-300 text-slate-600 hover:bg-slate-50 cursor-pointer"
-                @click="startEditWatch(f.label, f.path)"
-              >
-                Edit
-              </button>
-              <button
-                type="button"
-                class="text-xs px-2 py-1 rounded border border-red-200 text-red-600 hover:bg-red-50 cursor-pointer"
-                @click="removeWatch(f.label)"
-              >
-                Remove
-              </button>
+              <!-- Read mode -->
+              <div v-else class="flex items-center justify-between">
+                <div>
+                  <p class="font-medium text-sm">{{ f.label }}</p>
+                  <p class="text-xs text-slate-400 mt-0.5 truncate max-w-lg" :title="f.path">
+                    {{ f.path }}
+                  </p>
+                </div>
+                <div class="flex gap-2 shrink-0 ml-4">
+                  <button
+                    type="button"
+                    class="text-xs px-2 py-1 rounded border border-slate-300 text-slate-600 hover:bg-slate-50 cursor-pointer"
+                    @click="startEditWatch(f.label, f.path)"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    class="text-xs px-2 py-1 rounded border border-red-200 text-red-600 hover:bg-red-50 cursor-pointer"
+                    @click="removeWatch(f.label)"
+                  >
+                    Remove
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
-        </div>
-      </div>
+        </template>
+      </draggable>
       <p v-else class="text-sm text-slate-400">No watched folders configured yet.</p>
     </section>
 

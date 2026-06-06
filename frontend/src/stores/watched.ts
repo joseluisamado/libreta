@@ -4,6 +4,7 @@ import {
   addWatchedFolder,
   updateWatchedFolder,
   removeWatchedFolder,
+  reorderWatchedFolders,
   getWatchedTree,
   getWatchedChildren,
 } from '@/api/client'
@@ -86,6 +87,18 @@ export const useWatchedStore = defineStore('watched', {
         this.folders = this.folders.filter((f) => f.label !== label)
         delete this.trees[label]
       } catch (e) {
+        this.error = e instanceof Error ? e.message : String(e)
+      }
+    },
+    async reorderFolders(orderedLabels: string[]): Promise<void> {
+      this.error = null
+      const prev = this.folders
+      const byLabel = new Map(prev.map((f) => [f.label, f]))
+      this.folders = orderedLabels.map((l) => byLabel.get(l)).filter((f): f is WatchedFolder => !!f)
+      try {
+        await reorderWatchedFolders(orderedLabels)
+      } catch (e) {
+        this.folders = prev
         this.error = e instanceof Error ? e.message : String(e)
       }
     },

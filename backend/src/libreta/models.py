@@ -263,4 +263,11 @@ class WatchedFolderUpdate(BaseModel):
     path: str = Field(min_length=1)
 
 
+class ReorderRequest(BaseModel):
+    """A full ordered list of keys (ids or labels) for an admin collection.
+    The server validates it is a permutation of the existing entries."""
+
+    order: list[str] = Field(min_length=1)
+
+
 PageNode.model_rebuild()

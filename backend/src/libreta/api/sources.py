@@ -29,6 +29,7 @@ from libreta.models import (
     PageRead,
     PageWrite,
     PendingCommit,
+    ReorderRequest,
     SshKeyCreate,
     SshKeyResponse,
     SshKeyUpdate,
@@ -108,6 +109,17 @@ async def add_gitea_server(
     return await gitea_store.add_server(
         settings.gitea_servers_dir, body.label, body.base_url, body.username, body.token
     )
+
+
+@router.put("/gitea-servers/order", status_code=204)
+async def reorder_gitea_servers(
+    body: ReorderRequest,
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> None:
+    existing = {s.id for s in await gitea_store.list_servers(settings.gitea_servers_dir)}
+    if set(body.order) != existing or len(body.order) != len(existing):
+        raise HTTPException(status_code=400, detail="order must be a permutation of server ids")
+    await gitea_store.reorder_servers(settings.gitea_servers_dir, body.order)
 
 
 @router.put("/gitea-servers/{server_id}", response_model=GiteaServerResponse)
@@ -242,6 +254,17 @@ async def list_sources(
     return await src_store.list_sources(settings.meta_dir, settings.repos_dir)
 
 
+@router.put("/order", status_code=204)
+async def reorder_sources(
+    body: ReorderRequest,
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> None:
+    existing = {s["id"] for s in await src_store.load_sources(settings.meta_dir)}
+    if set(body.order) != existing or len(body.order) != len(existing):
+        raise HTTPException(status_code=400, detail="order must be a permutation of source ids")
+    await src_store.reorder_sources(settings.meta_dir, body.order)
+
+
 @router.post("", response_model=GitSourceResponse, status_code=201)
 async def add_source(
     body: GitSourceCreate,
@@ -291,8 +314,9 @@ async def update_source(
 async def delete_source(
     source_id: str,
     settings: Annotated[Settings, Depends(get_settings)],
+    purge: bool = False,
 ) -> None:
-    await src_store.remove_source(settings.meta_dir, source_id)
+    await src_store.remove_source(settings.meta_dir, settings.repos_dir, source_id, purge=purge)
 
 
 @router.post("/{source_id}/sync", response_model=GitSourceResponse)

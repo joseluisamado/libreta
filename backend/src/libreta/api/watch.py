@@ -17,6 +17,7 @@ from libreta.models import (
     PageNode,
     PageRead,
     PageWrite,
+    ReorderRequest,
     WatchedFolderCreate,
     WatchedFolderResponse,
     WatchedFolderUpdate,
@@ -28,6 +29,7 @@ from libreta.storage.watched import (
     delete_watched_page,
     load_watched_config,
     read_watched_page,
+    reorder_watched,
     resolve_watched_file,
     save_watched_config,
     walk_watched_children,
@@ -68,6 +70,18 @@ async def add_watched_folder(
     config.append({"label": body.label, "path": str(folder_path)})
     await save_watched_config(settings.meta_dir, config)
     return WatchedFolderResponse(label=body.label, path=str(folder_path), exists=exists)
+
+
+@router.put("/folders/order", status_code=204)
+async def reorder_watched_folders(
+    body: ReorderRequest,
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> None:
+    config = await load_watched_config(settings.meta_dir)
+    existing = {e["label"] for e in config}
+    if set(body.order) != existing or len(body.order) != len(existing):
+        raise HTTPException(status_code=400, detail="order must be a permutation of watched labels")
+    await reorder_watched(settings.meta_dir, body.order)
 
 
 @router.put("/folders/{label}", response_model=WatchedFolderResponse)

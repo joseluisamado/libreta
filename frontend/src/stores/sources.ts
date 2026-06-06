@@ -4,6 +4,7 @@ import {
   addSource,
   updateSource,
   deleteSource,
+  reorderSources,
   triggerSync,
   getSourceTree,
   getSourceChildren,
@@ -15,6 +16,7 @@ import {
   addGiteaServer,
   updateGiteaServer,
   deleteGiteaServer,
+  reorderGiteaServers,
   discoverGiteaRepos,
   importGiteaRepos,
 } from '@/api/client'
@@ -112,13 +114,26 @@ export const useSourcesStore = defineStore('sources', {
         throw e
       }
     },
-    async removeSource(id: string): Promise<void> {
+    async removeSource(id: string, purge = false): Promise<void> {
       this.error = null
       try {
-        await deleteSource(id)
+        await deleteSource(id, purge)
         this.sources = this.sources.filter((s) => s.id !== id)
         delete this.trees[id]
       } catch (e) {
+        this.error = e instanceof Error ? e.message : String(e)
+      }
+    },
+    // Optimistic reorder: apply locally, persist, revert on failure.
+    async reorderSources(orderedIds: string[]): Promise<void> {
+      this.error = null
+      const prev = this.sources
+      const byId = new Map(prev.map((s) => [s.id, s]))
+      this.sources = orderedIds.map((id) => byId.get(id)).filter((s): s is GitSource => !!s)
+      try {
+        await reorderSources(orderedIds)
+      } catch (e) {
+        this.sources = prev
         this.error = e instanceof Error ? e.message : String(e)
       }
     },
@@ -203,6 +218,18 @@ export const useSourcesStore = defineStore('sources', {
         await deleteGiteaServer(id)
         this.giteaServers = this.giteaServers.filter((s) => s.id !== id)
       } catch (e) {
+        this.error = e instanceof Error ? e.message : String(e)
+      }
+    },
+    async reorderGiteaServers(orderedIds: string[]): Promise<void> {
+      this.error = null
+      const prev = this.giteaServers
+      const byId = new Map(prev.map((s) => [s.id, s]))
+      this.giteaServers = orderedIds.map((id) => byId.get(id)).filter((s): s is GiteaServer => !!s)
+      try {
+        await reorderGiteaServers(orderedIds)
+      } catch (e) {
+        this.giteaServers = prev
         this.error = e instanceof Error ? e.message : String(e)
       }
     },

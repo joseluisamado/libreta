@@ -14,6 +14,33 @@ Living document. Update as work progresses. Latest at the top.
 
 ---
 
+## 2026-06-06 — Feature: archive-on-delete + drag-reorder for admin lists
+
+**What**: two admin-panel management features.
+
+- **Archive-on-delete for git sources.** Previously removing a source only
+  dropped its `sources.json` entry and orphaned the clone on disk (the UI even
+  said "the local clone will NOT be deleted"). Now `DELETE /sources/{id}`
+  *archives* the clone by default — renames it in place to a dot-prefixed
+  `.<id>_<UTCstamp>` so unpushed commits stay recoverable (R2) — with
+  `?purge=true` to delete outright. The admin UI confirms archive first, then
+  offers a permanent-delete prompt that surfaces the unpushed-commit count.
+  Guard: `search._list_source_ids` now skips dot-prefixed dirs so archives
+  aren't reindexed as phantom sources. (`storage/sources.py`,
+  `storage/search.py`, `api/sources.py`, `AdminView.vue`.)
+- **Drag-reorder** for git sources, Gitea servers, and watched folders. Order
+  is just JSON-array order in `sources.json` / gitea `index.json` /
+  `watched.json` — no schema change. New `PUT .../order` endpoints validate the
+  payload is a permutation of existing keys, then persist. Frontend uses
+  **vuedraggable** (new dep) with optimistic apply + revert-on-error in the
+  stores.
+
+Tests: `backend/tests/test_admin_manage.py` (archive/purge/orphan-tolerance,
+phantom-source guard, all three reorders incl. non-permutation rejection).
+Backend + frontend pre-flight green; round-trip corpus unaffected (R1).
+
+---
+
 ## 2026-06-05 — Design: thumbnail strategy (M11) — XDG cache + quickthumb library
 
 **What**: settled the design for fixing folder-preview performance (tiles

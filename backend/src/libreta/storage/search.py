@@ -160,7 +160,13 @@ def _list_source_ids(repos_dir: Path) -> list[str]:
     """List source IDs from the repos directory."""
     if not repos_dir.is_dir():
         return []
-    return sorted(d.name for d in repos_dir.iterdir() if d.is_dir() and (d / ".git").is_dir())
+    # Skip dot-prefixed dirs: archived clones (.<id>_<ts>, left by an
+    # archive-on-delete) keep a .git but are not live sources.
+    return sorted(
+        d.name
+        for d in repos_dir.iterdir()
+        if d.is_dir() and not d.name.startswith(".") and (d / ".git").is_dir()
+    )
 
 
 def _source_head(repos_dir: Path, source_id: str) -> str | None:

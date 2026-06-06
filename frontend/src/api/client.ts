@@ -176,6 +176,14 @@ export function removeWatchedFolder(label: string): Promise<void> {
   return requestNoContent(`/watch/folders/${enc(label)}`, { method: 'DELETE' })
 }
 
+export function reorderWatchedFolders(order: string[]): Promise<void> {
+  return requestNoContent('/watch/folders/order', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ order }),
+  })
+}
+
 export function getWatchedTree(label: string): Promise<PageNode[]> {
   return request<PageNode[]>(`/watch/${enc(label)}/tree`)
 }
@@ -261,8 +269,17 @@ export function updateSource(id: string, data: GitSourceUpdate): Promise<GitSour
   })
 }
 
-export function deleteSource(id: string): Promise<void> {
-  return requestNoContent(`/sources/${id}`, { method: 'DELETE' })
+export function deleteSource(id: string, purge = false): Promise<void> {
+  // purge=false archives the local clone (rename in place); purge=true deletes it.
+  return requestNoContent(`/sources/${id}?purge=${purge}`, { method: 'DELETE' })
+}
+
+export function reorderSources(order: string[]): Promise<void> {
+  return requestNoContent('/sources/order', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ order }),
+  })
 }
 
 export function triggerSync(id: string): Promise<GitSource> {
@@ -297,6 +314,14 @@ export function updateGiteaServer(serverId: string, data: GiteaServerUpdate): Pr
 
 export function deleteGiteaServer(serverId: string): Promise<void> {
   return requestNoContent(`/sources/gitea-servers/${serverId}`, { method: 'DELETE' })
+}
+
+export function reorderGiteaServers(order: string[]): Promise<void> {
+  return requestNoContent('/sources/gitea-servers/order', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ order }),
+  })
 }
 
 export function discoverGiteaRepos(serverId: string, owner: string): Promise<GiteaRepo[]> {
