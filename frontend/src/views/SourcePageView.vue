@@ -404,11 +404,13 @@
         <Breadcrumbs :path="page.path" :source-id="sourceId" />
       </header>
       <h1 v-if="!bodyHasH1" class="text-3xl font-bold">{{ page.meta.title }}</h1>
+      <!-- eslint-disable vue/no-v-html -- sanitized: renderMarkdown output / hljs highlight output (R6) -->
       <div v-if="mode === 'rendered' && page.body" ref="contentEl" class="prose" v-html="html" />
       <pre
         v-else-if="mode === 'source'"
         class="bg-[#f6f8fa] rounded-md p-6 overflow-auto text-sm leading-relaxed border border-slate-200"
       ><code class="hljs language-markdown" v-html="highlightedSource" /></pre>
+      <!-- eslint-enable vue/no-v-html -->
       <DirListing
         v-if="isDirectory"
         :children="dirChildren"

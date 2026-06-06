@@ -182,9 +182,11 @@
     />
 
     <!-- Source -->
+    <!-- eslint-disable vue/no-v-html -- sanitized: hljs highlight output, input HTML-escaped -->
     <pre
       v-else
       class="bg-white rounded-md border border-slate-200 overflow-auto p-4 text-sm"
     ><code class="hljs language-xml" v-html="highlightedSource" /></pre>
+    <!-- eslint-enable vue/no-v-html -->
   </article>
 </template>

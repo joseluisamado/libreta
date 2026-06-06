@@ -205,6 +205,7 @@
               {{ idx + 1 }}
             </td>
             <td class="px-3 py-px align-top">
+              <!-- eslint-disable vue/no-v-html -- sanitized: hljs highlight output, input HTML-escaped -->
               <code
                 class="hljs"
                 :class="language ? `language-${language}` : ''"
@@ -216,6 +217,7 @@
                     : ''
                 "
               />
+              <!-- eslint-enable vue/no-v-html -->
             </td>
           </tr>
         </tbody>

@@ -448,6 +448,7 @@
               transform: `scale(${renderScale})`,
             }"
           >
+            <!-- eslint-disable-next-line vue/no-v-html -- sanitized: renderMarkdown / sanitizeHtmlFile (DOMPurify) output (R6) -->
             <div ref="mdEl" class="prose prose-sm p-3" v-html="renderedHtml" />
           </div>
         </template>
@@ -455,12 +456,13 @@
         <!-- Syntax-highlighted text snippet (same colours as TextView) -->
         <template v-else-if="isText">
           <div v-if="loading" class="text-[11px] text-slate-400">Loading…</div>
-          <!-- eslint-disable-next-line vue/no-v-html -->
+          <!-- eslint-disable vue/no-v-html -- sanitized: hljs highlight output, input HTML-escaped -->
           <pre
             v-else-if="rawSnippet"
             class="hljs w-full h-full overflow-hidden p-2 text-[9px] leading-snug whitespace-pre-wrap break-words"
           ><code :class="textLang ? `language-${textLang}` : ''" v-html="highlightedSnippet"
           /></pre>
+          <!-- eslint-enable vue/no-v-html -->
           <span v-else class="text-2xl font-bold" :class="badgeColor()">{{ badge() }}</span>
         </template>
 

@@ -401,11 +401,13 @@
         @upload="onUpload"
       />
 
+      <!-- eslint-disable vue/no-v-html -- sanitized: renderMarkdown output / hljs highlight output (R6) -->
       <div v-if="mode === 'rendered' && page.body" ref="contentEl" class="prose" v-html="html" />
       <pre
         v-else-if="mode === 'source' && page.body"
         class="bg-[#f6f8fa] rounded-md p-6 overflow-auto text-sm leading-relaxed border border-slate-200"
       ><code class="hljs language-markdown" v-html="highlightedSource" /></pre>
+      <!-- eslint-enable vue/no-v-html -->
       <p v-if="page.meta.tags.length" class="mt-8 text-xs text-slate-500">
         <span v-for="t in page.meta.tags" :key="t" class="mr-2">#{{ t }}</span>
       </p>
