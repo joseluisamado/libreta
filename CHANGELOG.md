@@ -9,6 +9,12 @@ Entries are generated from [Conventional Commits](https://www.conventionalcommit
 by `scripts/changelog.py` at release time.
 
 
+## [2.4.0] - 2026-06-06
+
+### Added
+
+- **admin:** archive-on-delete for sources + drag-reorder admin lists
+
 ## [2.3.3] - 2026-06-05
 
 ### Fixed
