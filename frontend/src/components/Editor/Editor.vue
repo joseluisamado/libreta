@@ -192,6 +192,58 @@
     },
   })
 
+  // tiptap-markdown can only serialize a table whose first row is entirely
+  // `tableHeader` cells (GFM requires a header row to produce the `| --- |`
+  // delimiter). A table whose first row is ordinary `tableCell`s serializes to
+  // the literal placeholder `[table]` — silently destroying the table on save.
+  // That broken shape is easy to reach by editing: deleting the header row (the
+  // toolbar's "delete row" with the cursor in the header) leaves the next body
+  // row as a headerless row 0.
+  //
+  // This guard re-promotes the first row of every table to header cells after
+  // any doc change, so a table can never persist in the un-serializable shape.
+  // It doubles as the "delete row" UX guard: removing the header row simply
+  // promotes whatever row lands on top.
+  const tableHeaderGuardKey = new PluginKey('tableHeaderGuard')
+
+  const TableHeaderGuard = Extension.create({
+    name: 'tableHeaderGuard',
+    addProseMirrorPlugins() {
+      return [
+        new Plugin({
+          key: tableHeaderGuardKey,
+          appendTransaction: (transactions, _oldState, newState) => {
+            if (!transactions.some((tr) => tr.docChanged)) return null
+            const headerType = newState.schema.nodes['tableHeader']
+            if (!headerType) return null
+            let tr = newState.tr
+            let changed = false
+            newState.doc.descendants((node, pos) => {
+              if (node.type.name !== 'table') return
+              const firstRow = node.firstChild
+              if (!firstRow) return
+              // Position of the first row's first cell: table start (pos+1) is
+              // the row, +1 again is the first cell.
+              let cellPos = pos + 2
+              firstRow.forEach((cell) => {
+                if (cell.type.name === 'tableCell') {
+                  // Map through edits already queued in this transaction.
+                  const mapped = tr.mapping.map(cellPos)
+                  tr = tr.setNodeMarkup(mapped, headerType, cell.attrs)
+                  changed = true
+                }
+                cellPos += cell.nodeSize
+              })
+              // Don't descend into the table's rows.
+              return false
+            })
+            return changed ? tr : null
+          },
+        }),
+      ]
+    },
+  })
+
   const PageScopedImage = Image.extend({
     renderHTML({ HTMLAttributes }) {
       const src = String(HTMLAttributes.src ?? '')
@@ -309,6 +361,7 @@
       TableRow,
       TableHeader,
       TableCell,
+      TableHeaderGuard,
       PageScopedImage.configure({
         // Inline images live inside paragraphs (`![alt](photo.jpg)` mid-sentence).
         // Tiptap's default is block-level; switch to inline so prosemirror-markdown
