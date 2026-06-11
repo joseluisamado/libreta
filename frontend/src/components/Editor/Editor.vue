@@ -13,8 +13,10 @@
   import Link from '@tiptap/extension-link'
   import { Table, TableRow, TableHeader, TableCell } from '@tiptap/extension-table'
   import Image from '@tiptap/extension-image'
+  import HardBreak from '@tiptap/extension-hard-break'
   import { mergeAttributes, Extension } from '@tiptap/core'
   import { Plugin, PluginKey } from '@tiptap/pm/state'
+  import { Fragment, type Node as PMNode } from '@tiptap/pm/model'
   import { Decoration, DecorationSet } from '@tiptap/pm/view'
   import { Markdown } from 'tiptap-markdown'
   import 'highlight.js/styles/github.css'
@@ -192,22 +194,64 @@
     },
   })
 
+  // A line break inside a table cell can't be a paragraph break (GFM cells are
+  // single-block). The guard below rewrites such breaks into `hardBreak` nodes;
+  // this extension teaches tiptap-markdown to serialize a hardBreak as a literal
+  // `<br>` when it sits inside a table (the standard GFM in-cell line break).
+  // Outside a table it keeps the default backslash-newline. With the editor's
+  // Markdown parser set to `html: true`, the `<br>` round-trips back to a
+  // hardBreak on the next load instead of re-escaping to `&lt;br&gt;`.
+  const MarkdownHardBreak = HardBreak.extend({
+    addStorage() {
+      return {
+        markdown: {
+          serialize(
+            state: {
+              inTable?: boolean
+              write: (s: string) => void
+            },
+            node: PMNode,
+            parent: PMNode,
+            index: number,
+          ) {
+            if (state.inTable) {
+              state.write('<br>')
+              return
+            }
+            // Default tiptap-markdown behaviour: a trailing run of hardBreaks at
+            // the end of a block is dropped; otherwise emit a hard line break.
+            for (let i = index + 1; i < parent.childCount; i++) {
+              if (parent.child(i).type !== node.type) {
+                state.write('\\\n')
+                return
+              }
+            }
+          },
+          parse: {},
+        },
+      }
+    },
+  })
+
   // tiptap-markdown can only serialize a table that has the canonical GFM
-  // shape: the first row is entirely `tableHeader` cells (so it can emit the
-  // `| --- |` delimiter) AND every other row is entirely `tableCell`s. Any
-  // table that violates either half — a header-less first row, OR a body row
-  // that still contains header cells — serializes to the literal placeholder
-  // `[table]`, silently destroying the table on save.
+  // shape. It falls back to the literal placeholder `[table]` — silently
+  // destroying the table on save — whenever a table violates any of:
+  //   1. The first row is not entirely `tableHeader` cells (no `| --- |` line).
+  //   2. A later row contains a `tableHeader` cell.
+  //   3. Any cell contains more than one block (e.g. two paragraphs).
   //
-  // Both broken shapes are one toolbar click away:
-  //   • "Delete row" with the cursor in the header row → header-less first row.
-  //   • "Add row before" with the cursor in the header row → a new plain row 0
-  //     pushes the real header down into the body (body row with header cells).
+  // Every one of these is one edit away:
+  //   • "Delete row" on the header row → header-less first row (1).
+  //   • "Add row before" on the header row → header pushed into the body (2).
+  //   • Pressing Enter inside a cell → a second paragraph in that cell (3).
   //
-  // This guard normalizes every table after any doc change so the cell type
-  // always matches the row's position: row 0 → header cells, rows 1+ → body
-  // cells. That makes the un-serializable shape unreachable in persisted state
-  // and doubles as the add/delete-row UX guard.
+  // This guard normalizes every table after any doc change:
+  //   • cell type matches row position (row 0 → header, rows 1+ → body), and
+  //   • each cell is collapsed to a single paragraph, with the breaks between
+  //     its former blocks preserved as `hardBreak`s (serialized to `<br>` —
+  //     see MarkdownHardBreak above).
+  // That makes the un-serializable shapes unreachable in persisted state and
+  // doubles as the add/delete-row and in-cell-Enter UX guard.
   const tableHeaderGuardKey = new PluginKey('tableHeaderGuard')
 
   const TableHeaderGuard = Extension.create({
@@ -220,7 +264,9 @@
             if (!transactions.some((tr) => tr.docChanged)) return null
             const headerType = newState.schema.nodes['tableHeader']
             const cellType = newState.schema.nodes['tableCell']
-            if (!headerType || !cellType) return null
+            const paragraphType = newState.schema.nodes['paragraph']
+            const hardBreakType = newState.schema.nodes['hardBreak']
+            if (!headerType || !cellType || !paragraphType) return null
             let tr = newState.tr
             let changed = false
             newState.doc.descendants((node, pos) => {
@@ -235,10 +281,30 @@
                 const wantName = wantHeader ? 'tableHeader' : 'tableCell'
                 let cellPos = rowStart + 1
                 row.forEach((cell) => {
+                  // 1+2) Cell type must match the row's position.
                   if (cell.type.name !== wantName) {
                     // Map through edits already queued in this transaction.
                     const mapped = tr.mapping.map(cellPos)
                     tr = tr.setNodeMarkup(mapped, wantType, cell.attrs)
+                    changed = true
+                  }
+                  // 3) A cell must hold exactly one block. Flatten extra blocks
+                  // into one paragraph, joining them with hardBreaks so the
+                  // line break the user typed survives as a `<br>`.
+                  if (cell.childCount > 1) {
+                    const inline: PMNode[] = []
+                    cell.forEach((block, _blockOffset, blockIndex) => {
+                      if (blockIndex > 0 && hardBreakType) {
+                        inline.push(hardBreakType.create())
+                      }
+                      block.content.forEach((leaf) => inline.push(leaf))
+                    })
+                    const flattened = paragraphType.create(null, Fragment.fromArray(inline))
+                    // Replace the cell's inner content (positions inside the
+                    // cell, excluding the cell's open/close tokens).
+                    const from = tr.mapping.map(cellPos + 1)
+                    const to = tr.mapping.map(cellPos + cell.nodeSize - 1)
+                    tr = tr.replaceWith(from, to, flattened)
                     changed = true
                   }
                   cellPos += cell.nodeSize
@@ -276,7 +342,12 @@
         link: false,
         // Exclude built-in codeBlock; we use CodeBlockLowlight for syntax highlighting
         codeBlock: false,
+        // Exclude built-in hardBreak; we register MarkdownHardBreak below so a
+        // line break inside a table cell serializes to `<br>` instead of the
+        // `[hardBreak]` placeholder.
+        hardBreak: false,
       }),
+      MarkdownHardBreak,
       CodeBlockLowlight.configure({
         lowlight: (() => {
           const ll = createLowlight(all)
@@ -380,7 +451,12 @@
         inline: true,
       }),
       Markdown.configure({
-        html: false,
+        // Parse raw HTML in the source so a `<br>` inside a table cell (the
+        // GFM in-cell line break MarkdownHardBreak emits) round-trips back to a
+        // hardBreak node instead of re-escaping to `&lt;br&gt;`. This only
+        // affects the editor's client-side parser; R6's protection is the
+        // render-time DOMPurify sanitization, which is unchanged.
+        html: true,
       }),
     ],
     content: props.content,

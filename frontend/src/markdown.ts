@@ -153,6 +153,32 @@ const renderBlockMath: RenderRule = (tokens, idx) => {
 md.renderer.rules.math_inline = renderInlineMath
 md.renderer.rules.math_block = renderBlockMath
 
+// Render a literal `<br>` as an actual line break, while keeping every other
+// raw HTML tag escaped. With `html: false` the parser leaves `<br>` inside a
+// `text` token, so the default text renderer escapes it to `&lt;br&gt;`. The
+// editor emits `<br>` as the GFM line break inside a table cell (it cannot hold
+// a second paragraph); the viewer must show it as a break, not as text.
+//
+// This is the *only* raw-HTML construct we render. `<br>` is inert — no script,
+// no attributes, no event handlers — so allowing it does not relax R6. We match
+// `<br>`, `<br/>`, `<br />` (any inner spacing) case-insensitively; anything
+// else, including `<br onload=…>` or any tag with attributes, stays escaped.
+const BR_LITERAL = /<br\s*\/?>/i // non-global: `.split` still splits on every match
+const defaultTextRule =
+  md.renderer.rules.text ??
+  ((tokens, idx, _options, _env, self) => self.renderToken(tokens, idx, _options))
+md.renderer.rules.text = (tokens, idx, options, env, self) => {
+  const content = tokens[idx]?.content ?? ''
+  if (!BR_LITERAL.test(content)) {
+    return defaultTextRule(tokens, idx, options, env, self)
+  }
+  // Split on the <br> literal, HTML-escape each segment, rejoin with real <br>.
+  return content
+    .split(BR_LITERAL)
+    .map((segment) => md.utils.escapeHtml(segment))
+    .join('<br>')
+}
+
 const ASSET_BASE = '/api/v1/assets'
 
 function isAbsolute(url: string): boolean {

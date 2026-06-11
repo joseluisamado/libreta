@@ -1,15 +1,100 @@
 import { describe, it, expect } from 'vitest'
-import { Editor } from '@tiptap/core'
+import { Editor, Extension } from '@tiptap/core'
 import StarterKit from '@tiptap/starter-kit'
+import HardBreak from '@tiptap/extension-hard-break'
 import TaskList from '@tiptap/extension-task-list'
 import TaskItem from '@tiptap/extension-task-item'
 import Link from '@tiptap/extension-link'
 import { Table, TableRow, TableHeader, TableCell } from '@tiptap/extension-table'
 import Image from '@tiptap/extension-image'
 import { Markdown } from 'tiptap-markdown'
+import { Plugin, PluginKey } from '@tiptap/pm/state'
+import { Fragment, type Node as PMNode } from '@tiptap/pm/model'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
+
+// Mirrors of the editor extensions in Editor.vue that affect serialization.
+const MarkdownHardBreak = HardBreak.extend({
+  addStorage() {
+    return {
+      markdown: {
+        serialize(
+          state: { inTable?: boolean; write: (s: string) => void },
+          node: PMNode,
+          parent: PMNode,
+          index: number,
+        ) {
+          if (state.inTable) {
+            state.write('<br>')
+            return
+          }
+          for (let i = index + 1; i < parent.childCount; i++) {
+            if (parent.child(i).type !== node.type) {
+              state.write('\\\n')
+              return
+            }
+          }
+        },
+        parse: {},
+      },
+    }
+  },
+})
+
+const tableHeaderGuardKey = new PluginKey('tableHeaderGuard')
+const TableHeaderGuard = Extension.create({
+  name: 'tableHeaderGuard',
+  addProseMirrorPlugins() {
+    return [
+      new Plugin({
+        key: tableHeaderGuardKey,
+        appendTransaction: (transactions, _oldState, newState) => {
+          if (!transactions.some((tr) => tr.docChanged)) return null
+          const headerType = newState.schema.nodes['tableHeader']
+          const cellType = newState.schema.nodes['tableCell']
+          const paragraphType = newState.schema.nodes['paragraph']
+          const hardBreakType = newState.schema.nodes['hardBreak']
+          if (!headerType || !cellType || !paragraphType) return null
+          let tr = newState.tr
+          let changed = false
+          newState.doc.descendants((node, pos) => {
+            if (node.type.name !== 'table') return
+            let rowStart = pos + 1
+            node.forEach((row, _rowOffset, rowIndex) => {
+              const wantHeader = rowIndex === 0
+              const wantType = wantHeader ? headerType : cellType
+              const wantName = wantHeader ? 'tableHeader' : 'tableCell'
+              let cellPos = rowStart + 1
+              row.forEach((cell) => {
+                if (cell.type.name !== wantName) {
+                  tr = tr.setNodeMarkup(tr.mapping.map(cellPos), wantType, cell.attrs)
+                  changed = true
+                }
+                if (cell.childCount > 1) {
+                  const inline: PMNode[] = []
+                  cell.forEach((block, _blockOffset, blockIndex) => {
+                    if (blockIndex > 0 && hardBreakType) inline.push(hardBreakType.create())
+                    block.content.forEach((leaf) => inline.push(leaf))
+                  })
+                  const flattened = paragraphType.create(null, Fragment.fromArray(inline))
+                  const from = tr.mapping.map(cellPos + 1)
+                  const to = tr.mapping.map(cellPos + cell.nodeSize - 1)
+                  tr = tr.replaceWith(from, to, flattened)
+                  changed = true
+                }
+                cellPos += cell.nodeSize
+              })
+              rowStart += row.nodeSize
+            })
+            return false
+          })
+          return changed ? tr : null
+        },
+      }),
+    ]
+  },
+})
 
 const FIXTURE_DIR = resolve(dirname(fileURLToPath(import.meta.url)), 'fixtures')
 
@@ -25,6 +110,7 @@ const fixtures = [
   'blank-lines.md',
   'math-passthrough.md',
   'tables.md',
+  'tables-cell-linebreak.md',
   'images.md',
   'file-attachments.md',
   'mermaid.md',
@@ -41,7 +127,10 @@ function createEditor() {
         // Exclude the built-in link extension so we can use our explicit
         // @tiptap/extension-link with rich link support.
         link: false,
+        // Use MarkdownHardBreak so an in-cell line break serializes to `<br>`.
+        hardBreak: false,
       }),
+      MarkdownHardBreak,
       TaskList,
       TaskItem.configure({
         nested: true,
@@ -56,9 +145,11 @@ function createEditor() {
       TableRow,
       TableHeader,
       TableCell,
+      TableHeaderGuard,
       Image.configure({ inline: true }),
       Markdown.configure({
-        html: false,
+        // Match the editor: parse raw HTML so `<br>` round-trips (see Editor.vue).
+        html: true,
       }),
     ],
   })

@@ -14,6 +14,42 @@ Living document. Update as work progresses. Latest at the top.
 
 ---
 
+## 2026-06-11 — Fix: tables silently destroyed on save (`[table]` placeholder)
+
+**What**: editing a table in the WYSIWYG editor could replace the whole table
+with the literal text `[table]` on save — irreversible content loss, an R1
+violation. Root cause: `tiptap-markdown` only serializes a table in canonical
+GFM shape (row 0 all header cells, later rows all body cells, **one block per
+cell**); any violation emits the `[table]` placeholder. All three violations
+are one edit away — delete the header row, add a row above the header, or press
+**Enter inside a cell** (creates a second paragraph in that cell, the case that
+actually bit). Diagnosed by dumping the live ProseMirror doc JSON on the broken
+save, not by guessing.
+
+**Fix** (`frontend/src/components/Editor/Editor.vue`):
+- `TableHeaderGuard` — a ProseMirror `appendTransaction` plugin that normalizes
+  every table after any doc change: cell type matches row position, and any
+  multi-block cell is collapsed to one paragraph with the former block breaks
+  preserved as `hardBreak`s.
+- `MarkdownHardBreak` — serializes an in-cell hardBreak as a literal `<br>`
+  (GFM in-cell line break) instead of the `[hardBreak]` placeholder.
+- Editor's `tiptap-markdown` parser flipped to `html: true` so the `<br>`
+  round-trips back to a hardBreak instead of re-escaping to `&lt;br&gt;`. This
+  touches only the client-side parser; R6's render-time DOMPurify sanitization
+  is unchanged (page saves write the body verbatim — no save-time scrub to
+  weaken). New dep: `@tiptap/extension-hard-break` (pinned to the 3.22.5 tiptap
+  line; already transitively present).
+
+Tests: round-trip harness brought in line with the editor (`html: true`,
+custom hardBreak, the guard); new `tables-cell-linebreak.md` fixture pins the
+`<br>`-in-cell round-trip; `table-header-guard.test.ts` covers delete-header,
+add-row-before, and the multi-paragraph-cell → `<br>` flatten + stable
+re-serialize. 94 frontend tests green. Recovered + re-saved the affected page's
+§1 table through the normal save→commit→push lifecycle. See ARCHITECTURE.md
+"Table-shape guard".
+
+---
+
 ## 2026-06-06 — Feature: archive-on-delete + drag-reorder for admin lists
 
 **What**: two admin-panel management features.

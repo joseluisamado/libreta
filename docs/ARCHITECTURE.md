@@ -425,6 +425,16 @@ This is the trickiest part of the system. We must:
 - **Serializer:** the editor exports TipTap state to markdown using `tiptap-markdown` for common nodes, with custom serializers for non-trivial nodes (tables, diagram embed, callout).
 - **Stability tests:** the test suite includes a corpus of representative `.md` files. Each is parsed → serialized and compared byte-for-byte. Any drift is a bug.
 
+#### Table-shape guard (2026-06-11)
+
+`tiptap-markdown` only serializes a table that has the canonical GFM shape: the first row is all `tableHeader` cells, every later row is all `tableCell`s, and **each cell holds exactly one block**. Any violation makes it emit the literal placeholder `[table]`, silently destroying the table on save (an R1 violation). All three violations are one edit away — deleting the header row, inserting a row above the header, or pressing **Enter inside a cell** (which creates a second paragraph in that cell).
+
+A ProseMirror `appendTransaction` guard (`TableHeaderGuard` in `Editor.vue`) normalizes every table after any doc change: it fixes cell types to match row position, and collapses any multi-block cell into a single paragraph, preserving the breaks between former blocks as `hardBreak`s. A custom `MarkdownHardBreak` serializes an in-cell hardBreak as a literal `<br>` (the GFM in-cell line-break idiom).
+
+Because `<br>` must parse *back* into a hardBreak on reload (otherwise it re-escapes to `&lt;br&gt;` and breaks the round-trip), the editor's `tiptap-markdown` parser runs with `html: true`. This affects only the editor's **client-side** parser; R6's protection is render-time DOMPurify sanitization, which is unchanged (markdown-page saves already write the body verbatim — there is no save-time HTML scrub to weaken). The `tables-cell-linebreak.md` fixture pins the `<br>`-in-cell round-trip.
+
+The read-only viewer (`markdown.ts`, client-side markdown-it with `html: false`) would otherwise escape that `<br>` to text. A narrow custom `text` render rule renders **only** the literal `<br>` / `<br/>` / `<br />` as a real line break and leaves every other raw HTML tag escaped — `<br>` is the single raw-HTML construct we render. It is inert (no script, no attributes, no handlers), so this does not relax R6; a tag with attributes (e.g. `<b onmouseover=…>`) still escapes. This is the only place the viewer interprets raw HTML.
+
 ### Supported markdown features
 
 - CommonMark core

@@ -18,6 +18,26 @@ describe('renderMarkdown', () => {
     expect(out).not.toContain('<script>')
   })
 
+  it('renders a literal <br> in a table cell as a line break', () => {
+    const out = renderMarkdown('| A | B |\n| --- | --- |\n| RAM | 32 GB<br>16 GB Crucial |')
+    expect(out).toContain('32 GB<br>16 GB Crucial')
+    expect(out).not.toContain('&lt;br&gt;')
+  })
+
+  it('renders <br/> and <br /> variants too', () => {
+    const out = renderMarkdown('a<br/>b<br />c')
+    expect(out).toContain('a<br>b<br>c')
+  })
+
+  it('still escapes other raw HTML even next to a <br>', () => {
+    // The <br> is rendered, but a sibling tag with attributes must stay escaped
+    // so the narrow <br> allowance does not become a raw-HTML hole (R6).
+    const out = renderMarkdown('x<br><b onmouseover="evil()">y</b>')
+    expect(out).toContain('x<br>')
+    expect(out).not.toContain('<b onmouseover')
+    expect(out).toContain('&lt;b onmouseover')
+  })
+
   it('renders task lists', () => {
     const out = renderMarkdown('- [x] done\n- [ ] todo')
     expect(out).toContain('type="checkbox"')
