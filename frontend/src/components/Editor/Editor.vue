@@ -192,18 +192,22 @@
     },
   })
 
-  // tiptap-markdown can only serialize a table whose first row is entirely
-  // `tableHeader` cells (GFM requires a header row to produce the `| --- |`
-  // delimiter). A table whose first row is ordinary `tableCell`s serializes to
-  // the literal placeholder `[table]` — silently destroying the table on save.
-  // That broken shape is easy to reach by editing: deleting the header row (the
-  // toolbar's "delete row" with the cursor in the header) leaves the next body
-  // row as a headerless row 0.
+  // tiptap-markdown can only serialize a table that has the canonical GFM
+  // shape: the first row is entirely `tableHeader` cells (so it can emit the
+  // `| --- |` delimiter) AND every other row is entirely `tableCell`s. Any
+  // table that violates either half — a header-less first row, OR a body row
+  // that still contains header cells — serializes to the literal placeholder
+  // `[table]`, silently destroying the table on save.
   //
-  // This guard re-promotes the first row of every table to header cells after
-  // any doc change, so a table can never persist in the un-serializable shape.
-  // It doubles as the "delete row" UX guard: removing the header row simply
-  // promotes whatever row lands on top.
+  // Both broken shapes are one toolbar click away:
+  //   • "Delete row" with the cursor in the header row → header-less first row.
+  //   • "Add row before" with the cursor in the header row → a new plain row 0
+  //     pushes the real header down into the body (body row with header cells).
+  //
+  // This guard normalizes every table after any doc change so the cell type
+  // always matches the row's position: row 0 → header cells, rows 1+ → body
+  // cells. That makes the un-serializable shape unreachable in persisted state
+  // and doubles as the add/delete-row UX guard.
   const tableHeaderGuardKey = new PluginKey('tableHeaderGuard')
 
   const TableHeaderGuard = Extension.create({
@@ -215,24 +219,31 @@
           appendTransaction: (transactions, _oldState, newState) => {
             if (!transactions.some((tr) => tr.docChanged)) return null
             const headerType = newState.schema.nodes['tableHeader']
-            if (!headerType) return null
+            const cellType = newState.schema.nodes['tableCell']
+            if (!headerType || !cellType) return null
             let tr = newState.tr
             let changed = false
             newState.doc.descendants((node, pos) => {
               if (node.type.name !== 'table') return
-              const firstRow = node.firstChild
-              if (!firstRow) return
-              // Position of the first row's first cell: table start (pos+1) is
-              // the row, +1 again is the first cell.
-              let cellPos = pos + 2
-              firstRow.forEach((cell) => {
-                if (cell.type.name === 'tableCell') {
-                  // Map through edits already queued in this transaction.
-                  const mapped = tr.mapping.map(cellPos)
-                  tr = tr.setNodeMarkup(mapped, headerType, cell.attrs)
-                  changed = true
-                }
-                cellPos += cell.nodeSize
+              // The first row must be all header cells; every later row must be
+              // all body cells. `rowStart` walks past the table-open token
+              // (pos + 1) to the first row, then accumulates each row's size.
+              let rowStart = pos + 1
+              node.forEach((row, _rowOffset, rowIndex) => {
+                const wantHeader = rowIndex === 0
+                const wantType = wantHeader ? headerType : cellType
+                const wantName = wantHeader ? 'tableHeader' : 'tableCell'
+                let cellPos = rowStart + 1
+                row.forEach((cell) => {
+                  if (cell.type.name !== wantName) {
+                    // Map through edits already queued in this transaction.
+                    const mapped = tr.mapping.map(cellPos)
+                    tr = tr.setNodeMarkup(mapped, wantType, cell.attrs)
+                    changed = true
+                  }
+                  cellPos += cell.nodeSize
+                })
+                rowStart += row.nodeSize
               })
               // Don't descend into the table's rows.
               return false

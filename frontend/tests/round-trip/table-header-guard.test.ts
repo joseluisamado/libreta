@@ -9,7 +9,7 @@ import Image from '@tiptap/extension-image'
 import { Markdown } from 'tiptap-markdown'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
 
-// Mirror of the TableHeaderGuard defined in Editor.vue.
+// Mirror of the TableHeaderGuard defined in Editor.vue. Keep in sync.
 const tableHeaderGuardKey = new PluginKey('tableHeaderGuard')
 const TableHeaderGuard = Extension.create({
   name: 'tableHeaderGuard',
@@ -20,21 +20,27 @@ const TableHeaderGuard = Extension.create({
         appendTransaction: (transactions, _oldState, newState) => {
           if (!transactions.some((tr) => tr.docChanged)) return null
           const headerType = newState.schema.nodes['tableHeader']
-          if (!headerType) return null
+          const cellType = newState.schema.nodes['tableCell']
+          if (!headerType || !cellType) return null
           let tr = newState.tr
           let changed = false
           newState.doc.descendants((node, pos) => {
             if (node.type.name !== 'table') return
-            const firstRow = node.firstChild
-            if (!firstRow) return
-            let cellPos = pos + 2
-            firstRow.forEach((cell) => {
-              if (cell.type.name === 'tableCell') {
-                const mapped = tr.mapping.map(cellPos)
-                tr = tr.setNodeMarkup(mapped, headerType, cell.attrs)
-                changed = true
-              }
-              cellPos += cell.nodeSize
+            let rowStart = pos + 1
+            node.forEach((row, _rowOffset, rowIndex) => {
+              const wantHeader = rowIndex === 0
+              const wantType = wantHeader ? headerType : cellType
+              const wantName = wantHeader ? 'tableHeader' : 'tableCell'
+              let cellPos = rowStart + 1
+              row.forEach((cell) => {
+                if (cell.type.name !== wantName) {
+                  const mapped = tr.mapping.map(cellPos)
+                  tr = tr.setNodeMarkup(mapped, wantType, cell.attrs)
+                  changed = true
+                }
+                cellPos += cell.nodeSize
+              })
+              rowStart += row.nodeSize
             })
             return false
           })
@@ -74,8 +80,8 @@ describe('table header guard', () => {
     const editor = createEditor()
     editor.commands.setContent('| A | B |\n| --- | --- |\n| x | y |\n| u | v |\n')
 
-    // Put the cursor inside the first (header) row and delete that row,
-    // reproducing the toolbar "delete row" action that caused the data loss.
+    // Cursor in the header row, then delete that row — the toolbar "delete row"
+    // action that originally caused the data loss.
     editor.commands.setTextSelection(3)
     editor.commands.deleteRow()
 
@@ -87,5 +93,24 @@ describe('table header guard', () => {
     expect(out).toContain('| x | y |')
     expect(out).toContain('| --- | --- |')
     expect(out).toContain('| u | v |')
+  })
+
+  it('inserting a row above the header does not collapse the table to [table]', () => {
+    const editor = createEditor()
+    editor.commands.setContent('| A | B |\n| --- | --- |\n| x | y |\n')
+
+    // Cursor in the header row, then "add row before". The new plain row 0
+    // pushes the old header (still header cells) down into the body — the
+    // second un-serializable shape (body row containing header cells).
+    editor.commands.setTextSelection(3)
+    editor.commands.addRowBefore()
+
+    const out = getMarkdown(editor)
+    editor.destroy()
+
+    expect(out).not.toContain('[table]')
+    expect(out).toContain('| --- | --- |')
+    // Original content survives.
+    expect(out).toContain('| x | y |')
   })
 })
