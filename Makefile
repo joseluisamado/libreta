@@ -39,6 +39,11 @@ VERSION := $(shell cat VERSION 2>/dev/null)
 # line if needed: `make release LEVEL=patch DEPLOY_HOST=user@homelab`.
 DEPLOY_HOST ?= user@homelab
 
+# Directory on DEPLOY_HOST that holds the prod compose files + .env. The deploy
+# step runs `docker compose up -d` there to recreate containers from the image
+# just loaded (otherwise the host keeps running the previous container).
+DEPLOY_PATH ?= /home/user
+
 # Compose invocation: dev stacks layer docker-compose.dev.yml on top of the
 # base file so the api service gets a source bind-mount and uvicorn --reload.
 # docker-compose.dev.local.yml is an optional, untracked, per-developer overlay
@@ -254,7 +259,8 @@ release-current: ## Re-release the CURRENT VERSION as-is: build, tag, deploy (no
 	$(MAKE) build-prod
 	$(MAKE) _tag-and-deploy
 
-# Shared tail: tag the current VERSION and ship the images to DEPLOY_HOST.
+# Shared tail: tag the current VERSION, ship the images to DEPLOY_HOST, and
+# recreate the running containers there from the freshly-loaded image.
 _tag-and-deploy:
 	@new=$$(cat VERSION); \
 	echo "→ tagging git as v$$new"; \
@@ -263,6 +269,8 @@ _tag-and-deploy:
 	echo "→ deploying images to $(DEPLOY_HOST) via ssh"; \
 	docker save libreta-api:$$new libreta-api:latest libreta-frontend:$$new libreta-frontend:latest \
 	  | ssh $(DEPLOY_HOST) docker load
+	@echo "→ recreating containers on $(DEPLOY_HOST) ($(DEPLOY_PATH))"; \
+	ssh $(DEPLOY_HOST) "cd $(DEPLOY_PATH) && docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d"
 	@echo ""
-	@echo "Release v$$(cat VERSION) built locally and loaded into docker on $(DEPLOY_HOST)."
+	@echo "Release v$$(cat VERSION) deployed and live on $(DEPLOY_HOST)."
 	@echo "Run: git push --follow-tags"

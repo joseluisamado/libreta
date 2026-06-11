@@ -8,3 +8,8 @@
 
 # SSH target for `make release` / `make release-current` image deployment.
 DEPLOY_HOST = user@homelab
+
+# Directory on DEPLOY_HOST holding the prod compose files + .env. After loading
+# the new image, the release recreates the stack with `docker compose up -d`
+# there. Defaults to /home/user; override if your host differs.
+DEPLOY_PATH = /home/user
