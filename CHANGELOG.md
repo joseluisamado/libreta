@@ -9,6 +9,14 @@ Entries are generated from [Conventional Commits](https://www.conventionalcommit
 by `scripts/changelog.py` at release time.
 
 
+## [2.5.0] - 2026-06-11
+
+### Fixed
+
+- **editor:** preserve in-cell line breaks; render <br> in viewer
+- **editor:** normalize whole table shape, not just the header row
+- **editor:** guard tables against header-row loss collapsing to [table]
+
 ## [2.4.0] - 2026-06-06
 
 ### Added
