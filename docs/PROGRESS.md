@@ -14,6 +14,39 @@ Living document. Update as work progresses. Latest at the top.
 
 ---
 
+## 2026-06-17 — Feature: MCP endpoint for Claude Desktop (read/write pages)
+
+**What**: Claude Desktop (and any MCP client) can now read and write wiki pages
+over an [MCP](https://modelcontextprotocol.io) server mounted **inside** the
+backend at `/mcp` (streamable-HTTP transport). It ships in the existing backend
+container and deploys through the normal pipeline — no separate service. Tools:
+`list_sources`, `list_pages`, `read_page`, `write_page` (upsert = create or
+edit). An earlier stdio-sidecar prototype (`mcp-server/`) was replaced by this
+in-process design after confirming the sidecar would not be built/deployed.
+
+**How**:
+- `backend/src/libreta/api/mcp.py` — `build_mcp(settings_provider)` factory that
+  registers the four tools; they call the storage layer directly (no HTTP
+  self-call) and go through the normal save lifecycle, so every `write_page`
+  commits + enqueues a push (R3 holds).
+- `backend/src/libreta/main.py` — a fresh `FastMCP` per `create_app()` (its
+  session manager is single-use), stashed on `app.state`; the manager runs via
+  the app lifespan; mounted at `/mcp` with `streamable_http_path="/"`.
+- `backend/pyproject.toml` — added `mcp>=1.2` to runtime deps.
+- `frontend/nginx.prod.conf` — `location ^~ /mcp` with streaming-friendly proxy
+  settings (`/mcp` is outside `/api/`, and the transport streams).
+- `backend/tests/test_mcp_endpoint.py` — full round-trip against a real loopback
+  server (initialize → list → read → edit + create), asserting writes land and
+  commit.
+
+**Scope / caveats**: LAN/no-auth (pre-M6) — `/mcp` is unauthenticated, don't
+expose it to an untrusted network without auth in front. Page writes are
+last-writer-wins (no revision/ETag); `read_page` mitigates blind overwrites but
+is not a lock. See ARCHITECTURE *HTTP API → MCP* and the two MCP traps in
+CLAUDE.md §9.
+
+---
+
 ## 2026-06-11 — Fix: tables silently destroyed on save (`[table]` placeholder)
 
 **What**: editing a table in the WYSIWYG editor could replace the whole table

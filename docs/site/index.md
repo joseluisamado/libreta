@@ -44,5 +44,6 @@ diagrams.net integration on top.
 | Understand the architecture | [`ARCHITECTURE.md`](../ARCHITECTURE.md) |
 | Back up or restore | [`BACKUP.md`](../BACKUP.md) |
 | Read the security posture | [`SECURITY-REVIEW.md`](../SECURITY-REVIEW.md) |
+| Read & write your wiki from Claude Desktop | [Claude Desktop](./claude-desktop.md) |
 | Find the answer to a common question | [FAQ](./faq.md) |
 | Diagnose something that's broken | [Troubleshooting](./troubleshooting.md) |

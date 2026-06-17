@@ -96,6 +96,7 @@ User-facing — start here if you want to **use** Libreta:
 | [`docs/site/index.md`](./docs/site/index.md) | Landing page — what Libreta is and isn't |
 | [`docs/site/getting-started.md`](./docs/site/getting-started.md) | Five-minute install & first page |
 | [`docs/site/faq.md`](./docs/site/faq.md) | Frequently asked questions |
+| [`docs/site/claude-desktop.md`](./docs/site/claude-desktop.md) | Read & write your wiki from Claude Desktop (MCP) |
 | [`docs/site/troubleshooting.md`](./docs/site/troubleshooting.md) | Symptoms → causes → fixes |
 
 These pages are written as a Libreta-flavoured markdown corpus on
