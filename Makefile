@@ -248,6 +248,9 @@ changelog-backfill: ## Reseed CHANGELOG.md from every git tag (one-off)
 #   4. commit VERSION+CHANGELOG, tag vX.Y.Z, deploy to DEPLOY_HOST
 # Then publish manually:  git push --follow-tags
 release: ## Cut a release: check commits → prompt LEVEL → build → commit+tag+deploy
+	@# Fail fast on TLS prerequisites BEFORE any irreversible work (build, version
+	@# bump, commit). When TLS_HOSTNAME is set, the local mkcert CA must exist.
+	@if [ -n "$(TLS_HOSTNAME)" ]; then $(MAKE) _tls-precheck; fi
 	@CL="cd $(BACKEND) && uv run python ../scripts/changelog.py"; \
 	echo "→ checking for unreleased commits"; \
 	if ! sh -c "$$CL --check"; then exit 0; fi; \
@@ -269,6 +272,7 @@ release: ## Cut a release: check commits → prompt LEVEL → build → commit+t
 # commit check, no bump, no changelog, no commit — for re-shipping a version or
 # deploying to a fresh host.
 release-current: ## Re-release the CURRENT VERSION as-is: build, tag, deploy (no bump/commit)
+	@if [ -n "$(TLS_HOSTNAME)" ]; then $(MAKE) _tls-precheck; fi
 	$(MAKE) build-prod
 	$(MAKE) _tag-and-deploy
 
