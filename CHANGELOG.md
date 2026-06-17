@@ -9,6 +9,12 @@ Entries are generated from [Conventional Commits](https://www.conventionalcommit
 by `scripts/changelog.py` at release time.
 
 
+## [2.6.0] - 2026-06-17
+
+### Added
+
+- **backend:** mount MCP endpoint at /mcp for Claude Desktop
+
 ## [2.5.0] - 2026-06-11
 
 ### Fixed
