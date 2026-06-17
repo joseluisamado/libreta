@@ -9,6 +9,12 @@ Entries are generated from [Conventional Commits](https://www.conventionalcommit
 by `scripts/changelog.py` at release time.
 
 
+## [2.7.2] - 2026-06-17
+
+### Fixed
+
+- **mcp:** 404 the whole /.well-known/ namespace, not just oauth-*
+
 ## [2.7.1] - 2026-06-17
 
 ### Fixed
