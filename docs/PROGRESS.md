@@ -14,6 +14,38 @@ Living document. Update as work progresses. Latest at the top.
 
 ---
 
+## 2026-06-17 — Deploy: automated HTTPS for LAN MCP via mkcert, wired into release
+
+**What**: Claude Desktop requires an `https://` (or `localhost`) MCP endpoint —
+the Custom Connector rejects plain `http://`, and `mcp-remote` refuses it
+without `--allow-http` (and that flag drops non-standard ports during OAuth
+discovery, so it's not a real fix). For LAN hostnames a public CA can't issue
+for (e.g. `wiki.lan`), added an mkcert + Caddy path and folded it into
+`make release` so TLS is automatic, on port **8091** (HTTPS on the same port the
+plain frontend used — not 443).
+
+**Added**:
+- `Caddyfile.mkcert.example` — serves a mounted leaf cert (`tls … cert/key`),
+  `auto_https off`, site address `<host>:8091`, reverse-proxies `frontend-prod`.
+- `docker-compose.mkcert.yml` — Caddy overlay mounting `./certs` +
+  `Caddyfile.mkcert`, port `${LIBRETA_HTTPS_PORT:-8091}`.
+- Makefile: `release`/`release-current` now depend on `_tls-ensure-leaf`, which
+  runs `_tls-precheck` (stop with install steps if the local mkcert CA is
+  missing) then checks the host for a valid leaf (`openssl x509 -checkend` +
+  `-checkhost`) and generates/installs one locally-signed if missing, expired,
+  or wrong-host. Deploy always uses the mkcert overlay so HTTPS persists across
+  releases. New vars `TLS_HOSTNAME`, `LIBRETA_HTTPS_PORT`; `setup-tls` provisions
+  the cert without a full release.
+- `.gitignore` — `/certs/`, `Caddyfile`, `Caddyfile.mkcert` (private key must
+  never be committed; certs are regenerable).
+- Docs: "HTTPS for a LAN deployment" in `docs/site/claude-desktop.md` (one-time
+  `mkcert -install` per client; release handles the rest; trust survives
+  redeploys/HW swaps because the CA lives on the client, not the box), DEPLOY
+  §7e, and troubleshooting entries for the "http not supported" / "Server
+  disconnected" and `421` cases.
+
+---
+
 ## 2026-06-17 — Fix: MCP `/mcp` rejected non-localhost Host (`421`)
 
 **What**: connecting Claude Desktop to the deployed `/mcp` (over the box's LAN

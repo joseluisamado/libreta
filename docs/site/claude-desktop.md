@@ -32,9 +32,22 @@ Claude picks the right tools on its own — you just ask in plain language.
 - A running Libreta instance with at least one **git source** added (the
   admin UI at `/-/admin`). If `list_sources` comes back empty, you have no
   sources configured yet.
-- The URL where Libreta is reachable. The MCP endpoint is that URL with
-  `/mcp` on the end — e.g. `http://localhost:8080/mcp`, or
-  `https://wiki.example.com/mcp` if you front it with TLS.
+- The URL where Libreta is reachable, with `/mcp` on the end.
+
+> **Claude Desktop requires `https://` (or `localhost`).** This is the part
+> that trips most people up. Both ways of connecting below refuse a plain
+> `http://` URL to a remote host:
+>
+> - The **Custom Connector** UI rejects it outright ("http is not supported").
+> - The **`mcp-remote`** bridge refuses `http://` unless you pass
+>   `--allow-http`, and even then mangles non-standard ports during its OAuth
+>   discovery step.
+>
+> So unless Libreta is at `http://localhost:<port>/mcp` (e.g. via an SSH
+> tunnel), you need an **HTTPS** endpoint. If your instance is on a LAN
+> hostname a public CA can't issue for (like `wiki.lan`), see
+> [HTTPS for a LAN deployment](#https-for-a-lan-deployment) below — it takes
+> about five minutes and you only do it once per client machine.
 
 > **Keep it on a network you trust.** The MCP endpoint is currently
 > **unauthenticated** — anyone who can reach `/mcp` can read and write your
@@ -59,7 +72,9 @@ everything in a config file.
 2. Click **Add custom connector**.
 3. Give it a name (e.g. `Libreta`) and paste your endpoint URL — your
    instance's address with `/mcp` on the end, e.g.
-   `http://localhost:8080/mcp`.
+   `https://wiki.lan:8091/mcp` (or `http://localhost:8080/mcp` if tunnelled
+   to localhost). **A remote `http://` URL will be rejected** — see the HTTPS
+   note above.
 4. Save. Open a new chat; Libreta's tools should appear (the tools/plug icon
    in the message box). Claude asks your permission the first time it uses a
    tool.
@@ -83,19 +98,97 @@ a small stdio↔HTTP bridge Claude Desktop launches. This needs
      "mcpServers": {
        "libreta": {
          "command": "npx",
-         "args": ["-y", "mcp-remote", "http://localhost:8080/mcp"]
+         "args": ["-y", "mcp-remote", "https://wiki.lan:8091/mcp"]
        }
      }
    }
    ```
 
-   Replace the URL with your instance's address. If you already have other
-   servers under `mcpServers`, add `libreta` alongside them.
+   Replace the URL with your instance's address. Use an `https://` URL (or
+   `http://localhost:…` if tunnelled) — `mcp-remote` refuses other `http://`
+   URLs without `--allow-http`, and that flag has trouble with non-standard
+   ports, so HTTPS is the reliable path. If you already have other servers
+   under `mcpServers`, add `libreta` alongside them.
 
 3. **Restart Claude Desktop.** Open a new chat — Libreta's tools should
    appear, and Claude will ask permission the first time it uses one.
 
 If the tools don't appear, see [Troubleshooting](#troubleshooting) below.
+
+## HTTPS for a LAN deployment
+
+Claude Desktop needs an `https://` endpoint (or `localhost`). If Libreta runs
+on a LAN box reached by a name a public certificate authority can't issue for
+— e.g. `wiki.lan` — you can't use Let's Encrypt. Instead, generate a
+locally-trusted certificate with [mkcert](https://github.com/FiloSottile/mkcert)
+and serve it through the bundled Caddy reverse proxy.
+
+The nice property of this approach: **you trust mkcert's CA once, and that
+trust survives Libreta redeployments — even a hardware replacement.** The CA
+lives on *your* machine, not in the deployment; the box only ever holds a leaf
+certificate, which is regenerable at any time. So you never have to re-trust
+anything when you rebuild or move the server.
+
+### One time, on each client machine
+
+Install mkcert and register its CA in your system trust store:
+
+```bash
+# macOS
+brew install mkcert
+mkcert -install
+```
+
+`mkcert -install` is what makes browsers and Claude Desktop trust certificates
+mkcert signs. You do this once per machine that will connect — not once per
+deployment.
+
+### TLS is handled by `make release`
+
+Once mkcert's CA is installed on your machine (above), **releases handle the
+certificate for you** — there's no separate TLS step to remember. Every
+`make release` / `make release-current`:
+
+1. Checks that mkcert and its CA exist on your machine. If not, it stops and
+   prints the `brew install mkcert` / `mkcert -install` steps — it won't deploy
+   a half-configured TLS setup.
+2. Checks the deployment host for a valid leaf certificate for
+   `TLS_HOSTNAME`. If it's missing, expired, or for the wrong hostname, it
+   generates a fresh one **locally** (signed by your CA — the one clients
+   trust) and copies it over.
+3. Brings the stack up **with the Caddy + mkcert overlay**, serving HTTPS on
+   port **8091** (the same port the plain-HTTP frontend used).
+
+So a normal release is all you need:
+
+```bash
+make release TLS_HOSTNAME=wiki.lan \
+    DEPLOY_HOST=user@wiki-host DEPLOY_PATH=/srv/libreta
+```
+
+`TLS_HOSTNAME`, `DEPLOY_HOST`, and `DEPLOY_PATH` can be set once in `local.mk`
+so you don't repeat them. Want HTTPS on a different port? Set
+`LIBRETA_HTTPS_PORT` (it must match the port in `Caddyfile.mkcert`'s site
+address). To provision/refresh the cert **without** a full release, run
+`make setup-tls`.
+
+After it finishes, Libreta is at `https://wiki.lan:8091/` and the MCP
+endpoint at `https://wiki.lan:8091/mcp`. Point Claude Desktop there.
+
+> The `certs/` directory and the generated `Caddyfile.mkcert` are gitignored —
+> per-deployment material, and the key must never be committed. They don't need
+> backing up: a release regenerates the leaf whenever it's missing. Only
+> mkcert's **CA**, on your client machine, matters — and that's already in your
+> trust store, independent of Libreta.
+
+### When you redeploy or replace hardware
+
+Just run `make release` (or `release-current`) again. It sees the new host has
+no valid cert and provisions one automatically. **No client-side change is
+needed**: your machine already trusts mkcert's CA, which signed the new leaf.
+This is the whole point of mkcert over Caddy's auto-generated internal CA
+(which would be reborn inside the deployment and force a re-trust on every
+client).
 
 ## Example prompts
 
@@ -165,6 +258,21 @@ trailing comma or missing brace silently disables the whole `mcpServers`
 section). Fully quit and reopen Claude Desktop after any config change. If
 the file path approach keeps fighting you, switch to the Custom Connector
 (Option A), which avoids the config-schema quirk entirely.
+
+**"http is not supported" (Custom Connector) or "Server disconnected"
+(`mcp-remote`).**
+Both mean Claude Desktop won't talk to a plain `http://` remote endpoint. The
+Custom Connector rejects it directly; `mcp-remote` exits with *"Non-HTTPS URLs
+are only allowed for localhost or when --allow-http is provided"*, which Claude
+surfaces as "Server disconnected." The fix is an HTTPS endpoint — see
+[HTTPS for a LAN deployment](#https-for-a-lan-deployment). (`--allow-http` is
+not a reliable workaround: it drops non-standard ports like `:8091` during its
+OAuth-discovery step and then fails to connect.)
+
+**`421 Misdirected Request` / "Invalid Host header" from `/mcp`.**
+The MCP transport's DNS-rebinding protection rejected your `Host` header. This
+is disabled in current Libreta builds; if you hit it, your backend is running
+an older image — rebuild and redeploy it.
 
 **`list_sources` returns nothing.**
 You haven't added a git source yet, or it's still cloning. Open Libreta's

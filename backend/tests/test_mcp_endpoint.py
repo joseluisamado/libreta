@@ -152,7 +152,8 @@ def test_mcp_accepts_foreign_host_header(mcp_url: str) -> None:
     build_mcp(); this guards against it silently coming back.
     """
     # mcp_url is the /mcp mount; POST to the trailing-slash transition target so
-    # we exercise the transport, not the 307 redirect.
+    # we exercise the transport, not the 307 redirect. Any non-localhost Host
+    # exercises the DNS-rebinding check; an arbitrary LAN-style name suffices.
     resp = httpx.post(
         mcp_url + "/",
         headers={

@@ -224,6 +224,22 @@ If you already run Nginx or Traefik on the host, skip the Caddy overlay
 and bring up only `docker-compose.yml` + `docker-compose.prod.yml`. Point
 your existing proxy at `localhost:${LIBRETA_HTTP_PORT}` (default `8080`).
 
+### 7e. TLS for a LAN-only hostname (mkcert)
+
+The Caddy overlay above uses public Let's Encrypt, which can't issue a
+certificate for a LAN-only name like `wiki.lan`. For those — common when
+you want Claude Desktop to reach `/mcp`, since it requires HTTPS — use the
+**mkcert overlay** instead (`docker-compose.mkcert.yml` + `Caddyfile.mkcert.example`),
+which serves a locally-trusted [mkcert](https://github.com/FiloSottile/mkcert)
+certificate on port 8091 (HTTPS on the same port the plain frontend used).
+
+This is wired into `make release`: install mkcert's CA once on your machine
+(`brew install mkcert && mkcert -install`), then every release checks the host
+for a valid leaf, generates/installs one if needed (signed by your CA), and
+deploys with the overlay. Set `TLS_HOSTNAME` (and optionally
+`LIBRETA_HTTPS_PORT`) in `local.mk`. The full walkthrough lives in
+[`docs/site/claude-desktop.md`](./site/claude-desktop.md#https-for-a-lan-deployment).
+
 ---
 
 ## 8. Backups

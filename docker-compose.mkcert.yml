@@ -1,0 +1,56 @@
+# Caddy + mkcert overlay — HTTPS for a LAN deployment using a locally-trusted
+# certificate, instead of public Let's Encrypt (docker-compose.caddy.yml).
+#
+# Use this when Libreta is reached by a LAN-only hostname (e.g. wiki.lan)
+# that a public CA cannot issue for — notably so Claude Desktop, which requires
+# HTTPS for remote MCP endpoints, can connect to https://<host>:8091/mcp.
+#
+# The certificate is generated with mkcert and mounted read-only; mkcert's CA is
+# trusted once per client machine and survives Libreta redeploys.
+#
+# Normally you don't invoke this overlay by hand: `make release` ensures the
+# leaf cert exists on the host and brings the stack up with this overlay (see
+# Makefile + docs/site/claude-desktop.md). To do it manually:
+#
+#   1. On a client machine, once:   mkcert -install
+#   2. On the host (or anywhere mkcert trusts), per deployment:
+#        mkdir -p certs
+#        mkcert -cert-file certs/cert.pem -key-file certs/key.pem wiki.lan
+#   3. Copy Caddyfile.mkcert.example to Caddyfile.mkcert and set the hostname.
+#   4. Bring up the stack with all three overlays:
+#
+#        VERSION=$(cat VERSION) docker compose \
+#            -f docker-compose.yml \
+#            -f docker-compose.prod.yml \
+#            -f docker-compose.mkcert.yml \
+#            up -d
+#
+# No named volume for certs: they are regenerable from mkcert's CA at any time,
+# so we bind-mount ./certs rather than persist them as precious state.
+services:
+  frontend-prod:
+    # Drop the host port — only Caddy is exposed.
+    ports: !reset []
+    expose:
+      - "80"
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    # Serve HTTPS on the same host port the plain-HTTP frontend used (8091 by
+    # default), so the URL stays https://<host>:8091 instead of moving to 443.
+    # The Caddyfile's site address must use the same port (see Caddyfile.mkcert).
+    ports:
+      - "${LIBRETA_HTTPS_PORT:-8091}:${LIBRETA_HTTPS_PORT:-8091}"
+      - "${LIBRETA_HTTPS_PORT:-8091}:${LIBRETA_HTTPS_PORT:-8091}/udp"  # HTTP/3
+    volumes:
+      - ./Caddyfile.mkcert:/etc/caddy/Caddyfile:ro
+      - ./certs:/etc/caddy/certs:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - frontend-prod
+
+volumes:
+  caddy-data:
+  caddy-config:
