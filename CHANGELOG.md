@@ -9,6 +9,12 @@ Entries are generated from [Conventional Commits](https://www.conventionalcommit
 by `scripts/changelog.py` at release time.
 
 
+## [2.7.1] - 2026-06-17
+
+### Fixed
+
+- **mcp:** 404 OAuth discovery paths so unauth MCP clients connect
+
 ## [2.7.0] - 2026-06-17
 
 ### Fixed
