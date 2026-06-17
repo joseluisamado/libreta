@@ -9,6 +9,12 @@ Entries are generated from [Conventional Commits](https://www.conventionalcommit
 by `scripts/changelog.py` at release time.
 
 
+## [2.6.1] - 2026-06-17
+
+### Fixed
+
+- **backend:** disable MCP DNS-rebinding protection for LAN access
+
 ## [2.6.0] - 2026-06-17
 
 ### Added
