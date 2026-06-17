@@ -9,6 +9,12 @@ Entries are generated from [Conventional Commits](https://www.conventionalcommit
 by `scripts/changelog.py` at release time.
 
 
+## [2.7.0] - 2026-06-17
+
+### Fixed
+
+- **release:** run TLS precheck before build, version bump, and commit
+
 ## [2.6.1] - 2026-06-17
 
 ### Fixed
