@@ -14,6 +14,25 @@ Living document. Update as work progresses. Latest at the top.
 
 ---
 
+## 2026-06-17 — Fix: MCP `/mcp` rejected non-localhost Host (`421`)
+
+**What**: connecting Claude Desktop to the deployed `/mcp` (over the box's LAN
+name) failed with `421 Misdirected Request` / "Invalid Host header". The
+streamable-HTTP transport enables DNS-rebinding protection by default, which
+`421`s any `Host` not on an allowlist that defaults to empty — so only localhost
+worked.
+
+**Fix**: `build_mcp` now passes
+`TransportSecuritySettings(enable_dns_rebinding_protection=False)`. The
+protection guards browser origins; `/mcp` is LAN/no-auth and not a browser
+surface, so disabling it beats maintaining an unknowable host allowlist. Added a
+regression test (`test_mcp_accepts_foreign_host_header`) that POSTs with a
+foreign Host and asserts no `421`. Also: Claude **Desktop** silently skips a
+`{"type","url"}` MCP entry (that form is Claude *Code*) — use the Custom
+Connector or the `npx … mcp-remote <url>` bridge, as the setup guide documents.
+
+---
+
 ## 2026-06-17 — Feature: MCP endpoint for Claude Desktop (read/write pages)
 
 **What**: Claude Desktop (and any MCP client) can now read and write wiki pages

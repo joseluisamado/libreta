@@ -15,6 +15,7 @@ import threading
 from collections.abc import Iterator
 from pathlib import Path
 
+import httpx
 import pygit2
 import pytest
 import uvicorn
@@ -140,3 +141,37 @@ async def _drive(url: str, repos_dir: Path) -> None:
 
 def test_mcp_endpoint_round_trip(mcp_url: str, repos_dir: Path) -> None:
     asyncio.run(_drive(mcp_url, repos_dir))
+
+
+def test_mcp_accepts_foreign_host_header(mcp_url: str) -> None:
+    """A non-localhost Host header must not be rejected.
+
+    The streamable-HTTP transport enables DNS-rebinding protection by default,
+    which 421s any Host not on an (empty by default) allowlist — breaking access
+    via mybox.lan, a Tailscale name, the raw IP, etc. We disable it in
+    build_mcp(); this guards against it silently coming back.
+    """
+    # mcp_url is the /mcp mount; POST to the trailing-slash transition target so
+    # we exercise the transport, not the 307 redirect.
+    resp = httpx.post(
+        mcp_url + "/",
+        headers={
+            "Host": "wiki.lan:8091",
+            "Content-Type": "application/json",
+            "Accept": "application/json, text/event-stream",
+        },
+        json={
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2025-03-26",
+                "capabilities": {},
+                "clientInfo": {"name": "probe", "version": "0"},
+            },
+        },
+        timeout=10,
+    )
+    # Pre-fix this returned 421 Misdirected Request ("Invalid Host header").
+    assert resp.status_code != 421, resp.text
+    assert resp.status_code == 200, resp.text

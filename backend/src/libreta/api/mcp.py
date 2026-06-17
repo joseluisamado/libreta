@@ -31,6 +31,7 @@ from collections.abc import Callable
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 
 from libreta.config import Settings
 from libreta.deps import get_settings
@@ -61,7 +62,19 @@ def build_mcp(settings_provider: Callable[[], Settings] = get_settings) -> FastM
     (the tools call storage directly, not via ``Depends``, so they would
     otherwise miss the override).
     """
-    mcp = FastMCP("libreta", streamable_http_path="/")
+    # The streamable-HTTP transport enables DNS-rebinding protection by default,
+    # which 421s any request whose Host header isn't on an allowlist (empty by
+    # default → only localhost works). Libreta is a self-hosted LAN appliance
+    # reached by arbitrary names/IPs (mybox.lan, a Tailscale name, the raw IP),
+    # so that check only breaks legitimate access. The protection guards browser
+    # origins; /mcp is already LAN/no-auth and not a browser surface, so disable
+    # it rather than maintain an unknowable host allowlist.
+    security = TransportSecuritySettings(enable_dns_rebinding_protection=False)
+    mcp = FastMCP(
+        "libreta",
+        streamable_http_path="/",
+        transport_security=security,
+    )
 
     @mcp.tool()
     async def list_sources() -> list[dict[str, str]]:
