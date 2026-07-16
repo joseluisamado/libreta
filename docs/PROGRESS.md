@@ -10,7 +10,36 @@ Living document. Update as work progresses. Latest at the top.
 
 **Current milestone**: M5 — v1.0 release ✅ (post-1.0 hardening pass shipped 2026-05-13)
 **Next milestone**: post-1.0 hardening / M6 (multi-user & auth)
-**Next action**: try the Gitea bulk-import against the homelab Gitea, then push tags.
+**Next action**: cut a release and deploy the MCP endpoint over LAN TLS
+(`make release-current TLS_HOSTNAME=<lan-name>`), then `claude mcp add`.
+
+---
+
+## 2026-07-16 — Merge: MCP endpoint + LAN HTTPS integrated into main
+
+**What**: Brought the parked `feat/mcp` work onto `main` via a `--no-ff` merge.
+This lands the streamable-HTTP MCP server at `/mcp` (tools: `list_sources`,
+`list_pages`, `read_page`, `write_page`), the `/.well-known/` 404 workarounds
+that let unauth MCP clients (Claude Desktop + Claude Code) connect over the LAN,
+and the opt-in mkcert/Caddy LAN HTTPS automation wired into `make release`.
+
+**Scope decision**: target clients are Claude Desktop *and* Claude Code, on a
+single-user LAN/Tailscale network — neither requires OAuth against the unauth
+streamable-HTTP server, so no auth work was needed. OAuth stays a future M6
+concern (only mandatory for claude.ai web/mobile connectors or public exposure).
+
+**Verified**: full backend pre-flight green on the merged tree — `ruff format`,
+`ruff check`, `mypy --strict` (28 files), `pytest` (151 passed, incl. the MCP
+round-trip test). Remote `main` was confirmed identical across origin/GitHub
+before merging; `feat/mcp` was local-only.
+
+**Deploy**: `make release-current TLS_HOSTNAME=<lan-name>` builds + serves `/mcp`
+over TLS at :8091, then `claude mcp add --transport http libreta
+https://<lan-name>:8091/mcp`. See `docs/site/claude-desktop.md`.
+
+**Note**: `scripts/changelog.py` counts with `git log --no-merges`, so a
+`--no-ff` merge commit alone won't trigger `make release` — this PROGRESS entry
+is the real non-merge commit that unblocks the release cut.
 
 ---
 
