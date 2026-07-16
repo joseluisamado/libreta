@@ -47,4 +47,11 @@ ENV PATH="/opt/venv/bin:$PATH" \
 WORKDIR /app
 EXPOSE 8080
 
-CMD ["uvicorn", "libreta.main:app", "--host", "0.0.0.0", "--port", "8080"]
+# --proxy-headers: honor X-Forwarded-Proto/-For from the fronting proxy (nginx,
+# and Caddy beyond it) so redirect URLs use the external scheme rather than the
+# internal http://…:8080. --forwarded-allow-ips="*" trusts those headers from any
+# source IP; safe because :8080 is only reachable inside the compose network,
+# never exposed directly. (Note: uvicorn can't reconstruct the external port from
+# forwarded headers — the /mcp trailing-slash redirect is normalized at nginx.)
+CMD ["uvicorn", "libreta.main:app", "--host", "0.0.0.0", "--port", "8080", \
+     "--proxy-headers", "--forwarded-allow-ips", "*"]
