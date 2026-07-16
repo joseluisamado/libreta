@@ -14,6 +14,90 @@ Living document. Update as work progresses. Latest at the top.
 
 ---
 
+## 2026-06-17 — Deploy: automated HTTPS for LAN MCP via mkcert, wired into release
+
+**What**: Claude Desktop requires an `https://` (or `localhost`) MCP endpoint —
+the Custom Connector rejects plain `http://`, and `mcp-remote` refuses it
+without `--allow-http` (and that flag drops non-standard ports during OAuth
+discovery, so it's not a real fix). For LAN hostnames a public CA can't issue
+for (e.g. `wiki.lan`), added an mkcert + Caddy path and folded it into
+`make release` so TLS is automatic, on port **8091** (HTTPS on the same port the
+plain frontend used — not 443).
+
+**Added**:
+- `Caddyfile.mkcert.example` — serves a mounted leaf cert (`tls … cert/key`),
+  `auto_https off`, site address `<host>:8091`, reverse-proxies `frontend-prod`.
+- `docker-compose.mkcert.yml` — Caddy overlay mounting `./certs` +
+  `Caddyfile.mkcert`, port `${LIBRETA_HTTPS_PORT:-8091}`.
+- Makefile: `release`/`release-current` now depend on `_tls-ensure-leaf`, which
+  runs `_tls-precheck` (stop with install steps if the local mkcert CA is
+  missing) then checks the host for a valid leaf (`openssl x509 -checkend` +
+  `-checkhost`) and generates/installs one locally-signed if missing, expired,
+  or wrong-host. Deploy always uses the mkcert overlay so HTTPS persists across
+  releases. New vars `TLS_HOSTNAME`, `LIBRETA_HTTPS_PORT`; `setup-tls` provisions
+  the cert without a full release.
+- `.gitignore` — `/certs/`, `Caddyfile`, `Caddyfile.mkcert` (private key must
+  never be committed; certs are regenerable).
+- Docs: "HTTPS for a LAN deployment" in `docs/site/claude-desktop.md` (one-time
+  `mkcert -install` per client; release handles the rest; trust survives
+  redeploys/HW swaps because the CA lives on the client, not the box), DEPLOY
+  §7e, and troubleshooting entries for the "http not supported" / "Server
+  disconnected" and `421` cases.
+
+---
+
+## 2026-06-17 — Fix: MCP `/mcp` rejected non-localhost Host (`421`)
+
+**What**: connecting Claude Desktop to the deployed `/mcp` (over the box's LAN
+name) failed with `421 Misdirected Request` / "Invalid Host header". The
+streamable-HTTP transport enables DNS-rebinding protection by default, which
+`421`s any `Host` not on an allowlist that defaults to empty — so only localhost
+worked.
+
+**Fix**: `build_mcp` now passes
+`TransportSecuritySettings(enable_dns_rebinding_protection=False)`. The
+protection guards browser origins; `/mcp` is LAN/no-auth and not a browser
+surface, so disabling it beats maintaining an unknowable host allowlist. Added a
+regression test (`test_mcp_accepts_foreign_host_header`) that POSTs with a
+foreign Host and asserts no `421`. Also: Claude **Desktop** silently skips a
+`{"type","url"}` MCP entry (that form is Claude *Code*) — use the Custom
+Connector or the `npx … mcp-remote <url>` bridge, as the setup guide documents.
+
+---
+
+## 2026-06-17 — Feature: MCP endpoint for Claude Desktop (read/write pages)
+
+**What**: Claude Desktop (and any MCP client) can now read and write wiki pages
+over an [MCP](https://modelcontextprotocol.io) server mounted **inside** the
+backend at `/mcp` (streamable-HTTP transport). It ships in the existing backend
+container and deploys through the normal pipeline — no separate service. Tools:
+`list_sources`, `list_pages`, `read_page`, `write_page` (upsert = create or
+edit). An earlier stdio-sidecar prototype (`mcp-server/`) was replaced by this
+in-process design after confirming the sidecar would not be built/deployed.
+
+**How**:
+- `backend/src/libreta/api/mcp.py` — `build_mcp(settings_provider)` factory that
+  registers the four tools; they call the storage layer directly (no HTTP
+  self-call) and go through the normal save lifecycle, so every `write_page`
+  commits + enqueues a push (R3 holds).
+- `backend/src/libreta/main.py` — a fresh `FastMCP` per `create_app()` (its
+  session manager is single-use), stashed on `app.state`; the manager runs via
+  the app lifespan; mounted at `/mcp` with `streamable_http_path="/"`.
+- `backend/pyproject.toml` — added `mcp>=1.2` to runtime deps.
+- `frontend/nginx.prod.conf` — `location ^~ /mcp` with streaming-friendly proxy
+  settings (`/mcp` is outside `/api/`, and the transport streams).
+- `backend/tests/test_mcp_endpoint.py` — full round-trip against a real loopback
+  server (initialize → list → read → edit + create), asserting writes land and
+  commit.
+
+**Scope / caveats**: LAN/no-auth (pre-M6) — `/mcp` is unauthenticated, don't
+expose it to an untrusted network without auth in front. Page writes are
+last-writer-wins (no revision/ETag); `read_page` mitigates blind overwrites but
+is not a lock. See ARCHITECTURE *HTTP API → MCP* and the two MCP traps in
+CLAUDE.md §9.
+
+---
+
 ## 2026-06-11 — Fix: tables silently destroyed on save (`[table]` placeholder)
 
 **What**: editing a table in the WYSIWYG editor could replace the whole table

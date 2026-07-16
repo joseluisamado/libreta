@@ -20,7 +20,8 @@
         compute-tags compute-tags-dry \
         version version-bump version-set sync-version \
         changelog changelog-backfill \
-        build-prod build-prod-frontend release release-current _tag-and-deploy
+        build-prod build-prod-frontend release release-current _tag-and-deploy \
+        setup-tls _tls-require-hostname _tls-precheck _tls-ensure-leaf
 
 BACKEND   := backend
 FRONTEND  := frontend
@@ -43,6 +44,18 @@ DEPLOY_HOST ?= user@homelab
 # step runs `docker compose up -d` there to recreate containers from the image
 # just loaded (otherwise the host keeps running the previous container).
 DEPLOY_PATH ?= /home/user
+
+# Hostname for the LAN HTTPS cert that releases generate with mkcert (e.g.
+# wiki.lan). Must match the URL clients use
+# (https://$(TLS_HOSTNAME):$(LIBRETA_HTTPS_PORT)/). Empty by default — set it in
+# local.mk or on the command line (`make release TLS_HOSTNAME=wiki.lan`) to opt
+# into HTTPS. When unset, releases deploy plain HTTP and skip the TLS steps.
+TLS_HOSTNAME ?=
+
+# Host port Caddy serves HTTPS on. Defaults to 8091 — the same port the plain
+# frontend used — so enabling TLS doesn't change the URL's port. Must match the
+# port in Caddyfile.mkcert's site address and LIBRETA_HTTPS_PORT in the overlay.
+LIBRETA_HTTPS_PORT ?= 8091
 
 # Compose invocation: dev stacks layer docker-compose.dev.yml on top of the
 # base file so the api service gets a source bind-mount and uvicorn --reload.
@@ -235,6 +248,9 @@ changelog-backfill: ## Reseed CHANGELOG.md from every git tag (one-off)
 #   4. commit VERSION+CHANGELOG, tag vX.Y.Z, deploy to DEPLOY_HOST
 # Then publish manually:  git push --follow-tags
 release: ## Cut a release: check commits → prompt LEVEL → build → commit+tag+deploy
+	@# Fail fast on TLS prerequisites BEFORE any irreversible work (build, version
+	@# bump, commit). When TLS_HOSTNAME is set, the local mkcert CA must exist.
+	@if [ -n "$(TLS_HOSTNAME)" ]; then $(MAKE) _tls-precheck; fi
 	@CL="cd $(BACKEND) && uv run python ../scripts/changelog.py"; \
 	echo "→ checking for unreleased commits"; \
 	if ! sh -c "$$CL --check"; then exit 0; fi; \
@@ -256,12 +272,77 @@ release: ## Cut a release: check commits → prompt LEVEL → build → commit+t
 # commit check, no bump, no changelog, no commit — for re-shipping a version or
 # deploying to a fresh host.
 release-current: ## Re-release the CURRENT VERSION as-is: build, tag, deploy (no bump/commit)
+	@if [ -n "$(TLS_HOSTNAME)" ]; then $(MAKE) _tls-precheck; fi
 	$(MAKE) build-prod
 	$(MAKE) _tag-and-deploy
 
+setup-tls: _tls-require-hostname _tls-ensure-leaf ## Provision the LAN HTTPS cert on DEPLOY_HOST (set TLS_HOSTNAME), no deploy
+	@echo "TLS material is in place on $(DEPLOY_HOST). A release will serve https://$(TLS_HOSTNAME):$(LIBRETA_HTTPS_PORT)/."
+
+# HTTPS is opt-in: it requires TLS_HOSTNAME. Targets that touch certs depend on
+# this so they fail loudly (not silently with a wrong hostname) when it's unset.
+_tls-require-hostname:
+	@if [ -z "$(TLS_HOSTNAME)" ]; then \
+	  echo "✗ TLS_HOSTNAME is not set. Set it to your LAN hostname to enable HTTPS,"; \
+	  echo "  e.g. in local.mk:   TLS_HOSTNAME := wiki.lan"; \
+	  echo "  or on the command line:   make setup-tls TLS_HOSTNAME=wiki.lan"; \
+	  exit 1; \
+	fi
+
+# Verify this machine has mkcert AND its CA installed. The leaf must be signed by
+# the CA that clients already trust, so the CA living here (not on the host) is
+# what lets the host be rebuilt/replaced without re-trusting on clients. Stops
+# with instructions rather than guessing.
+_tls-precheck: _tls-require-hostname
+	@if ! command -v mkcert >/dev/null; then \
+	  echo "✗ mkcert not found on this machine. To enable HTTPS for $(TLS_HOSTNAME):"; \
+	  echo "    brew install mkcert      # (or your platform's package)"; \
+	  echo "    mkcert -install          # trust the CA in your system + browsers"; \
+	  echo "  then re-run. See docs/site/claude-desktop.md."; \
+	  exit 1; \
+	fi
+	@if [ ! -f "$$(mkcert -CAROOT)/rootCA.pem" ]; then \
+	  echo "✗ mkcert CA not generated yet. Run once on this machine:"; \
+	  echo "    mkcert -install"; \
+	  echo "  then re-run. (This is the CA your clients will trust.)"; \
+	  exit 1; \
+	fi
+
+# Ensure DEPLOY_HOST has a valid leaf for TLS_HOSTNAME. Regenerate + install when
+# the cert is missing, expired (within 24h), or doesn't cover the hostname.
+# Always (re)installs the Caddyfile + overlay so the host config matches the repo.
+_tls-ensure-leaf: _tls-precheck
+	@echo "→ checking $(DEPLOY_HOST) for a valid leaf cert for $(TLS_HOSTNAME)"
+	@need=1; \
+	if ssh $(DEPLOY_HOST) "test -f $(DEPLOY_PATH)/certs/cert.pem" 2>/dev/null; then \
+	  if ssh $(DEPLOY_HOST) "openssl x509 -in $(DEPLOY_PATH)/certs/cert.pem -checkend 86400 -noout && openssl x509 -in $(DEPLOY_PATH)/certs/cert.pem -noout -checkhost $(TLS_HOSTNAME)" >/dev/null 2>&1; then \
+	    echo "  ✓ valid cert already present — keeping it"; need=0; \
+	  else \
+	    echo "  cert present but expired or wrong hostname — regenerating"; \
+	  fi; \
+	else \
+	  echo "  no cert on host — generating"; \
+	fi; \
+	if [ "$$need" = 1 ]; then \
+	  tmp=$$(mktemp -d); \
+	  mkcert -cert-file "$$tmp/cert.pem" -key-file "$$tmp/key.pem" "$(TLS_HOSTNAME)"; \
+	  ssh $(DEPLOY_HOST) "mkdir -p $(DEPLOY_PATH)/certs"; \
+	  scp -q "$$tmp/cert.pem" "$$tmp/key.pem" "$(DEPLOY_HOST):$(DEPLOY_PATH)/certs/"; \
+	  rm -rf "$$tmp"; \
+	  echo "  ✓ leaf generated (your CA) and installed"; \
+	fi
+	@# Fill the Caddyfile template's tokens from TLS_HOSTNAME / LIBRETA_HTTPS_PORT
+	@# and push it; keeps host config in sync with the repo every time, cheaply.
+	@sed -e 's/__TLS_HOSTNAME__/$(TLS_HOSTNAME)/g' -e 's/__HTTPS_PORT__/$(LIBRETA_HTTPS_PORT)/g' Caddyfile.mkcert.example \
+	  | ssh $(DEPLOY_HOST) "cat > $(DEPLOY_PATH)/Caddyfile.mkcert"
+	@scp -q docker-compose.mkcert.yml "$(DEPLOY_HOST):$(DEPLOY_PATH)/"
+
 # Shared tail: tag the current VERSION, ship the images to DEPLOY_HOST, and
-# recreate the running containers there from the freshly-loaded image.
+# recreate the running containers. When TLS_HOSTNAME is set, ensure the cert is
+# present and deploy with the mkcert + Caddy overlay (HTTPS); otherwise deploy
+# plain HTTP as before.
 _tag-and-deploy:
+	@if [ -n "$(TLS_HOSTNAME)" ]; then $(MAKE) _tls-ensure-leaf; fi
 	@new=$$(cat VERSION); \
 	echo "→ tagging git as v$$new"; \
 	git tag -a "v$$new" -m "release v$$new" || echo "  (skipped: already tagged?)"
@@ -269,8 +350,18 @@ _tag-and-deploy:
 	echo "→ deploying images to $(DEPLOY_HOST) via ssh"; \
 	docker save libreta-api:$$new libreta-api:latest libreta-frontend:$$new libreta-frontend:latest \
 	  | ssh $(DEPLOY_HOST) docker load
-	@echo "→ recreating containers on $(DEPLOY_HOST) ($(DEPLOY_PATH))"; \
-	ssh $(DEPLOY_HOST) "cd $(DEPLOY_PATH) && docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d"
+	@if [ -n "$(TLS_HOSTNAME)" ]; then \
+	  echo "→ recreating containers on $(DEPLOY_HOST) ($(DEPLOY_PATH)) with HTTPS overlay"; \
+	  ssh $(DEPLOY_HOST) "cd $(DEPLOY_PATH) && LIBRETA_HTTPS_PORT=$(LIBRETA_HTTPS_PORT) docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.mkcert.yml up -d"; \
+	else \
+	  echo "→ recreating containers on $(DEPLOY_HOST) ($(DEPLOY_PATH))"; \
+	  ssh $(DEPLOY_HOST) "cd $(DEPLOY_PATH) && docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d"; \
+	fi
 	@echo ""
-	@echo "Release v$$(cat VERSION) deployed and live on $(DEPLOY_HOST)."
+	@if [ -n "$(TLS_HOSTNAME)" ]; then \
+	  echo "Release v$$(cat VERSION) deployed and live: https://$(TLS_HOSTNAME):$(LIBRETA_HTTPS_PORT)/"; \
+	  echo "MCP endpoint: https://$(TLS_HOSTNAME):$(LIBRETA_HTTPS_PORT)/mcp"; \
+	else \
+	  echo "Release v$$(cat VERSION) deployed and live on $(DEPLOY_HOST)."; \
+	fi
 	@echo "Run: git push --follow-tags"

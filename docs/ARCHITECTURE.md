@@ -370,6 +370,32 @@ with embedded mxfile XML. POST creates, PUT-by-filename overwrites. There is no 
 | GET    | `/readyz`   | Readiness (repo accessible, index loaded)        |
 | GET    | `/info`     | Version, build, and `meta_dir` metadata          |
 
+### MCP (`/mcp`, outside `/api/v1`)
+
+An [MCP](https://modelcontextprotocol.io) server mounted **inside** the FastAPI
+app at `/mcp` (streamable-HTTP transport), letting MCP clients — notably Claude
+Desktop — read and write wiki pages. It is not a separate service; it ships in
+the same container and deploys through the existing pipeline. The session
+manager is started/stopped from the app lifespan; a fresh `FastMCP` is built per
+`create_app()` because that manager is single-use (see `api/mcp.py`).
+
+The tools call the storage layer directly (in-process) and go through the same
+save lifecycle as the REST handlers — every `write_page` commits to the source
+repo and enqueues a push (R3 holds). Tools: `list_sources`, `list_pages`,
+`read_page`, `write_page` (upsert: create **or** edit).
+
+Scope is **LAN/no-auth** (Libreta's pre-M6 state): the MCP transport is
+unauthenticated, so `/mcp` must not be exposed to an untrusted network without
+auth in front. Page writes are last-writer-wins (no revision/ETag).
+
+The streamable-HTTP transport's **DNS-rebinding protection is disabled**
+(`TransportSecuritySettings(enable_dns_rebinding_protection=False)` in
+`build_mcp`). Left on (the default), it `421`s any request whose `Host` header
+isn't on an allowlist that defaults to empty — so reaching Libreta by its LAN
+name, a Tailscale name, or a raw IP fails. That protection guards browser
+origins; `/mcp` is already LAN/no-auth and not a browser surface, so disabling
+it is the right trade rather than maintaining an unknowable host allowlist.
+
 ## Frontend
 
 ### Routes (Vue Router)

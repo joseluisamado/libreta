@@ -13,3 +13,17 @@ DEPLOY_HOST = user@homelab
 # the new image, the release recreates the stack with `docker compose up -d`
 # there. Defaults to /home/user; override if your host differs.
 DEPLOY_PATH = /home/user
+
+# --- LAN HTTPS (optional) ---
+# Set TLS_HOSTNAME to opt into HTTPS via mkcert + Caddy. When set, `make release`
+# / `make setup-tls` generate a leaf cert locally (signed by your mkcert CA — run
+# `mkcert -install` once), copy it + the Caddyfile + overlay to the host, and
+# deploy behind Caddy. Leave it unset to deploy plain HTTP as before.
+# Required for Claude Desktop's MCP endpoint (it needs HTTPS). See
+# docs/site/claude-desktop.md.
+#TLS_HOSTNAME = wiki.lan
+
+# Host port Caddy serves HTTPS on (default 8091 — same port the plain frontend
+# used, so the URL's port doesn't change). Must match Caddyfile.mkcert's site
+# address; the release substitutes it for you.
+#LIBRETA_HTTPS_PORT = 8091

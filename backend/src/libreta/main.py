@@ -1,7 +1,7 @@
 import asyncio
 import contextlib
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse
 
 from libreta import __version__
 from libreta.api import search, sources as sources_api, system, watch
+from libreta.api.mcp import build_mcp
 from libreta.config import Settings
 from libreta.deps import get_settings
 from libreta.errors import LibretaError
@@ -41,7 +42,7 @@ async def _startup_sources_sync(settings: Settings) -> None:
 
 
 @asynccontextmanager
-async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
 
     # Defer reindex and source sync into background tasks so the HTTP server
@@ -68,7 +69,12 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         )
     )
 
-    yield
+    # The MCP streamable-HTTP transport runs a session manager that must be
+    # started/stopped via its own lifespan; chain it in here so the /mcp mount
+    # works. (Without this the session manager task group never starts and
+    # every MCP request 500s.) The instance is the one create_app() mounted.
+    async with app.state.mcp.session_manager.run():
+        yield
 
     for t in (reindex_task, startup_sync_task, push_task, sync_task):
         t.cancel()
@@ -106,6 +112,20 @@ def create_app() -> FastAPI:
     app.include_router(search.router, prefix="/api/v1", tags=["search"])
     app.include_router(watch.router, prefix="/api/v1", tags=["watch"])
     app.include_router(sources_api.router, prefix="/api/v1", tags=["sources"])
+
+    # Mount the MCP streamable-HTTP transport at /mcp (session manager started in
+    # lifespan above). Claude Desktop and other MCP clients connect here. A fresh
+    # instance per app, stashed on app.state so lifespan can run its session
+    # manager — the manager is single-use, so the module-level singleton would
+    # break the second create_app() (e.g. in tests). The settings provider routes
+    # through dependency_overrides so MCP tools see the same temp dirs as the
+    # REST handlers under test (they call storage directly, not via Depends).
+    def _mcp_settings() -> Settings:
+        provider: Callable[[], Settings] = app.dependency_overrides.get(get_settings, get_settings)
+        return provider()
+
+    app.state.mcp = build_mcp(_mcp_settings)
+    app.mount("/mcp", app.state.mcp.streamable_http_app())
 
     return app
 

@@ -9,6 +9,36 @@ Entries are generated from [Conventional Commits](https://www.conventionalcommit
 by `scripts/changelog.py` at release time.
 
 
+## [2.7.2] - 2026-06-17
+
+### Fixed
+
+- **mcp:** 404 the whole /.well-known/ namespace, not just oauth-*
+
+## [2.7.1] - 2026-06-17
+
+### Fixed
+
+- **mcp:** 404 OAuth discovery paths so unauth MCP clients connect
+
+## [2.7.0] - 2026-06-17
+
+### Fixed
+
+- **release:** run TLS precheck before build, version bump, and commit
+
+## [2.6.1] - 2026-06-17
+
+### Fixed
+
+- **backend:** disable MCP DNS-rebinding protection for LAN access
+
+## [2.6.0] - 2026-06-17
+
+### Added
+
+- **backend:** mount MCP endpoint at /mcp for Claude Desktop
+
 ## [2.5.0] - 2026-06-11
 
 ### Fixed

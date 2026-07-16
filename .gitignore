@@ -34,3 +34,9 @@ frontend/.pnpm-store/
 # Local Makefile overrides (DEPLOY_HOST, etc.) — see local.mk.example
 local.mk
 docker-compose.dev.local.yml
+
+# Per-deployment HTTPS material (mkcert leaf cert/key + the filled-in
+# Caddyfile). Never commit private keys; certs are regenerable from mkcert's CA.
+/certs/
+Caddyfile
+Caddyfile.mkcert
