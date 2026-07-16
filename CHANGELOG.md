@@ -9,6 +9,12 @@ Entries are generated from [Conventional Commits](https://www.conventionalcommit
 by `scripts/changelog.py` at release time.
 
 
+## [2.9.0] - 2026-07-16
+
+### Fixed
+
+- **mcp:** correct /mcp trailing-slash redirect behind the proxy
+
 ## [2.8.0] - 2026-07-16
 
 ### Documentation
