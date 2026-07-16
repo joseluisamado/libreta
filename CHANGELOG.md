@@ -9,6 +9,12 @@ Entries are generated from [Conventional Commits](https://www.conventionalcommit
 by `scripts/changelog.py` at release time.
 
 
+## [2.8.0] - 2026-07-16
+
+### Documentation
+
+- **progress:** record MCP + LAN HTTPS merge into main
+
 ## [2.7.2] - 2026-06-17
 
 ### Fixed
