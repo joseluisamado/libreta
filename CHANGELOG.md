@@ -9,6 +9,12 @@ Entries are generated from [Conventional Commits](https://www.conventionalcommit
 by `scripts/changelog.py` at release time.
 
 
+## [2.11.4] - 2026-07-17
+
+### Fixed
+
+- **sidebar:** stop refetch from collapsing expanded subfolders
+
 ## [2.11.3] - 2026-07-17
 
 ### Fixed
