@@ -9,6 +9,12 @@ Entries are generated from [Conventional Commits](https://www.conventionalcommit
 by `scripts/changelog.py` at release time.
 
 
+## [2.11.3] - 2026-07-17
+
+### Fixed
+
+- **sidebar:** preserve expanded folders across tree reload
+
 ## [2.11.2] - 2026-07-17
 
 ### Changed
