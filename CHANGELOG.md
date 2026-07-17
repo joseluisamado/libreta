@@ -9,6 +9,12 @@ Entries are generated from [Conventional Commits](https://www.conventionalcommit
 by `scripts/changelog.py` at release time.
 
 
+## [2.10.0] - 2026-07-17
+
+### Added
+
+- **storage:** sidebar ordering via frontmatter `weight`
+
 ## [2.9.0] - 2026-07-16
 
 ### Fixed
