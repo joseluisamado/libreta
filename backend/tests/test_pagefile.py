@@ -4,7 +4,14 @@ from pathlib import Path
 
 import pytest
 
-from libreta.storage.pagefile import _classify_other, _read_webloc_url, walk_children
+from libreta.storage.pagefile import (
+    _as_weight,
+    _classify_other,
+    _read_webloc_url,
+    read_page_file,
+    walk_children,
+    write_page_file,
+)
 
 _WEBLOC_XML = (
     '<?xml version="1.0" encoding="UTF-8"?>\n'
@@ -159,3 +166,158 @@ def test_previewable_files_are_children_not_other_files(tmp_path: Path) -> None:
 
     # Only the genuinely non-previewable binary remains in other_files.
     assert {o.name for o in other} == {"archive.zip"}
+
+
+# ---------------------------------------------------------------------------
+# Frontmatter round-trip: unknown keys must survive a write
+# ---------------------------------------------------------------------------
+
+
+def test_write_preserves_unknown_frontmatter_keys(tmp_path: Path) -> None:
+    """A key Libreta doesn't model (e.g. ``weight``, arbitrary user keys) must
+    survive a write. This is the contract the sidebar-``weight`` feature relies
+    on: without it, adding ``weight`` to a page and later editing it through
+    Libreta would silently drop the ordering (ARCHITECTURE.md: unknown keys are
+    preserved on roundtrip)."""
+    (tmp_path / "foo.md").write_text(
+        "---\ntitle: Foo\nweight: 20\ncustom_key: keepme\n---\nOriginal body\n"
+    )
+
+    write_page_file(tmp_path, "foo.md", "Edited body")
+
+    page = read_page_file(tmp_path, "foo.md")
+    assert page.body == "Edited body"
+    assert page.meta.weight == 20
+    # The unmodelled key is still on disk (read back through the raw frontmatter).
+    import frontmatter
+
+    meta = frontmatter.load(tmp_path / "foo.md").metadata
+    assert meta["custom_key"] == "keepme"
+    assert meta["weight"] == 20
+
+
+def test_read_surfaces_weight(tmp_path: Path) -> None:
+    (tmp_path / "p.md").write_text("---\ntitle: P\nweight: 30\n---\n# P\n")
+    assert read_page_file(tmp_path, "p.md").meta.weight == 30
+
+
+def test_read_absent_weight_is_none(tmp_path: Path) -> None:
+    (tmp_path / "p.md").write_text("---\ntitle: P\n---\n# P\n")
+    assert read_page_file(tmp_path, "p.md").meta.weight is None
+
+
+# ---------------------------------------------------------------------------
+# weight coercion (_as_weight): malformed input must degrade to None, not throw
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (20, 20),
+        (0, 0),
+        (-5, -5),  # negative is allowed: sorts ahead of positives ("pin to top")
+        ("30", 30),  # numeric string from YAML
+        ("  40  ", 40),  # surrounding whitespace tolerated
+        (None, None),  # absent
+        ("notanint", None),  # unparseable → treated as absent
+        ("", None),
+        (1.5, None),  # float is not an int weight → treated as absent
+        (True, None),  # bool rejected (YAML true/false are int subclasses)
+        (False, None),
+        ([1, 2], None),  # nonsense type → absent, not a crash
+    ],
+)
+def test_as_weight_coercion(value: object, expected: int | None) -> None:
+    assert _as_weight(value) == expected
+
+
+# ---------------------------------------------------------------------------
+# Sidebar ordering by weight
+# ---------------------------------------------------------------------------
+
+
+def _write_page(dir_path: Path, name: str, weight: object = None) -> None:
+    fm = "---\ntitle: " + name
+    if weight is not None:
+        fm += f"\nweight: {weight}"
+    fm += "\n---\n# " + name + "\n"
+    (dir_path / f"{name}.md").write_text(fm)
+
+
+def _order(tmp_path: Path) -> list[str]:
+    nodes, _ = walk_children(tmp_path, "")
+    return [n.filename for n in nodes]
+
+
+def test_order_all_weighted_beats_filename_sort(tmp_path: Path) -> None:
+    """The motivating case: a pedagogical sequence whose filenames sort wrong.
+    ``callable_protocol_and_call`` must land last (weight 60), not second."""
+    for name, w in [
+        ("args_and_kwargs", 10),
+        ("closures_and_free_variables", 20),
+        ("decorators", 30),
+        ("functools", 40),
+        ("lambda_functions", 50),
+        ("callable_protocol_and_call", 60),
+    ]:
+        _write_page(tmp_path, name, w)
+
+    assert _order(tmp_path) == [
+        "args_and_kwargs.md",
+        "closures_and_free_variables.md",
+        "decorators.md",
+        "functools.md",
+        "lambda_functions.md",
+        "callable_protocol_and_call.md",
+    ]
+
+
+def test_order_none_weighted_is_unchanged_filename_sort(tmp_path: Path) -> None:
+    """A folder with no weights must look exactly as it does today: pure
+    case-folded filename order. This is what makes folder-by-folder adoption
+    safe — an untouched folder does not visibly change."""
+    for name in ["banana", "Apple", "cherry"]:
+        _write_page(tmp_path, name)
+
+    # casefold sort: Apple, banana, cherry
+    assert _order(tmp_path) == ["Apple.md", "banana.md", "cherry.md"]
+
+
+def test_order_mixed_weighted_first_then_alphabetical(tmp_path: Path) -> None:
+    """Documented mixed-folder rule: weighted pages first in weight order, then
+    unweighted pages alphabetically."""
+    _write_page(tmp_path, "zzz", 5)  # weighted
+    _write_page(tmp_path, "aaa", 15)  # weighted
+    _write_page(tmp_path, "yankee")  # unweighted
+    _write_page(tmp_path, "bravo")  # unweighted
+
+    assert _order(tmp_path) == ["zzz.md", "aaa.md", "bravo.md", "yankee.md"]
+
+
+def test_order_duplicate_weights_break_by_filename(tmp_path: Path) -> None:
+    """Equal weights are not an error; they tie-break by filename, stably."""
+    _write_page(tmp_path, "ccc", 10)
+    _write_page(tmp_path, "aaa", 10)
+    _write_page(tmp_path, "bbb", 20)
+
+    assert _order(tmp_path) == ["aaa.md", "ccc.md", "bbb.md"]
+
+
+def test_order_malformed_weight_treated_as_absent(tmp_path: Path) -> None:
+    """A malformed weight must not throw or reorder unrelated pages — the page
+    falls back to the unweighted (filename) bucket."""
+    _write_page(tmp_path, "good", 10)
+    _write_page(tmp_path, "broken", "notanint")  # malformed → absent
+    _write_page(tmp_path, "plain")  # genuinely absent
+
+    # good (weighted) first; broken + plain fall to alphabetical.
+    assert _order(tmp_path) == ["good.md", "broken.md", "plain.md"]
+
+
+def test_order_negative_weight_pins_to_top(tmp_path: Path) -> None:
+    _write_page(tmp_path, "intro", -10)
+    _write_page(tmp_path, "middle", 10)
+    _write_page(tmp_path, "outro", 20)
+
+    assert _order(tmp_path) == ["intro.md", "middle.md", "outro.md"]

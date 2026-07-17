@@ -15,6 +15,40 @@ Living document. Update as work progresses. Latest at the top.
 
 ---
 
+## 2026-07-17 — Sidebar ordering via a frontmatter `weight` key
+
+**What**: A page can declare its sidebar position with an integer `weight` in
+frontmatter, decoupling navigation order from filename. Folder children now sort
+weighted-first (ascending), then unweighted by filename; ties break by filename.
+Absent `weight` reproduces the exact pre-feature filename order, so adoption is
+folder-by-folder with no big-bang migration. Convention: leave gaps (10, 20, 30).
+
+**Latent bug fixed first**: `write_page_file` was rebuilding frontmatter from
+only the keys Libreta models (title/created/updated/tags), silently dropping
+every unknown key — directly contradicting ARCHITECTURE.md's "unknown keys are
+preserved on roundtrip" contract. Confirmed empirically (a `weight`/`custom_key`
+evaporated on the next save) before touching the sort. Now the whole existing
+frontmatter dict is copied forward and only managed keys are overridden — so
+`weight` survives edits through Libreta and the MCP `write_page` tool. Without
+this, the feature would have looked flaky rather than the writer being lossy.
+
+**Changes**: `pagefile.parse_meta` parses `weight` (malformed/bool/float →
+absent, never throws); new `read_weight` + `sidebar_sort_key` helpers; the single
+`_build_tree` sort site keys on `(weight is None, weight or 0, filename)`.
+`PageMeta`/`PageNode` (and the frontend `types.ts` mirrors) gained `weight`.
+
+**Verified**: backend pre-flight green — `ruff format`, `ruff check`,
+`mypy --strict` (28 files), `pytest` (172 passed; +21 new covering all-weighted,
+none, mixed, duplicate, malformed, negative, and the round-trip preservation).
+Frontend `typecheck` + `lint` green. Doc rule written in ARCHITECTURE.md under
+"Page format → `weight`".
+
+**Out of scope (deliberate)**: backfilling weights across the wiki — the
+python-basics/python-reference folders get weighted afterwards from their READMEs;
+per-folder manifest (`_category_.json`) not pursued.
+
+---
+
 ## 2026-07-16 — Merge: MCP endpoint + LAN HTTPS integrated into main
 
 **What**: Brought the parked `feat/mcp` work onto `main` via a `--no-ff` merge.

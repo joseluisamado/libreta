@@ -29,7 +29,28 @@ def parse_meta(raw: dict[str, Any], fallback_title: str) -> PageMeta:
         created=_as_datetime(raw.get("created")),
         updated=_as_datetime(raw.get("updated")),
         tags=[str(t) for t in tags],
+        weight=_as_weight(raw.get("weight")),
     )
+
+
+def _as_weight(value: Any) -> int | None:
+    """Coerce a frontmatter ``weight`` to an int, or ``None`` if unusable.
+
+    Bad input (non-integer, non-numeric string, ``None``) is treated as absent
+    rather than raising, so a malformed weight never breaks a page load or
+    reorders unrelated pages — the page just falls back to filename sort. Bools
+    are rejected explicitly (YAML ``true``/``false`` are ``int`` subclasses in
+    Python but are not meaningful weights). Negative values are allowed: they
+    sort ahead of positive ones, which is a legitimate "pin to top" use.
+    """
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    try:
+        return int(str(value).strip())
+    except (ValueError, TypeError):
+        return None
 
 
 def _as_datetime(value: Any) -> datetime | None:
@@ -52,6 +73,38 @@ def beautify_stem(stem: str) -> str:
     """
     out = stem.replace("-", " ").replace("_", " ")
     return " ".join(out.split())
+
+
+def read_weight(file: Path) -> int | None:
+    """Read the ``weight`` frontmatter key from a markdown file, if any.
+
+    Returns the parsed integer weight, or ``None`` when the key is absent,
+    malformed, or the file is unreadable. Used to order a folder's children in
+    the sidebar (see :func:`sidebar_sort_key`). Never raises.
+    """
+    try:
+        post = frontmatter.load(file)
+    except (OSError, ValueError):
+        return None
+    return _as_weight(post.metadata.get("weight"))
+
+
+def sidebar_sort_key(weight: int | None, name: str) -> tuple[bool, int, str]:
+    """Ordering key for a folder's children in the sidebar / tree.
+
+    Weighted children come first, in ascending weight; ties (equal or absent
+    weight) break by case-folded filename. Concretely the key is
+    ``(weight is None, weight or 0, name.casefold())``:
+
+    - ``weight is None`` is ``False`` (0) for weighted pages and ``True`` (1)
+      for unweighted, so *any* weighted page sorts ahead of *every* unweighted
+      one — the documented mixed-folder rule.
+    - among weighted pages, lower ``weight`` wins; equal weights fall through
+      to the filename tie-break, so duplicate weights are stable, not an error.
+    - among unweighted pages the weight fields are equal, so they order purely
+      by filename — identical to the pre-weight behaviour.
+    """
+    return (weight is None, weight or 0, name.casefold())
 
 
 def read_h1_or_fallback(file: Path, fallback: str) -> str:
@@ -199,16 +252,16 @@ def write_page_file(
             pass
 
     now = datetime.now(UTC)
-    metadata: dict[str, Any] = {
-        "title": existing_meta.get("title", fallback_title),
-        "updated": now,
-    }
-    if "created" in existing_meta:
-        metadata["created"] = existing_meta["created"]
-    else:
+    # Preserve every existing frontmatter key (ARCHITECTURE.md: "Unknown
+    # frontmatter keys are preserved on roundtrip — Libreta reads what it knows
+    # and leaves the rest alone"). Only the keys Libreta actively manages are
+    # overridden below; anything the user or another tool put in the frontmatter
+    # (e.g. ``weight`` for sidebar ordering) survives untouched.
+    metadata: dict[str, Any] = dict(existing_meta)
+    metadata["title"] = existing_meta.get("title", fallback_title)
+    metadata["updated"] = now
+    if "created" not in existing_meta:
         metadata["created"] = now
-    if "tags" in existing_meta:
-        metadata["tags"] = existing_meta["tags"]
 
     if extra_meta:
         metadata.update(extra_meta)
@@ -428,11 +481,20 @@ def _build_tree(
     all_names.update(md_names.keys())
     all_names.update(dir_names.keys())
 
+    # A child's ``weight`` comes from its ``.md`` file's frontmatter. A
+    # directory without a matching ``.md`` (a plain folder) has no weight
+    # source and falls back to filename order. Read weights once here so the
+    # sort key and the emitted PageNodes agree.
+    weights: dict[str, int | None] = {
+        name: (read_weight(md_names[name]) if name in md_names else None) for name in all_names
+    }
+
     hit_max = max_depth is not None and depth >= max_depth
 
-    for name in sorted(all_names):
+    for name in sorted(all_names, key=lambda n: sidebar_sort_key(weights[n], n)):
         md_file = md_names.get(name)
         sub_dir = dir_names.get(name)
+        weight = weights[name]
         child_url = f"{url_prefix}/{name}" if url_prefix else name
         humanised = beautify_stem(name)
         md_filename = md_file.name if md_file else f"{name}.md"
@@ -447,6 +509,7 @@ def _build_tree(
                     is_directory=True,
                     children=[],
                     has_more=True,
+                    weight=weight,
                 )
             )
         else:
@@ -464,6 +527,7 @@ def _build_tree(
                         is_directory=bool(sub_dir),
                         children=children,
                         other_files=sub_other,
+                        weight=weight,
                     )
                 )
             else:
@@ -475,6 +539,7 @@ def _build_tree(
                         is_directory=True,
                         children=children,
                         other_files=sub_other,
+                        weight=weight,
                     )
                 )
 

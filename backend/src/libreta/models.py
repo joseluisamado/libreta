@@ -144,6 +144,10 @@ class PageMeta(BaseModel):
     created: datetime | None = None
     updated: datetime | None = None
     tags: list[str] = Field(default_factory=list)
+    # Optional sidebar-ordering hint from frontmatter (``weight: 20``). Lower
+    # sorts first; absent means "fall back to filename sort". Malformed values
+    # (non-integer, etc.) are treated as absent — see ``parse_meta``.
+    weight: int | None = None
 
 
 class PageWrite(BaseModel):
@@ -183,6 +187,10 @@ class PageNode(BaseModel):
     children: list[PageNode] = Field(default_factory=list)
     has_more: bool = False
     kind: str = "page"  # page | pdf | image | drawio | text | html | video | ebook | weblink
+    # Sidebar-ordering hint from the page's frontmatter (``weight``). Nodes are
+    # already returned in sorted order; this is exposed so the frontend can
+    # preserve/observe the ordering. None when the page declares no weight.
+    weight: int | None = None
     other_files: list[OtherFile] = Field(default_factory=list)
     # For kind == "weblink" (.webloc bookmark): the external URL the file points
     # at, extracted from its plist. Clients open it directly. None otherwise.

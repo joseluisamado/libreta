@@ -3,6 +3,7 @@ export interface PageMeta {
   created: string | null
   updated: string | null
   tags: string[]
+  weight?: number | null // sidebar-ordering hint; see ARCHITECTURE.md "weight"
 }
 
 export interface PageWrite {
@@ -38,6 +39,10 @@ export interface PageNode {
   children: PageNode[]
   has_more?: boolean
   kind?: 'page' | 'pdf' | 'image' | 'drawio' | 'text' | 'html' | 'video' | 'ebook' | 'weblink'
+  // Sidebar-ordering hint from the page's frontmatter. Nodes already arrive in
+  // sorted order (weighted first, ascending, then unweighted by filename); this
+  // is exposed for observability, not something the client re-sorts on.
+  weight?: number | null
   other_files?: OtherFile[]
   // For kind === 'weblink' (.webloc): the external URL it points at, resolved
   // server-side. Clicking the node opens this in a new tab.

@@ -227,10 +227,32 @@ class PageMeta(BaseModel):
     created: datetime
     updated: datetime
     tags: list[str] = []
+    weight: int | None = None   # sidebar ordering hint (see below)
     # extension point for future fields
 ```
 
-Unknown frontmatter keys are preserved on roundtrip — Libreta reads what it knows and leaves the rest alone.
+Unknown frontmatter keys are preserved on roundtrip — Libreta reads what it knows and leaves the rest alone. (This is enforced by `write_page_file`, which copies the whole existing frontmatter dict forward and only overrides the keys Libreta manages. A regression here silently drops keys like `weight` on the next edit.)
+
+#### `weight` — sidebar ordering
+
+A folder's children are ordered in the sidebar/tree by their filename by default. A page can override its position with an integer `weight` in frontmatter:
+
+```yaml
+---
+title: Decorators
+weight: 30
+---
+```
+
+Ordering rules (implemented in `pagefile.sidebar_sort_key`):
+
+- **Lower weight sorts first.** Children with a `weight` are ordered ascending.
+- **Absent `weight` falls back to filename sort** — a folder where no page declares a weight looks exactly as it did before the feature existed. This is deliberate: adoption is folder-by-folder, with no big-bang migration, and an untouched folder must not visibly change.
+- **Mixed folders: weighted pages first (in weight order), then unweighted pages alphabetically.** So a half-migrated folder degrades predictably rather than interleaving by an accidental rule.
+- **Ties break by filename.** Duplicate weights are not an error; equal-weight pages fall back to case-folded filename order, stably.
+- **Malformed weight is treated as absent.** A non-integer, empty, or otherwise unparseable `weight` (and a YAML `true`/`false`) never throws and never reorders unrelated pages — the page just drops into the unweighted (filename) bucket. Negative weights *are* valid and sort ahead of positive ones ("pin to top").
+
+**Convention: leave gaps.** Use `10, 20, 30, …` (Hugo-style) rather than `1, 2, 3`, so a page can be inserted between two others (`25`) without renumbering the rest. Only `.md` pages carry a weight; non-page leaves (PDFs, images, diagrams) remain filename-sorted.
 
 ## Storage layer
 
