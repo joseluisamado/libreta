@@ -15,6 +15,35 @@ Living document. Update as work progresses. Latest at the top.
 
 ---
 
+## 2026-07-17 — Fix: sidebar folders collapse/flicker on navigation
+
+**Bug**: Clicking a folder (or navigating to a page) made the folder and its
+siblings visibly collapse for ~1s then re-open; navigating to an *unrelated*
+folder left previously-expanded folders fully collapsed until re-clicked.
+
+**Cause**: A structural bug, not the weight feature — the weight change merely
+made it visible. Every navigation calls `sources.loadTree()`, which *replaces*
+the whole tree with a fresh depth-limited (depth-2) fetch. Folders the user had
+lazily expanded past that depth come back as truncation stubs
+(`has_more: true, children: []`) — i.e. collapsed and empty. `ensurePathExpanded`
+then refills children only along the *active* page's ancestor path; other open
+folders stayed empty (rendered "open but empty" = looks collapsed). The
+double-frontmatter-parse perf regression had widened the reload window enough to
+turn the always-present refill into a visible flicker.
+
+**Fix**: `loadTree` now reconciles the fresh tree against the previous one,
+grafting already-loaded subtrees back onto matching stubs so a reload preserves
+the expanded shape (`mergeReloadedTree`). Deleted-upstream folders are not
+resurrected (they're simply absent from the fresh tree). The tree-merge helpers
+(`mergeChildren` + the new preservation logic) were extracted from the two
+duplicate copies in the sources/watched stores into `src/utils/pageTree.ts`;
+both stores now share them.
+
+**Verified**: `typecheck`, `lint`, `format`, `vitest` (105 passed, incl. 8 new
+`pageTree` tests covering graft/collapse/delete/first-load/deep-nesting).
+
+---
+
 ## 2026-07-17 — Perf: single-pass sidebar head read (fixes weighted-folder lag)
 
 **What**: Adding `weight` made the tree walk parse every `.md` file *twice* per

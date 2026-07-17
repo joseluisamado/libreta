@@ -8,27 +8,8 @@ import {
   getWatchedTree,
   getWatchedChildren,
 } from '@/api/client'
-import type { OtherFile, PageNode, WatchedFolder } from '@/api/types'
-
-function mergeChildren(
-  nodes: PageNode[],
-  parentPath: string,
-  children: PageNode[],
-  otherFiles: OtherFile[],
-): boolean {
-  for (const n of nodes) {
-    if (n.path === parentPath) {
-      n.children = children
-      n.has_more = false
-      n.other_files = otherFiles
-      return true
-    }
-    if (n.children?.length && mergeChildren(n.children, parentPath, children, otherFiles)) {
-      return true
-    }
-  }
-  return false
-}
+import type { PageNode, WatchedFolder } from '@/api/types'
+import { mergeChildren, mergeReloadedTree } from '@/utils/pageTree'
 
 interface State {
   folders: WatchedFolder[]
@@ -51,7 +32,10 @@ export const useWatchedStore = defineStore('watched', {
     },
     async loadTree(label: string): Promise<void> {
       try {
-        this.trees[label] = await getWatchedTree(label)
+        const fresh = await getWatchedTree(label)
+        // Preserve folders the user had expanded past the tree's depth limit;
+        // see mergeReloadedTree.
+        this.trees[label] = mergeReloadedTree(fresh, this.trees[label])
       } catch (e) {
         this.error = e instanceof Error ? e.message : String(e)
       }

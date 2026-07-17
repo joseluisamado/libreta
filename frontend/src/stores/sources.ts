@@ -28,31 +28,11 @@ import type {
   GitSource,
   GitSourceCreate,
   GitSourceUpdate,
-  OtherFile,
   PageNode,
   SshKey,
   SshKeyCreate,
 } from '@/api/types'
-
-function mergeChildren(
-  nodes: PageNode[],
-  parentPath: string,
-  children: PageNode[],
-  otherFiles: OtherFile[],
-): boolean {
-  for (const n of nodes) {
-    if (n.path === parentPath) {
-      n.children = children
-      n.has_more = false
-      n.other_files = otherFiles
-      return true
-    }
-    if (n.children?.length && mergeChildren(n.children, parentPath, children, otherFiles)) {
-      return true
-    }
-  }
-  return false
-}
+import { mergeChildren, mergeReloadedTree } from '@/utils/pageTree'
 
 interface State {
   sources: GitSource[]
@@ -88,7 +68,11 @@ export const useSourcesStore = defineStore('sources', {
     },
     async loadTree(id: string): Promise<void> {
       try {
-        this.trees[id] = await getSourceTree(id)
+        const fresh = await getSourceTree(id)
+        // Preserve folders the user had expanded past the tree's depth limit:
+        // a bare reload returns them as truncation stubs, which would collapse
+        // them (and flicker as ensurePathExpanded refills only the active path).
+        this.trees[id] = mergeReloadedTree(fresh, this.trees[id])
       } catch (e) {
         this.error = e instanceof Error ? e.message : String(e)
       }
