@@ -151,6 +151,26 @@ describe('DirListing pagination (50 per page, combined + alphabetical)', () => {
     expect(text[1]).toContain('banana.md')
     expect(text[2]).toContain('cherry.md')
   })
+
+  it('orders like the sidebar: weighted first (asc), then alphabetical', () => {
+    const mk = (filename: string, weight?: number): PageNode => ({
+      path: filename,
+      title: filename,
+      filename,
+      is_directory: false,
+      children: [],
+      weight,
+    })
+    // Deliberately shuffled input; weights 20/10 and two unweighted.
+    const children: PageNode[] = [mk('zebra.md'), mk('mid.md', 20), mk('apple.md'), mk('top.md', 10)]
+    const w = mountListing(children)
+    const order = w.findAll('li').map((li) => {
+      const t = li.text()
+      return ['top.md', 'mid.md', 'apple.md', 'zebra.md'].find((f) => t.includes(f))
+    })
+    // weight 10, then weight 20, then unweighted apple/zebra alphabetically.
+    expect(order).toEqual(['top.md', 'mid.md', 'apple.md', 'zebra.md'])
+  })
 })
 
 describe('DirListing inline weight editing', () => {

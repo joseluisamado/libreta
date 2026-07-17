@@ -132,11 +132,20 @@
   const PAGE_SIZE = 50
   const page = ref(1)
 
-  // Alphabetical, case-insensitive, stable. Children sort by their on-disk
-  // filename (what the row/tile shows); other files by name.
+  // Children order matches the sidebar (backend sidebar_sort_key): weighted
+  // pages first, ascending by weight, then everything else by filename. Other
+  // files have no weight and sort by name alone.
   const collator = new Intl.Collator(undefined, { sensitivity: 'base', numeric: true })
   const sortedChildren = computed(() =>
-    [...props.children].sort((a, b) => collator.compare(a.filename, b.filename)),
+    [...props.children].sort((a, b) => {
+      const aw = a.weight ?? null
+      const bw = b.weight ?? null
+      // Any weighted page sorts ahead of every unweighted one.
+      if ((aw === null) !== (bw === null)) return aw === null ? 1 : -1
+      // Both weighted: lower weight first (ties fall through to filename).
+      if (aw !== null && bw !== null && aw !== bw) return aw - bw
+      return collator.compare(a.filename, b.filename)
+    }),
   )
   const sortedOtherFiles = computed(() =>
     [...(props.otherFiles ?? [])].sort((a, b) => collator.compare(a.name, b.name)),
@@ -470,59 +479,51 @@
     <!-- ── List view ───────────────────────────────────────────── -->
     <template v-if="viewMode === 'list'">
       <ul v-if="pagedChildren.length" class="text-sm space-y-1">
-        <li v-for="child in pagedChildren" :key="child.path" class="flex items-center gap-1 group">
-          <!-- weblinks open their external target in a new tab (plain <a>);
-               everything else navigates in-app via RouterLink. -->
-          <component
-            :is="isWeblink(child) ? 'a' : 'RouterLink'"
-            :to="isWeblink(child) ? undefined : getChildUrl(child.path)"
-            :href="isWeblink(child) ? child.target : undefined"
-            :target="isWeblink(child) ? '_blank' : undefined"
-            :rel="isWeblink(child) ? 'noopener noreferrer' : undefined"
-            class="flex items-center min-w-0 text-slate-700 hover:text-blue-600 hover:underline"
+        <li
+          v-for="child in pagedChildren"
+          :key="child.path"
+          class="flex items-center gap-1.5 group"
+        >
+          <!-- Kind badge: outside the link so the sidebar weight can sit
+               directly after it (badge → weight → filename), matching the
+               sidebar order. -->
+          <!-- Folder icon -->
+          <svg
+            v-if="isFolder(child)"
+            xmlns="http://www.w3.org/2000/svg"
+            class="w-4 h-4 shrink-0 text-amber-500"
+            viewBox="0 0 24 24"
+            fill="currentColor"
+            stroke="none"
           >
-            <!-- Folder icon -->
-            <svg
-              v-if="isFolder(child)"
-              xmlns="http://www.w3.org/2000/svg"
-              class="w-4 h-4 shrink-0 mr-1.5 text-amber-500"
-              viewBox="0 0 24 24"
-              fill="currentColor"
-              stroke="none"
-            >
-              <path
-                d="M2 6a2 2 0 0 1 2-2h5l2 2h9a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6z"
-              />
-            </svg>
-            <!-- PDF badge -->
-            <span
-              v-else-if="child.kind === 'pdf'"
-              class="w-4 shrink-0 mr-1.5 text-[10px] font-semibold text-rose-500 text-center"
-              >PDF</span
-            >
-            <!-- image / drawio / text / html / video / ebook / weblink badge -->
-            <span
-              v-else-if="
-                child.kind &&
-                ['image', 'drawio', 'text', 'html', 'video', 'ebook', 'weblink'].includes(
-                  child.kind,
-                )
-              "
-              class="w-6 shrink-0 mr-1.5 text-[10px] font-semibold text-center"
-              :class="kindColor(child.kind)"
-              >{{ kindBadge(child.kind) }}</span
-            >
-            <!-- MD badge -->
-            <span
-              v-else
-              class="w-4 shrink-0 mr-1.5 text-[10px] font-semibold text-sky-500 text-center"
-              >MD</span
-            >
-            <span class="truncate">{{ child.filename }}</span>
-          </component>
-          <!-- Sidebar weight: click the number (or the muted "+ w" affordance
-               when unset) to edit inline. Enter / blur commits, Esc cancels,
-               empty clears. Markdown pages only; source context only. -->
+            <path
+              d="M2 6a2 2 0 0 1 2-2h5l2 2h9a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6z"
+            />
+          </svg>
+          <!-- PDF badge -->
+          <span
+            v-else-if="child.kind === 'pdf'"
+            class="w-4 shrink-0 text-[10px] font-semibold text-rose-500 text-center"
+            >PDF</span
+          >
+          <!-- image / drawio / text / html / video / ebook / weblink badge -->
+          <span
+            v-else-if="
+              child.kind &&
+              ['image', 'drawio', 'text', 'html', 'video', 'ebook', 'weblink'].includes(child.kind)
+            "
+            class="w-6 shrink-0 text-[10px] font-semibold text-center"
+            :class="kindColor(child.kind)"
+            >{{ kindBadge(child.kind) }}</span
+          >
+          <!-- MD badge -->
+          <span v-else class="w-4 shrink-0 text-[10px] font-semibold text-sky-500 text-center"
+            >MD</span
+          >
+          <!-- Sidebar weight, immediately after the badge (sidebar order). Click
+               the number (or the muted affordance when unset) to edit inline:
+               Enter / blur commits, Esc cancels, empty clears. Markdown pages
+               only; source context only. -->
           <template v-if="canEditWeight && isWeightable(child)">
             <input
               v-if="editingWeightPath === child.path"
@@ -550,6 +551,18 @@
               {{ child.weight != null ? child.weight : 'weight' }}
             </button>
           </template>
+          <!-- weblinks open their external target in a new tab (plain <a>);
+               everything else navigates in-app via RouterLink. -->
+          <component
+            :is="isWeblink(child) ? 'a' : 'RouterLink'"
+            :to="isWeblink(child) ? undefined : getChildUrl(child.path)"
+            :href="isWeblink(child) ? child.target : undefined"
+            :target="isWeblink(child) ? '_blank' : undefined"
+            :rel="isWeblink(child) ? 'noopener noreferrer' : undefined"
+            class="flex items-center min-w-0 text-slate-700 hover:text-blue-600 hover:underline"
+          >
+            <span class="truncate">{{ child.filename }}</span>
+          </component>
           <button
             type="button"
             class="shrink-0 opacity-30 group-hover:opacity-100 text-slate-400 hover:text-slate-600 p-0.5 rounded transition-opacity cursor-pointer"
