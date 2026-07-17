@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import frontmatter
+import yaml
 from frontmatter import Post
 
 from libreta.errors import FrontmatterInBodyError, InvalidPathError, PageNotFoundError
@@ -133,18 +134,79 @@ def beautify_stem(stem: str) -> str:
     return " ".join(out.split())
 
 
+def read_page_head(file: Path, fallback_title: str) -> tuple[int | None, str]:
+    """Read a markdown file's sidebar metadata in a single pass: ``(weight, title)``.
+
+    The tree walk needs two things per page — its ``weight`` (frontmatter) and
+    its sidebar label (first body H1, else *fallback_title*). Both live in the
+    head of the file, so this reads it **once** and stops at the first content
+    line, rather than calling ``frontmatter.load`` twice (which each slurp and
+    parse the *whole* file). This is the hot path for large folders.
+
+    Parsing mirrors ``read_weight`` + ``read_h1_or_fallback``: only ``weight`` is
+    pulled from the YAML block (via :func:`_as_weight`, so malformed → ``None``),
+    and the title is the first ATX ``# `` heading, giving up at the first
+    non-blank non-H1 line. Any read/parse error degrades to ``(None, fallback)``.
+    """
+    weight: int | None = None
+    try:
+        with file.open("r", encoding="utf-8") as fh:
+            it = iter(fh)
+            # Skip leading blank lines (matches the tolerant frontmatter/H1
+            # behaviour) to find the first significant line.
+            first = _next_nonblank(it)
+            if first is not None and first.strip() == "---":
+                # Collect the YAML block *verbatim* (including any blank lines
+                # inside it) up to the closing fence, then parse just that small
+                # block rather than the whole file.
+                fm_lines: list[str] = []
+                for line in it:
+                    if line.strip() in {"---", "..."}:
+                        break
+                    fm_lines.append(line)
+                weight = _weight_from_yaml_block("".join(fm_lines))
+                first = _next_nonblank(it)  # advance to first body content line
+            # *first* now holds the first non-blank body line (or None). The H1
+            # must be that first content line; anything else means "no title".
+            title = fallback_title
+            if first is not None:
+                stripped = first.strip()
+                if stripped.startswith("# ") and not stripped.startswith("## "):
+                    title = stripped[2:].strip() or fallback_title
+            return weight, title
+    except OSError:
+        return None, fallback_title
+
+
+def _next_nonblank(it: Any) -> str | None:
+    """Return the next non-blank line from *it*, or ``None`` at end of file."""
+    for raw in it:
+        if raw.strip():
+            return str(raw)
+    return None
+
+
+def _weight_from_yaml_block(block: str) -> int | None:
+    """Extract ``weight`` from a small YAML frontmatter block. Never raises."""
+    if not block.strip():
+        return None
+    try:
+        data = yaml.safe_load(block)
+    except yaml.YAMLError:
+        return None
+    if not isinstance(data, dict):
+        return None
+    return _as_weight(data.get("weight"))
+
+
 def read_weight(file: Path) -> int | None:
     """Read the ``weight`` frontmatter key from a markdown file, if any.
 
-    Returns the parsed integer weight, or ``None`` when the key is absent,
-    malformed, or the file is unreadable. Used to order a folder's children in
-    the sidebar (see :func:`sidebar_sort_key`). Never raises.
+    Thin wrapper over :func:`read_page_head` (single-pass reader). Returns the
+    parsed integer weight, or ``None`` when absent, malformed, or unreadable.
     """
-    try:
-        post = frontmatter.load(file)
-    except (OSError, ValueError):
-        return None
-    return _as_weight(post.metadata.get("weight"))
+    weight, _ = read_page_head(file, "")
+    return weight
 
 
 def sidebar_sort_key(weight: int | None, name: str) -> tuple[bool, int, str]:
@@ -172,25 +234,13 @@ def read_h1_or_fallback(file: Path, fallback: str) -> str:
     is unreadable, returns *fallback*. Frontmatter ``title:`` is deliberately
     NOT consulted here — the sidebar should reflect what the user sees when
     they open the file, which is the body's H1.
+
+    Thin wrapper over :func:`read_page_head` so there is a single head-parsing
+    implementation; the tree walk calls ``read_page_head`` directly to get the
+    weight and title from one file read.
     """
-    try:
-        post = frontmatter.load(file)
-        body = post.content or ""
-    except (OSError, ValueError):
-        return fallback
-    for raw_line in body.splitlines():
-        line = raw_line.strip()
-        if not line:
-            continue
-        # Match ATX H1: "# Heading" (one leading hash, then space, then text).
-        # H2+ are skipped; setext headings (=== underline) are uncommon in
-        # this codebase and the cost of supporting them isn't worth it.
-        if line.startswith("# ") and not line.startswith("## "):
-            return line[2:].strip() or fallback
-        # Stop at first non-blank, non-H1 line — if the doc doesn't open
-        # with an H1, treat it as having no title.
-        return fallback
-    return fallback
+    _, title = read_page_head(file, fallback)
+    return title
 
 
 # ---------------------------------------------------------------------------
@@ -549,26 +599,32 @@ def _build_tree(
     all_names.update(md_names.keys())
     all_names.update(dir_names.keys())
 
-    # A child's ``weight`` comes from its ``.md`` file's frontmatter. A
-    # directory without a matching ``.md`` (a plain folder) has no weight
-    # source and falls back to filename order. Read weights once here so the
-    # sort key and the emitted PageNodes agree.
-    weights: dict[str, int | None] = {
-        name: (read_weight(md_names[name]) if name in md_names else None) for name in all_names
+    # A child's ``weight`` and sidebar title both come from the head of its
+    # ``.md`` file. Read each file **once** here (weight + H1 title together) so
+    # the sort key and the emitted PageNodes agree and we don't parse every file
+    # twice. A directory without a matching ``.md`` (a plain folder) has no head
+    # to read: weight ``None`` (filename order), title from the beautified stem.
+    heads: dict[str, tuple[int | None, str]] = {
+        name: (
+            read_page_head(md_names[name], beautify_stem(name))
+            if name in md_names
+            else (None, beautify_stem(name))
+        )
+        for name in all_names
     }
 
     hit_max = max_depth is not None and depth >= max_depth
 
-    for name in sorted(all_names, key=lambda n: sidebar_sort_key(weights[n], n)):
+    for name in sorted(all_names, key=lambda n: sidebar_sort_key(heads[n][0], n)):
         md_file = md_names.get(name)
         sub_dir = dir_names.get(name)
-        weight = weights[name]
+        weight, head_title = heads[name]
         child_url = f"{url_prefix}/{name}" if url_prefix else name
         humanised = beautify_stem(name)
         md_filename = md_file.name if md_file else f"{name}.md"
 
         if hit_max and sub_dir:
-            title = read_h1_or_fallback(md_file, humanised) if md_file else humanised
+            title = head_title if md_file else humanised
             nodes.append(
                 PageNode(
                     path=child_url,
@@ -586,11 +642,10 @@ def _build_tree(
             if sub_dir:
                 children, sub_other = _build_tree(sub_dir, child_url, max_depth, depth + 1)
             if md_file:
-                title = read_h1_or_fallback(md_file, humanised)
                 nodes.append(
                     PageNode(
                         path=child_url,
-                        title=title,
+                        title=head_title,
                         filename=md_filename,
                         is_directory=bool(sub_dir),
                         children=children,

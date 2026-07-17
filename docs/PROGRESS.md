@@ -15,6 +15,31 @@ Living document. Update as work progresses. Latest at the top.
 
 ---
 
+## 2026-07-17 — Perf: single-pass sidebar head read (fixes weighted-folder lag)
+
+**What**: Adding `weight` made the tree walk parse every `.md` file *twice* per
+build — once in `read_weight` and once in `read_h1_or_fallback`, each calling
+`frontmatter.load`, which slurps and YAML-parses the *whole* file. On folders of
+large reference pages this was visibly laggy in the sidebar.
+
+**Fix**: one `read_page_head(file, fallback)` that opens the file once, reads
+only the head (frontmatter block + first content line), and returns
+`(weight, title)`. It stops at the first H1 instead of reading the whole body.
+`_build_tree` now computes a `heads` map in a single pass; `read_weight` and
+`read_h1_or_fallback` became thin wrappers over it (one parsing implementation).
+
+**Measured**: at 60 pages × 72 KB, tree build dropped from ~25.6 ms to ~4.9 ms
+(**5.2×**); the gain scales with page size (small pages ~1.5×), because the old
+path's cost was reading/parsing full bodies it then threw away. `yaml` is parsed
+directly for the small frontmatter block (added to the mypy `ignore_missing_imports`
+override alongside `frontmatter`).
+
+**Verified**: `ruff`, `mypy --strict` (28 files), `pytest` (196 passed — the
+existing tree/title/weight tests cover the wrapper equivalence; head-parser edge
+cases spot-checked: no-fm, no-h1, blank-leading, H2-first, blank-inside-fm).
+
+---
+
 ## 2026-07-17 — `write_page` gains a `meta` channel; frontmatter-in-body rejected
 
 **What**: The `weight` ordering feature was readable but not writable through

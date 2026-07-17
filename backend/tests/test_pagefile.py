@@ -10,7 +10,10 @@ from libreta.storage.pagefile import (
     _body_looks_like_frontmatter,
     _classify_other,
     _read_webloc_url,
+    read_h1_or_fallback,
     read_page_file,
+    read_page_head,
+    read_weight,
     sanitize_page_meta,
     walk_children,
     write_page_file,
@@ -417,3 +420,48 @@ def test_write_rejects_frontmatter_in_body(tmp_path: Path) -> None:
 )
 def test_body_looks_like_frontmatter(body: str, looks_like_fm: bool) -> None:
     assert _body_looks_like_frontmatter(body) is looks_like_fm
+
+
+# ---------------------------------------------------------------------------
+# read_page_head: single-pass reader for weight + sidebar title
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("content", "expected"),
+    [
+        # frontmatter weight + body H1
+        ("---\ntitle: T\nweight: 20\n---\n\n# Real Heading\n\nbody\n", (20, "Real Heading")),
+        # no frontmatter, leading H1
+        ("# Just H1\n\nbody\n", (None, "Just H1")),
+        # weight but no H1 → fallback title
+        ("---\nweight: 5\n---\n\nJust a paragraph.\n", (5, "FB")),
+        # leading blank lines before frontmatter are tolerated
+        ("\n\n---\nweight: 7\n---\n\n# After Blanks\n", (7, "After Blanks")),
+        # H2 first (not an H1) → fallback
+        ("## Secondary\n\ntext\n", (None, "FB")),
+        # empty file
+        ("", (None, "FB")),
+        # blank line *inside* the frontmatter block must not corrupt parsing
+        ("---\ntitle: T\n\nweight: 9\n---\n# Heading\n", (9, "Heading")),
+        # malformed weight → None, title still read
+        ("---\nweight: notanint\n---\n# H\n", (None, "H")),
+    ],
+)
+def test_read_page_head(tmp_path: Path, content: str, expected: tuple[int | None, str]) -> None:
+    f = tmp_path / "p.md"
+    f.write_text(content)
+    assert read_page_head(f, "FB") == expected
+
+
+def test_read_page_head_unreadable_file(tmp_path: Path) -> None:
+    # A missing file degrades to (None, fallback), never raises.
+    assert read_page_head(tmp_path / "nope.md", "FB") == (None, "FB")
+
+
+def test_wrappers_delegate_to_head(tmp_path: Path) -> None:
+    """read_weight / read_h1_or_fallback are thin wrappers over read_page_head."""
+    f = tmp_path / "p.md"
+    f.write_text("---\nweight: 40\n---\n\n# The Title\n")
+    assert read_weight(f) == 40
+    assert read_h1_or_fallback(f, "FB") == "The Title"
