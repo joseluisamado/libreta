@@ -9,6 +9,12 @@ Entries are generated from [Conventional Commits](https://www.conventionalcommit
 by `scripts/changelog.py` at release time.
 
 
+## [2.11.2] - 2026-07-17
+
+### Changed
+
+- **storage:** single-pass sidebar head read (fix weighted-folder lag)
+
 ## [2.11.1] - 2026-07-17
 
 ### Added
