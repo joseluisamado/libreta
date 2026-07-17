@@ -9,6 +9,12 @@ Entries are generated from [Conventional Commits](https://www.conventionalcommit
 by `scripts/changelog.py` at release time.
 
 
+## [2.11.0] - 2026-07-17
+
+### Added
+
+- **sidebar:** show frontmatter weight next to weighted pages
+
 ## [2.10.0] - 2026-07-17
 
 ### Added
