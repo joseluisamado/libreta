@@ -268,6 +268,12 @@
             class="text-[10px] font-semibold text-sky-500 shrink-0"
             >MD</span
           >
+          <span
+            v-if="node.weight != null"
+            class="text-[10px] font-medium text-slate-400 shrink-0 tabular-nums"
+            :title="`Sidebar weight: ${node.weight}`"
+            >{{ node.weight }}</span
+          >
           <span class="truncate">{{ node.filename }}</span>
         </button>
         <!-- weblinks (.webloc) open their external target in a new tab; all
@@ -304,6 +310,12 @@
             v-else-if="!node.is_directory && !node.children.length && !node.has_more"
             class="text-[10px] font-semibold text-sky-500 shrink-0"
             >MD</span
+          >
+          <span
+            v-if="node.weight != null"
+            class="text-[10px] font-medium text-slate-400 shrink-0 tabular-nums"
+            :title="`Sidebar weight: ${node.weight}`"
+            >{{ node.weight }}</span
           >
           <span class="truncate">{{ node.filename }}</span>
         </component>
