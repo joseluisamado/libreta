@@ -9,7 +9,7 @@ import {
   getWatchedChildren,
 } from '@/api/client'
 import type { PageNode, WatchedFolder } from '@/api/types'
-import { mergeChildren, mergeReloadedTree } from '@/utils/pageTree'
+import { isPathLoaded, mergeChildren, mergeReloadedTree } from '@/utils/pageTree'
 
 interface State {
   folders: WatchedFolder[]
@@ -104,6 +104,8 @@ export const useWatchedStore = defineStore('watched', {
       let acc = ''
       for (const seg of segments) {
         acc = acc ? `${acc}/${seg}` : seg
+        const tree = this.trees[label]
+        if (tree && isPathLoaded(tree, acc)) continue
         await this.loadTreeChildren(label, acc)
       }
     },

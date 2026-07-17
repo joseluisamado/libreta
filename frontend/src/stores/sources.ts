@@ -32,7 +32,7 @@ import type {
   SshKey,
   SshKeyCreate,
 } from '@/api/types'
-import { mergeChildren, mergeReloadedTree } from '@/utils/pageTree'
+import { isPathLoaded, mergeChildren, mergeReloadedTree } from '@/utils/pageTree'
 
 interface State {
   sources: GitSource[]
@@ -255,13 +255,18 @@ export const useSourcesStore = defineStore('sources', {
     // Walk down each ancestor of *path*, fetching children for any segment
     // not already present in the tree. Needed when navigating directly to a
     // URL deeper than the initial tree depth (the intermediate folders are
-    // unknown to the client and would never be expanded otherwise).
+    // unknown to the client and would never be expanded otherwise). Segments
+    // whose children are already loaded are skipped, so navigating within an
+    // already-expanded subtree makes no network calls and doesn't churn the
+    // tree (which previously caused expanded folders to flicker collapsed).
     async ensurePathExpanded(sourceId: string, path: string): Promise<void> {
       if (!path) return
       const segments = path.split('/').filter(Boolean)
       let acc = ''
       for (const seg of segments) {
         acc = acc ? `${acc}/${seg}` : seg
+        const tree = this.trees[sourceId]
+        if (tree && isPathLoaded(tree, acc)) continue
         await this.loadTreeChildren(sourceId, acc)
       }
     },

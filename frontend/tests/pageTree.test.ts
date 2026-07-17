@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { mergeChildren, mergeReloadedTree } from '@/utils/pageTree'
+import { isPathLoaded, mergeChildren, mergeReloadedTree } from '@/utils/pageTree'
 import type { PageNode } from '@/api/types'
 
 // Minimal PageNode factory: only the fields the tree helpers touch.
@@ -45,6 +45,60 @@ describe('mergeChildren', () => {
   it('returns false when the parent path is absent', () => {
     const tree = [node({ path: 'a', is_directory: true })]
     expect(mergeChildren(tree, 'nope', [], [])).toBe(false)
+  })
+
+  it('preserves already-loaded grandchildren when re-fetching a parent', () => {
+    // Parent "a" already loaded, with sub-folder "a/b" expanded (loaded).
+    const tree = [
+      node({
+        path: 'a',
+        is_directory: true,
+        has_more: false,
+        children: [
+          node({
+            path: 'a/b',
+            is_directory: true,
+            has_more: false,
+            children: [node({ path: 'a/b/leaf' })],
+          }),
+        ],
+      }),
+    ]
+    // A depth-1 re-fetch of "a" returns "a/b" as a fresh stub.
+    const fresh = [node({ path: 'a/b', is_directory: true, has_more: true })]
+    mergeChildren(tree, 'a', fresh, [])
+    const b = at(at(tree, 0).children, 0)
+    expect(b.path).toBe('a/b')
+    expect(b.has_more).toBe(false)
+    expect(b.children.map((c) => c.path)).toEqual(['a/b/leaf'])
+  })
+})
+
+describe('isPathLoaded', () => {
+  const tree = [
+    node({
+      path: 'a',
+      is_directory: true,
+      has_more: false,
+      children: [
+        node({ path: 'a/loaded', is_directory: true, has_more: false, children: [] }),
+        node({ path: 'a/stub', is_directory: true, has_more: true }),
+      ],
+    }),
+  ]
+
+  it('is true for a loaded folder', () => {
+    expect(isPathLoaded(tree, 'a')).toBe(true)
+    expect(isPathLoaded(tree, 'a/loaded')).toBe(true)
+  })
+
+  it('is false for a truncation stub', () => {
+    expect(isPathLoaded(tree, 'a/stub')).toBe(false)
+  })
+
+  it('is false for an unknown path', () => {
+    expect(isPathLoaded(tree, 'a/missing')).toBe(false)
+    expect(isPathLoaded(tree, 'nope')).toBe(false)
   })
 })
 
