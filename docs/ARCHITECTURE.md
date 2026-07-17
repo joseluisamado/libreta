@@ -254,6 +254,8 @@ Ordering rules (implemented in `pagefile.sidebar_sort_key`):
 
 **Convention: leave gaps.** Use `10, 20, 30, …` (Hugo-style) rather than `1, 2, 3`, so a page can be inserted between two others (`25`) without renumbering the rest. Only `.md` pages carry a weight; non-page leaves (PDFs, images, diagrams) remain filename-sorted.
 
+**Setting `weight` (and other frontmatter).** Frontmatter is never written by embedding a `---` block in a page body — on read, the body is returned *without* its frontmatter, so a save round-trips body-only. Managed frontmatter fields are set through a separate **`meta` channel**: the REST body model and the MCP `write_page` tool take an optional `meta` dict, and `write_page_file` merges it over the page's existing frontmatter (`sanitize_page_meta` gates it). Settable keys are `weight`, `tags`, `title`; `created`/`updated` are writer-owned and cannot be set by a caller. A `body` that opens with a `---` frontmatter fence is a caller mistake (it would otherwise persist the YAML as visible content) and is rejected with `FrontmatterInBodyError` (HTTP 422) — a lone leading `---` thematic break with no closing fence is still allowed.
+
 ## Storage layer
 
 ### Git source lifecycle

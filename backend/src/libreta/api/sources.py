@@ -528,6 +528,7 @@ async def put_source_page(
         source_id,
         path,
         body.body,
+        meta=body.meta,
     )
     background.add_task(enqueue_push, source_id)
     return result

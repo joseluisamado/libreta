@@ -140,8 +140,13 @@ async def read_watched_page(watched_root: Path, raw_path: str) -> PageRead:
     return await asyncio.to_thread(pagefile.read_page_file, watched_root, raw_path)
 
 
-async def write_watched_page(watched_root: Path, raw_path: str, body: str) -> tuple[PageRead, str]:
-    return await asyncio.to_thread(pagefile.write_page_file, watched_root, raw_path, body)
+async def write_watched_page(
+    watched_root: Path, raw_path: str, body: str, meta: dict[str, Any] | None = None
+) -> tuple[PageRead, str]:
+    extra_meta = pagefile.sanitize_page_meta(meta)
+    return await asyncio.to_thread(
+        pagefile.write_page_file, watched_root, raw_path, body, extra_meta
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -8,6 +8,10 @@ export interface PageMeta {
 
 export interface PageWrite {
   body: string
+  // Optional frontmatter fields to set, merged over the page's existing
+  // frontmatter. Only managed keys (title, tags, weight) are honored server-side;
+  // created/updated are writer-owned. Do not embed a `---` block in `body`.
+  meta?: Record<string, unknown> | null
 }
 
 export interface PageMove {

@@ -26,6 +26,18 @@ class PageNotEmptyError(LibretaError):
     status_code = 409
 
 
+class FrontmatterInBodyError(LibretaError):
+    """A page body was passed with a leading ``---`` YAML fence.
+
+    Frontmatter is set via the ``meta`` channel, not embedded in ``body``. A
+    body that opens with ``---`` is almost always a caller mistake (e.g. an MCP
+    client pasting full markdown); persisting it would store the YAML as visible
+    page content. Raised instead of silently corrupting the page.
+    """
+
+    status_code = 422
+
+
 class WatchedLabelNotFoundError(LibretaError):
     status_code = 404
 

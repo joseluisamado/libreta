@@ -9,7 +9,7 @@ from typing import Any
 import frontmatter
 from frontmatter import Post
 
-from libreta.errors import InvalidPathError, PageNotFoundError
+from libreta.errors import FrontmatterInBodyError, InvalidPathError, PageNotFoundError
 from libreta.models import OtherFile, PageMeta, PageNode, PageRead
 
 logger = logging.getLogger(__name__)
@@ -62,6 +62,64 @@ def _as_datetime(value: Any) -> datetime | None:
         return datetime.fromisoformat(str(value))
     except ValueError:
         return None
+
+
+# Managed frontmatter keys a caller may set through the write ``meta`` channel.
+# ``created``/``updated`` are deliberately excluded — the writer owns those
+# timestamps; letting a request set them would let a client rewrite history.
+_SETTABLE_META_KEYS = frozenset({"title", "tags", "weight"})
+
+
+def sanitize_page_meta(meta: dict[str, Any] | None) -> dict[str, Any]:
+    """Validate/coerce a caller-supplied ``meta`` dict for :func:`write_page_file`.
+
+    Only the keys in :data:`_SETTABLE_META_KEYS` pass through; unknown keys and
+    the writer-owned timestamps are dropped silently (a caller can't stomp
+    ``created``/``updated``). Values are coerced to their canonical shapes:
+
+    - ``weight`` → int via :func:`_as_weight`; malformed → ``None``, which
+      *clears* an existing weight (an explicit ``weight: null`` request).
+    - ``tags`` → list of strings.
+    - ``title`` → non-empty string, else dropped (fall back to existing/derived).
+
+    Returns a dict safe to pass as ``extra_meta``. Never raises on bad values —
+    frontmatter is best-effort, not a validation gate.
+    """
+    if not meta:
+        return {}
+    out: dict[str, Any] = {}
+    if "weight" in meta:
+        # Present-but-unset (weight: null / "") clears; otherwise coerce.
+        out["weight"] = _as_weight(meta["weight"])
+    if "tags" in meta:
+        tags = meta["tags"]
+        if not isinstance(tags, list):
+            tags = [tags] if tags not in (None, "") else []
+        out["tags"] = [str(t) for t in tags]
+    if "title" in meta:
+        title = meta["title"]
+        if isinstance(title, str) and title.strip():
+            out["title"] = title
+    return out
+
+
+def _body_looks_like_frontmatter(body: str) -> bool:
+    """True if *body* opens with what looks like a YAML frontmatter block.
+
+    Distinguishes a stray frontmatter fence (a caller mistake) from a legitimate
+    leading thematic break (``---`` horizontal rule). A frontmatter block is an
+    opening ``---`` line *followed by a closing ``---`` fence* later in the text;
+    a lone ``---`` with no closing fence is a horizontal rule and is allowed.
+    Leading blank lines before the opening fence are tolerated.
+    """
+    lines = body.splitlines()
+    idx = 0
+    while idx < len(lines) and not lines[idx].strip():
+        idx += 1
+    if idx >= len(lines) or lines[idx].strip() != "---":
+        return False
+    # An opening fence: is there a closing fence on a later line?
+    return any(line.strip() in {"---", "..."} for line in lines[idx + 1 :])
 
 
 def beautify_stem(stem: str) -> str:
@@ -231,12 +289,21 @@ def write_page_file(
 ) -> tuple[PageRead, str]:
     """Write a page at *root* / *raw_path*.
 
-    Preserves existing frontmatter (title, created, tags) and sets updated=now.
-    *extra_meta* is merged on top of preserved metadata so callers can inject
-    auto-derived fields (e.g. tags on first save).
+    Preserves existing frontmatter (all keys) and sets updated=now. *extra_meta*
+    is merged on top of preserved metadata so callers can set managed fields
+    (e.g. ``weight``, ``tags``) — this is the *only* channel for frontmatter.
+    Frontmatter must never be embedded in *body*: a body opening with a ``---``
+    fence raises :class:`FrontmatterInBodyError` rather than being persisted as
+    visible page content.
 
     Returns ``(PageRead, verb)`` where *verb* is ``"create"`` or ``"update"``.
     """
+    if _body_looks_like_frontmatter(body):
+        raise FrontmatterInBodyError(
+            "page body starts with a '---' frontmatter fence; set frontmatter "
+            "via the meta channel, not in the body"
+        )
+
     file = root / raw_path
     fallback_title = file.name.replace("-", " ").replace("_", " ").title()
 
@@ -279,6 +346,7 @@ def write_page_file(
             created=metadata["created"] if isinstance(metadata["created"], datetime) else now,
             updated=now,
             tags=list(metadata.get("tags", [])),
+            weight=_as_weight(metadata.get("weight")),
         ),
         body=body,
     )

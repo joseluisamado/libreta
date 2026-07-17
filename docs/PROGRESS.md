@@ -15,6 +15,46 @@ Living document. Update as work progresses. Latest at the top.
 
 ---
 
+## 2026-07-17 — `write_page` gains a `meta` channel; frontmatter-in-body rejected
+
+**What**: The `weight` ordering feature was readable but not writable through
+the tool surface. `write_page` (MCP) and `PUT .../pages/{path}` (REST) took only
+a `body`, and the roundtrip fix (correctly) only copies *existing* frontmatter
+keys forward — so a *new* `weight` had no inbound channel. Worse, a caller who
+put frontmatter in `body` (as most markdown tooling allows) got it silently
+persisted as visible page content.
+
+Added an optional `meta` dict to the write path (MCP tool arg + `PageWrite`
+model, threaded through `write_source_page`/`write_watched_page` →
+`write_page_file`'s existing `extra_meta` merge). `sanitize_page_meta` gates it:
+only `title`/`tags`/`weight` are settable; `created`/`updated` stay writer-owned
+so a request can't rewrite timestamps. `weight` is coerced (malformed → cleared);
+`weight: null` clears an existing weight.
+
+**Foot-gun closed**: `write_page_file` now rejects a body opening with a `---`
+frontmatter fence (`FrontmatterInBodyError`, HTTP 422) instead of storing the
+YAML as content. A lone leading `---` thematic break (no closing fence) is still
+allowed, so legitimate horizontal-rule-first bodies aren't caught.
+
+**Returned meta fixed**: `write_page_file`'s hand-built `PageRead.meta` didn't
+carry `weight` — it now does, so the write response reflects the value that
+landed.
+
+**Verified**: backend pre-flight green — `ruff`, `mypy --strict` (28 files),
+`pytest` (196 passed; +24 covering the meta channel, sanitize allowlist, the
+fence guard incl. the thematic-break exception, and an extended MCP round-trip
+that sets `weight` via `meta` and asserts a frontmatter-in-body write errors).
+Frontend `typecheck`/`lint` green (`PageWrite.meta`, `PageMeta.weight` mirrors).
+
+**Noted, not changed**: `created` is stamped to *now* when a write finds no
+`created` key (a genuine create, or a legacy page that never had one). Confirmed
+`created: null` *present* is preserved (only a truly absent key is stamped). Left
+as-is — it's the only creation signal available and changing it touches the
+roundtrip contract — but flagged for the migration: legacy pages lacking
+`created` acquire today's date on first edit.
+
+---
+
 ## 2026-07-17 — Sidebar ordering via a frontmatter `weight` key
 
 **What**: A page can declare its sidebar position with an integer `weight` in

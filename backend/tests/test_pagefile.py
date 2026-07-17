@@ -4,11 +4,14 @@ from pathlib import Path
 
 import pytest
 
+from libreta.errors import FrontmatterInBodyError
 from libreta.storage.pagefile import (
     _as_weight,
+    _body_looks_like_frontmatter,
     _classify_other,
     _read_webloc_url,
     read_page_file,
+    sanitize_page_meta,
     walk_children,
     write_page_file,
 )
@@ -321,3 +324,96 @@ def test_order_negative_weight_pins_to_top(tmp_path: Path) -> None:
     _write_page(tmp_path, "outro", 20)
 
     assert _order(tmp_path) == ["intro.md", "middle.md", "outro.md"]
+
+
+# ---------------------------------------------------------------------------
+# Setting frontmatter via the write meta channel
+# ---------------------------------------------------------------------------
+
+
+def test_write_sets_weight_via_meta_on_create(tmp_path: Path) -> None:
+    """A brand-new page can be given a weight through the meta channel — the key
+    doesn't have to pre-exist in the file (the roundtrip fix only copies keys
+    forward; meta is the inbound channel for new managed values)."""
+    write_page_file(tmp_path, "p.md", "# P\n", sanitize_page_meta({"weight": 10}))
+    assert read_page_file(tmp_path, "p.md").meta.weight == 10
+
+
+def test_write_updates_weight_via_meta(tmp_path: Path) -> None:
+    (tmp_path / "p.md").write_text("---\ntitle: P\nweight: 10\n---\n# P\n")
+    write_page_file(tmp_path, "p.md", "# P edited\n", sanitize_page_meta({"weight": 30}))
+    page = read_page_file(tmp_path, "p.md")
+    assert page.meta.weight == 30
+    assert "# P edited" in page.body
+
+
+def test_write_clears_weight_via_meta_null(tmp_path: Path) -> None:
+    (tmp_path / "p.md").write_text("---\ntitle: P\nweight: 10\n---\n# P\n")
+    write_page_file(tmp_path, "p.md", "# P\n", sanitize_page_meta({"weight": None}))
+    assert read_page_file(tmp_path, "p.md").meta.weight is None
+
+
+def test_write_meta_cannot_set_created_or_updated(tmp_path: Path) -> None:
+    """created/updated are writer-owned; a caller's meta must not stomp them."""
+    (tmp_path / "p.md").write_text("---\ntitle: P\ncreated: 2020-01-01T00:00:00+00:00\n---\n# P\n")
+    write_page_file(
+        tmp_path,
+        "p.md",
+        "# P\n",
+        sanitize_page_meta({"created": "1999-01-01", "updated": "1999-01-01"}),
+    )
+    page = read_page_file(tmp_path, "p.md")
+    # created preserved from the file (not the 1999 value the caller tried to set)
+    assert page.meta.created is not None
+    assert page.meta.created.year == 2020
+
+
+@pytest.mark.parametrize(
+    ("meta", "expected"),
+    [
+        ({"weight": 10}, {"weight": 10}),
+        ({"weight": "20"}, {"weight": 20}),
+        ({"weight": "bad"}, {"weight": None}),  # malformed → clear, not raise
+        ({"weight": None}, {"weight": None}),
+        ({"tags": ["a", "b"]}, {"tags": ["a", "b"]}),
+        ({"tags": "solo"}, {"tags": ["solo"]}),
+        ({"title": "Hi"}, {"title": "Hi"}),
+        ({"title": "   "}, {}),  # blank title dropped
+        ({"created": "2020", "updated": "2020"}, {}),  # writer-owned, dropped
+        ({"unknown_key": "x"}, {}),  # not settable, dropped
+        (None, {}),
+        ({}, {}),
+    ],
+)
+def test_sanitize_page_meta(meta: dict[str, object] | None, expected: dict[str, object]) -> None:
+    assert sanitize_page_meta(meta) == expected
+
+
+# ---------------------------------------------------------------------------
+# Frontmatter-in-body guard
+# ---------------------------------------------------------------------------
+
+
+def test_write_rejects_frontmatter_in_body(tmp_path: Path) -> None:
+    """A body opening with a frontmatter fence is a caller mistake — reject it
+    rather than persist the YAML as visible page content."""
+    with pytest.raises(FrontmatterInBodyError):
+        write_page_file(tmp_path, "p.md", "---\nweight: 10\n---\n\n# P\n")
+    # Nothing was written.
+    assert not (tmp_path / "p.md").exists()
+
+
+@pytest.mark.parametrize(
+    ("body", "looks_like_fm"),
+    [
+        ("---\nweight: 10\n---\n\n# P\n", True),  # classic frontmatter block
+        ("\n\n---\ntitle: x\n---\nbody", True),  # leading blank lines tolerated
+        ("---\nkey: v\n...\nbody", True),  # YAML '...' terminator counts as close
+        ("---\n\nJust a thematic break, no closing fence.\n", False),  # HR, allowed
+        ("# Heading\n\n---\n\nmore", False),  # HR mid-document, not at top
+        ("Normal body\n", False),
+        ("", False),
+    ],
+)
+def test_body_looks_like_frontmatter(body: str, looks_like_fm: bool) -> None:
+    assert _body_looks_like_frontmatter(body) is looks_like_fm

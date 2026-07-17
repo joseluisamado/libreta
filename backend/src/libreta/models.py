@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -152,6 +153,10 @@ class PageMeta(BaseModel):
 
 class PageWrite(BaseModel):
     body: str
+    # Optional frontmatter fields to set, merged over the page's existing
+    # frontmatter. Only managed keys (title, tags, weight) are honored;
+    # created/updated are writer-owned. See pagefile.sanitize_page_meta.
+    meta: dict[str, Any] | None = None
 
 
 class PageRead(BaseModel):

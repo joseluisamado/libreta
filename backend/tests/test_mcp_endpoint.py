@@ -121,18 +121,44 @@ async def _drive(url: str, repos_dir: Path) -> None:
                 "body": "# Ideas\n\nedited via mcp\n",
             },
         )
-        # Create a new page.
-        await session.call_tool(
+        # Create a new page, setting a sidebar weight via the meta channel.
+        create_res = (
+            await session.call_tool(
+                "write_page",
+                {
+                    "source": "wiki",
+                    "path": "fresh",
+                    "body": "# Fresh\n\nnew page\n",
+                    "meta": {"weight": 20},
+                },
+            )
+        ).structuredContent
+        assert create_res is not None
+        assert create_res["meta"]["weight"] == 20
+
+        # A body containing a frontmatter fence is a caller mistake: it must be
+        # rejected, not persisted as page content.
+        fence_res = await session.call_tool(
             "write_page",
-            {"source": "wiki", "path": "fresh", "body": "# Fresh\n\nnew page\n"},
+            {
+                "source": "wiki",
+                "path": "notes/ideas",
+                "body": "---\nweight: 99\n---\n\n# Ideas\n",
+            },
         )
+        assert fence_res.isError, "frontmatter-in-body write should error"
 
     # The writes hit the real working tree and were committed. Libreta manages
     # frontmatter on save, so assert the body content rather than byte-exact.
     edited = (repos_dir / "wiki" / "notes" / "ideas.md").read_text()
     assert "edited via mcp" in edited
+    # The rejected frontmatter-in-body write must not have touched the page.
+    assert "weight: 99" not in edited
     created = (repos_dir / "wiki" / "fresh.md").read_text()
     assert "new page" in created
+    # The weight set via meta landed in frontmatter (parsed as YAML, not body).
+    assert "weight: 20" in created
+    assert "# Fresh" in created
 
     repo = pygit2.Repository(str(repos_dir / "wiki"))
     last_msg = repo[repo.head.target].message  # type: ignore[attr-defined]

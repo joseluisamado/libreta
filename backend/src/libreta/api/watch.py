@@ -198,7 +198,7 @@ async def put_watched_page(
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> PageRead:
     watched_root, _ = await resolve_watched_file(settings.meta_dir, label, path)
-    page, _ = await write_watched_page(watched_root, path, body.body)
+    page, _ = await write_watched_page(watched_root, path, body.body, meta=body.meta)
     return page
 
 

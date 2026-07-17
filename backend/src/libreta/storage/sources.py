@@ -824,11 +824,15 @@ async def write_source_page(
     source_id: str,
     raw_path: str,
     body: str,
+    meta: dict[str, Any] | None = None,
 ) -> PageRead:
     _validate_source_path(raw_path)
+    extra_meta = pagefile.sanitize_page_meta(meta)
     local = _local_path(repos_dir, source_id)
     async with _get_lock(source_id):
-        result, _ = await asyncio.to_thread(pagefile.write_page_file, local, raw_path, body)
+        result, _ = await asyncio.to_thread(
+            pagefile.write_page_file, local, raw_path, body, extra_meta
+        )
         existing = (
             (local / raw_path).with_suffix(".md")
             if not Path(raw_path).suffix

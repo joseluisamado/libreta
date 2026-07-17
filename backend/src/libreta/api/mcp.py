@@ -116,14 +116,34 @@ def build_mcp(settings_provider: Callable[[], Settings] = get_settings) -> FastM
         return page.model_dump(mode="json")
 
     @mcp.tool()
-    async def write_page(source: str, path: str, body: str) -> dict[str, Any]:
-        """Create or edit a page (upsert). Writes ``body`` as the page's full markdown.
+    async def write_page(
+        source: str,
+        path: str,
+        body: str,
+        meta: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Create or edit a page (upsert). ``body`` is the page's markdown *body only*.
+
+        Do NOT put a ``---`` YAML frontmatter block in ``body`` — it would be
+        stored as visible page content, and a body that opens with a frontmatter
+        fence is rejected. Set frontmatter through the ``meta`` argument instead.
+
+        ``meta`` is an optional dict of frontmatter fields to set, merged over the
+        page's existing frontmatter (unlisted keys are preserved). Settable keys:
+
+        - ``weight`` (int): sidebar ordering hint; lower sorts first. Convention
+          is to leave gaps (10, 20, 30) so pages can be inserted later. Pass
+          ``null`` to clear it. Malformed values are treated as cleared.
+        - ``tags`` (list of str)
+        - ``title`` (str)
+
+        ``created``/``updated`` are managed by Libreta and cannot be set here.
 
         This overwrites the entire file, so when editing an existing page, first
         ``read_page`` it, apply your changes to the returned body, then pass the
-        complete revised markdown here. A ``path`` ending in ``.md`` is created
-        if it does not exist. Each write commits to the source repo and queues a
-        push.
+        complete revised body here (plus any ``meta`` changes). A ``path`` ending
+        in ``.md`` is created if it does not exist. Each write commits to the
+        source repo and queues a push.
 
         NOTE: last-writer-wins — there is no revision check. If a human may be
         editing the same page in Libreta's web editor concurrently, coordinate.
@@ -136,6 +156,7 @@ def build_mcp(settings_provider: Callable[[], Settings] = get_settings) -> FastM
             source,
             path,
             body,
+            meta=meta,
         )
         enqueue_push(source)
         return result.model_dump(mode="json")
