@@ -9,6 +9,12 @@ Entries are generated from [Conventional Commits](https://www.conventionalcommit
 by `scripts/changelog.py` at release time.
 
 
+## [2.11.1] - 2026-07-17
+
+### Added
+
+- **mcp:** add meta channel to write_page; reject frontmatter in body
+
 ## [2.11.0] - 2026-07-17
 
 ### Added
