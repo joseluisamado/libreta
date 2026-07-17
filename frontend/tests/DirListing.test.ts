@@ -39,7 +39,11 @@ function makeOther(n: number): OtherFile[] {
   }))
 }
 
-function mountListing(children: PageNode[], otherFiles: OtherFile[] = []) {
+function mountListing(
+  children: PageNode[],
+  otherFiles: OtherFile[] = [],
+  extraProps: Record<string, unknown> = {},
+) {
   return mount(DirListing, {
     props: {
       children,
@@ -47,6 +51,7 @@ function mountListing(children: PageNode[], otherFiles: OtherFile[] = []) {
       getChildUrl: (p: string) => `/source/s/${p}`,
       otherFiles,
       getOtherFileUrl: (p: string) => `/api/v1/sources/s/assets/${p}`,
+      ...extraProps,
     },
     global: {
       stubs: { RouterLink: { template: '<a><slot /></a>' }, PreviewTile: true },
@@ -145,5 +150,90 @@ describe('DirListing pagination (50 per page, combined + alphabetical)', () => {
     expect(text[0]).toContain('Apple.md')
     expect(text[1]).toContain('banana.md')
     expect(text[2]).toContain('cherry.md')
+  })
+})
+
+describe('DirListing inline weight editing', () => {
+  const mdPage = (filename: string, weight?: number | null): PageNode => ({
+    path: filename,
+    title: filename,
+    filename,
+    is_directory: false,
+    children: [],
+    weight,
+  })
+
+  it('shows no weight control unless canEditWeight is set', () => {
+    const w = mountListing([mdPage('a.md', 20)])
+    expect(w.text()).not.toContain('20')
+    expect(w.find('input[type="number"]').exists()).toBe(false)
+  })
+
+  it('renders the weight number for a weighted page when enabled', () => {
+    const w = mountListing([mdPage('a.md', 20)], [], { canEditWeight: true })
+    const btn = w.find('button[title="Edit sidebar weight"]')
+    expect(btn.exists()).toBe(true)
+    expect(btn.text()).toBe('20')
+  })
+
+  it('offers a "set weight" affordance for an unweighted page', () => {
+    const w = mountListing([mdPage('a.md')], [], { canEditWeight: true })
+    expect(w.find('button[title="Set sidebar weight"]').exists()).toBe(true)
+  })
+
+  it('does not offer weight editing for folders or non-page kinds', () => {
+    const folder: PageNode = {
+      path: 'dir',
+      title: 'dir',
+      filename: 'dir',
+      is_directory: true,
+      children: [],
+    }
+    const pdf: PageNode = { ...mdPage('doc.pdf'), kind: 'pdf' }
+    const w = mountListing([folder, pdf], [], { canEditWeight: true })
+    expect(w.find('button[title="Set sidebar weight"]').exists()).toBe(false)
+    expect(w.find('button[title="Edit sidebar weight"]').exists()).toBe(false)
+  })
+
+  it('emits setWeight with the parsed integer on Enter', async () => {
+    const w = mountListing([mdPage('a.md', 20)], [], { canEditWeight: true })
+    await w.find('button[title="Edit sidebar weight"]').trigger('click')
+    await nextTick()
+    const input = w.find('input[type="number"]')
+    await input.setValue('5')
+    await input.trigger('keydown.enter')
+    expect(w.emitted('setWeight')).toEqual([['a.md', 5]])
+  })
+
+  it('emits setWeight(null) when the field is cleared', async () => {
+    const w = mountListing([mdPage('a.md', 20)], [], { canEditWeight: true })
+    await w.find('button[title="Edit sidebar weight"]').trigger('click')
+    await nextTick()
+    const input = w.find('input[type="number"]')
+    await input.setValue('')
+    await input.trigger('keydown.enter')
+    expect(w.emitted('setWeight')).toEqual([['a.md', null]])
+  })
+
+  it('does not emit when the value is unchanged', async () => {
+    const w = mountListing([mdPage('a.md', 20)], [], { canEditWeight: true })
+    await w.find('button[title="Edit sidebar weight"]').trigger('click')
+    await nextTick()
+    const input = w.find('input[type="number"]')
+    await input.setValue('20')
+    await input.trigger('keydown.enter')
+    expect(w.emitted('setWeight')).toBeUndefined()
+  })
+
+  it('cancels on Esc without emitting', async () => {
+    const w = mountListing([mdPage('a.md', 20)], [], { canEditWeight: true })
+    await w.find('button[title="Edit sidebar weight"]').trigger('click')
+    await nextTick()
+    const input = w.find('input[type="number"]')
+    await input.setValue('99')
+    await input.trigger('keydown.esc')
+    expect(w.emitted('setWeight')).toBeUndefined()
+    // Back to the display button.
+    expect(w.find('button[title="Edit sidebar weight"]').exists()).toBe(true)
   })
 })

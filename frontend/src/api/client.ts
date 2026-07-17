@@ -360,6 +360,21 @@ export function saveSourcePage(id: string, path: string, data: PageWrite): Promi
   })
 }
 
+// Set managed frontmatter (title/tags/weight) on a page without touching its
+// body — the metadata-only edit channel (e.g. adjusting weight inline in the
+// folder listing). An explicit `weight: null` in `meta` clears the key.
+export function patchSourcePageMeta(
+  id: string,
+  path: string,
+  meta: Record<string, unknown>,
+): Promise<PageRead> {
+  return request<PageRead>(`/sources/${id}/pages/${enc(path)}/meta`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ meta }),
+  })
+}
+
 export function deleteSourcePage(id: string, path: string): Promise<void> {
   return requestNoContent(`/sources/${id}/pages/${enc(path)}`, { method: 'DELETE' })
 }

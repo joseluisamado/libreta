@@ -15,6 +15,33 @@ Living document. Update as work progresses. Latest at the top.
 
 ---
 
+## 2026-07-17 — Feature: inline weight editing in the folder listing
+
+**What**: The main-panel folder listing ("In this folder") now shows each
+markdown page's sidebar `weight` and lets you edit it in place — click the
+number (or the muted "weight" affordance on an unweighted page), type a value,
+Enter/blur commits, Esc cancels, empty clears. Markdown pages only (folders take
+weight from a backing `.md`; non-page kinds have nowhere to store it). Source
+context only — watched folders are read-only, so the control is gated behind a
+`canEditWeight` prop that only `SourcePageView` sets.
+
+**How**: A new body-safe metadata channel — `PATCH
+/sources/{id}/pages/{path}/meta` (`PageMetaPatch` → `patch_source_page_meta` →
+`pagefile.patch_page_meta`) reads the page's current body and rewrites it via
+`write_page_file` with the new frontmatter merged in, so a weight edit never
+needs to round-trip the body. Commits + queues a push like a normal save
+(R3). `weight: null` clears the key (reuses `sanitize_page_meta`). Frontend:
+`patchSourcePageMeta` client fn; `DirListing` emits `setWeight`; the view patches
+then refetches the folder's children (children endpoint, which re-sorts) or
+`rootListing` at the repo root.
+
+**Verified**: backend `ruff`/`mypy --strict`/`pytest` (210 passed, incl. 4 new
+`patch_page_meta` tests: set/clear/missing/non-markdown, body preserved).
+Frontend `typecheck`/`lint`/`vitest` (117 passed, incl. 8 new `DirListing`
+weight tests: gating, folder/non-page exclusion, Enter/clear/unchanged/Esc).
+
+---
+
 ## 2026-07-17 — Fix: sidebar folders collapse/flicker on navigation
 
 **Bug**: Clicking a folder (or navigating to a page) made the folder and its

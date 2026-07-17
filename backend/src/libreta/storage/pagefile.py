@@ -403,6 +403,29 @@ def write_page_file(
     return result, verb
 
 
+def patch_page_meta(root: Path, raw_path: str, extra_meta: dict[str, Any]) -> tuple[PageRead, str]:
+    """Set managed frontmatter on an existing page without touching its body.
+
+    Reads the page's current body, then rewrites it via :func:`write_page_file`
+    with *extra_meta* merged over the preserved frontmatter. This is the
+    body-safe channel for edits that only change metadata (e.g. adjusting
+    ``weight`` from the folder listing): the caller doesn't need — and shouldn't
+    have to round-trip — the page body just to set a frontmatter key.
+
+    *extra_meta* is caller-supplied and must already be sanitized (see
+    :func:`sanitize_page_meta`). Only markdown pages carry frontmatter; a
+    non-``.md`` target (or a missing file) raises :class:`PageNotFoundError`.
+    Returns ``(PageRead, verb)`` like :func:`write_page_file` (always
+    ``"update"`` here — the page must already exist).
+    """
+    file = root / raw_path
+    actual = file.with_suffix(".md") if not file.suffix else file
+    if not actual.is_file() or actual.suffix.lower() != ".md":
+        raise PageNotFoundError(raw_path)
+    post = frontmatter.load(actual)
+    return write_page_file(root, raw_path, post.content, extra_meta)
+
+
 # ---------------------------------------------------------------------------
 # Tree walk
 # ---------------------------------------------------------------------------

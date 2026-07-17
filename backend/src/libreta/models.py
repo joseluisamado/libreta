@@ -159,6 +159,16 @@ class PageWrite(BaseModel):
     meta: dict[str, Any] | None = None
 
 
+class PageMetaPatch(BaseModel):
+    # Managed frontmatter keys to set, merged over the page's existing
+    # frontmatter, leaving the body untouched. Same channel/semantics as
+    # ``PageWrite.meta`` (only title/tags/weight honored; see
+    # pagefile.sanitize_page_meta) — used for metadata-only edits like adjusting
+    # ``weight`` inline in the folder listing. An explicit ``weight: null``
+    # clears the key; omitting ``weight`` leaves it unchanged.
+    meta: dict[str, Any]
+
+
 class PageRead(BaseModel):
     path: str
     meta: PageMeta

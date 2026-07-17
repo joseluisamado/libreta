@@ -1,5 +1,5 @@
 <script setup lang="ts">
-  import { computed, ref, watch } from 'vue'
+  import { computed, nextTick, ref, watch } from 'vue'
   import type { OtherFile, PageNode } from '@/api/types'
   import PreviewTile from './PreviewTile.vue'
 
@@ -21,6 +21,10 @@
     sourceId?: string
     watchedLabel?: string
     uploading?: boolean
+    // When true, a markdown page's sidebar weight is shown and click-to-edit is
+    // enabled (source context only — watched folders are read-only, so the host
+    // leaves this off there).
+    canEditWeight?: boolean
   }>()
 
   const emit = defineEmits<{
@@ -29,7 +33,70 @@
     rename: [childPath: string]
     delete: [childPath: string]
     upload: [files: File[]]
+    // Set (number) or clear (null) a markdown page's `weight` frontmatter.
+    setWeight: [childPath: string, weight: number | null]
   }>()
+
+  // ----- Inline weight editing ----------------------------------------------
+  // Only markdown pages carry a weight: folders (which take weight from a
+  // backing .md) and non-page kinds are excluded so the control maps 1:1 to an
+  // editable frontmatter target.
+  function isWeightable(child: PageNode): boolean {
+    return !isFolder(child) && (!child.kind || child.kind === 'page')
+  }
+
+  // Path of the row whose weight is currently being edited (null = none), and
+  // the draft input value bound to the inline field.
+  const editingWeightPath = ref<string | null>(null)
+  const weightDraft = ref<string>('')
+  // A ref bound inside v-for collects an array; only one input is ever rendered
+  // (guarded by v-if on the editing row), so normalise to the single element.
+  const weightInputRef = ref<HTMLInputElement | HTMLInputElement[] | null>(null)
+  const weightInput = computed<HTMLInputElement | null>(() => {
+    const r = weightInputRef.value
+    return Array.isArray(r) ? (r[0] ?? null) : r
+  })
+
+  async function startEditWeight(child: PageNode): Promise<void> {
+    if (!props.canEditWeight || !isWeightable(child)) return
+    editingWeightPath.value = child.path
+    weightDraft.value = child.weight == null ? '' : String(child.weight)
+    await nextTick()
+    // Guard the methods: the ref-in-v-for element isn't always a real input
+    // under jsdom, and focus/select are best-effort UX, not correctness.
+    weightInput.value?.focus?.()
+    weightInput.value?.select?.()
+  }
+
+  function cancelEditWeight(): void {
+    editingWeightPath.value = null
+    weightDraft.value = ''
+  }
+
+  function commitEditWeight(child: PageNode): void {
+    if (editingWeightPath.value !== child.path) return
+    // A number <input> v-model can hand back a number; normalise to string.
+    const raw = String(weightDraft.value ?? '').trim()
+    // Empty clears the weight; otherwise must parse to an integer. A malformed
+    // value (letters, decimals) is treated as "no change" — cancel silently
+    // rather than sending a clear the user didn't intend.
+    let next: number | null
+    if (raw === '') {
+      next = null
+    } else {
+      const n = Number(raw)
+      if (!Number.isInteger(n)) {
+        cancelEditWeight()
+        return
+      }
+      next = n
+    }
+    editingWeightPath.value = null
+    weightDraft.value = ''
+    // No-op if unchanged (avoids a pointless commit).
+    if (next === (child.weight ?? null)) return
+    emit('setWeight', child.path, next)
+  }
 
   // Files at or above this size trigger a confirmation step before upload.
   // There is no hard cap — uploads stream to disk server-side — but a large
@@ -453,6 +520,36 @@
             >
             <span class="truncate">{{ child.filename }}</span>
           </component>
+          <!-- Sidebar weight: click the number (or the muted "+ w" affordance
+               when unset) to edit inline. Enter / blur commits, Esc cancels,
+               empty clears. Markdown pages only; source context only. -->
+          <template v-if="canEditWeight && isWeightable(child)">
+            <input
+              v-if="editingWeightPath === child.path"
+              ref="weightInputRef"
+              v-model="weightDraft"
+              type="number"
+              class="shrink-0 w-14 text-xs text-right tabular-nums border border-blue-300 rounded px-1 py-0 focus:outline-none focus:ring-1 focus:ring-blue-400"
+              :aria-label="`Weight for ${child.filename}`"
+              @keydown.enter.prevent="commitEditWeight(child)"
+              @keydown.esc.prevent="cancelEditWeight"
+              @blur="commitEditWeight(child)"
+            />
+            <button
+              v-else
+              type="button"
+              class="shrink-0 text-[11px] font-medium tabular-nums px-1 rounded transition-opacity cursor-pointer"
+              :class="
+                child.weight != null
+                  ? 'text-slate-400 hover:text-blue-600'
+                  : 'text-slate-300 opacity-0 group-hover:opacity-100 hover:text-blue-600'
+              "
+              :title="child.weight != null ? 'Edit sidebar weight' : 'Set sidebar weight'"
+              @click.prevent="startEditWeight(child)"
+            >
+              {{ child.weight != null ? child.weight : 'weight' }}
+            </button>
+          </template>
           <button
             type="button"
             class="shrink-0 opacity-30 group-hover:opacity-100 text-slate-400 hover:text-slate-600 p-0.5 rounded transition-opacity cursor-pointer"

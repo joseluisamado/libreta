@@ -842,3 +842,31 @@ async def write_source_page(
         rel = str(existing.relative_to(local))
         _commit_sync(repo, [rel], f"update {rel}")
     return result
+
+
+async def patch_source_page_meta(
+    repos_dir: Path,
+    source_id: str,
+    raw_path: str,
+    meta: dict[str, Any],
+) -> PageRead:
+    """Set managed frontmatter on a page, preserving its body, then commit.
+
+    The body-safe counterpart to :func:`write_source_page` for metadata-only
+    edits (e.g. adjusting ``weight`` inline in the folder listing). Same
+    validate → lock → write → commit → (caller pushes) lifecycle.
+    """
+    _validate_source_path(raw_path)
+    extra_meta = pagefile.sanitize_page_meta(meta)
+    local = _local_path(repos_dir, source_id)
+    async with _get_lock(source_id):
+        result, _ = await asyncio.to_thread(pagefile.patch_page_meta, local, raw_path, extra_meta)
+        existing = (
+            (local / raw_path).with_suffix(".md")
+            if not Path(raw_path).suffix
+            else (local / raw_path)
+        )
+        repo = _open_repo(local)
+        rel = str(existing.relative_to(local))
+        _commit_sync(repo, [rel], f"update {rel} metadata")
+    return result

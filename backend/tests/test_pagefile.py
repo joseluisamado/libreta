@@ -4,12 +4,13 @@ from pathlib import Path
 
 import pytest
 
-from libreta.errors import FrontmatterInBodyError
+from libreta.errors import FrontmatterInBodyError, PageNotFoundError
 from libreta.storage.pagefile import (
     _as_weight,
     _body_looks_like_frontmatter,
     _classify_other,
     _read_webloc_url,
+    patch_page_meta,
     read_h1_or_fallback,
     read_page_file,
     read_page_head,
@@ -205,6 +206,44 @@ def test_write_preserves_unknown_frontmatter_keys(tmp_path: Path) -> None:
 def test_read_surfaces_weight(tmp_path: Path) -> None:
     (tmp_path / "p.md").write_text("---\ntitle: P\nweight: 30\n---\n# P\n")
     assert read_page_file(tmp_path, "p.md").meta.weight == 30
+
+
+# ---------------------------------------------------------------------------
+# patch_page_meta: set frontmatter without touching the body
+# ---------------------------------------------------------------------------
+
+
+def test_patch_page_meta_sets_weight_preserving_body(tmp_path: Path) -> None:
+    (tmp_path / "p.md").write_text("---\ntitle: P\ncustom: keepme\n---\n# Heading\n\nBody stays.\n")
+    result, verb = patch_page_meta(tmp_path, "p.md", {"weight": 15})
+    assert verb == "update"
+    assert result.meta.weight == 15
+    page = read_page_file(tmp_path, "p.md")
+    assert page.meta.weight == 15
+    # Body is untouched (frontmatter parsing strips the trailing newline, as it
+    # does on every read/write round-trip); the unmodelled key survives.
+    assert page.body.strip() == "# Heading\n\nBody stays."
+    import frontmatter
+
+    assert frontmatter.load(tmp_path / "p.md").metadata["custom"] == "keepme"
+
+
+def test_patch_page_meta_clears_weight(tmp_path: Path) -> None:
+    (tmp_path / "p.md").write_text("---\ntitle: P\nweight: 40\n---\n# H\n")
+    # sanitize_page_meta turns an explicit None into a weight-clear.
+    patch_page_meta(tmp_path, "p.md", sanitize_page_meta({"weight": None}))
+    assert read_page_file(tmp_path, "p.md").meta.weight is None
+
+
+def test_patch_page_meta_missing_page_raises(tmp_path: Path) -> None:
+    with pytest.raises(PageNotFoundError):
+        patch_page_meta(tmp_path, "nope.md", {"weight": 1})
+
+
+def test_patch_page_meta_rejects_non_markdown(tmp_path: Path) -> None:
+    (tmp_path / "d.pdf").write_bytes(b"%PDF-1.4\n")
+    with pytest.raises(PageNotFoundError):
+        patch_page_meta(tmp_path, "d.pdf", {"weight": 1})
 
 
 def test_read_absent_weight_is_none(tmp_path: Path) -> None:

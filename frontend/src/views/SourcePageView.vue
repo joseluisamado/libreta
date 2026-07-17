@@ -4,6 +4,7 @@
   import {
     getSourcePage,
     saveSourcePage,
+    patchSourcePageMeta,
     deleteSourcePage,
     moveSourcePage,
     createSourceFolder,
@@ -280,6 +281,22 @@
     }
   }
 
+  async function onSetWeight(childPath: string, weight: number | null): Promise<void> {
+    try {
+      await patchSourcePageMeta(sourceId.value, childPath, { weight })
+      // Refresh the listing so the new weight and re-sorted order show. The
+      // current folder's children come from the tree (or rootListing at the
+      // repo root); refetch whichever backs the view.
+      if (path.value === '') {
+        rootListing.value = await getSourceChildren(sourceId.value, '')
+      } else {
+        await sources.loadTreeChildren(sourceId.value, path.value)
+      }
+    } catch (e) {
+      window.alert(`Failed to set weight: ${e instanceof Error ? e.message : String(e)}`)
+    }
+  }
+
   // Render the frontmatter title as <h1> only when the body has no H1 of
   // its own. If the markdown begins with `# Heading`, that *is* the page
   // title — surfacing meta.title above it would just duplicate the header.
@@ -424,11 +441,13 @@
         :get-child-raw-url="getChildRawUrl"
         :source-id="sourceId"
         :uploading="uploading"
+        :can-edit-weight="true"
         @create-page="onCreatePage"
         @create-folder="onCreateFolder"
         @rename="onRename"
         @delete="onDelete"
         @upload="onUpload"
+        @set-weight="onSetWeight"
       />
       <p v-if="page.meta.tags.length" class="mt-8 text-xs text-slate-500">
         <span v-for="t in page.meta.tags" :key="t" class="mr-2">#{{ t }}</span>

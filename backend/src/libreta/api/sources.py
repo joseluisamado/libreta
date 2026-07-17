@@ -24,6 +24,7 @@ from libreta.models import (
     GitSourceCreate,
     GitSourceResponse,
     GitSourceUpdate,
+    PageMetaPatch,
     PageMove,
     PageNode,
     PageRead,
@@ -529,6 +530,29 @@ async def put_source_page(
         path,
         body.body,
         meta=body.meta,
+    )
+    background.add_task(enqueue_push, source_id)
+    return result
+
+
+@router.patch("/{source_id}/pages/{path:path}/meta", response_model=PageRead)
+async def patch_source_page_meta(
+    source_id: str,
+    path: str,
+    body: PageMetaPatch,
+    background: BackgroundTasks,
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> PageRead:
+    """Set managed frontmatter on a page without touching its body.
+
+    Metadata-only edit channel (e.g. adjusting ``weight`` inline in the folder
+    listing). Commits and queues a push like a normal save.
+    """
+    result = await src_store.patch_source_page_meta(
+        settings.repos_dir,
+        source_id,
+        path,
+        body.meta,
     )
     background.add_task(enqueue_push, source_id)
     return result
