@@ -9,6 +9,12 @@ Entries are generated from [Conventional Commits](https://www.conventionalcommit
 by `scripts/changelog.py` at release time.
 
 
+## [2.12.1] - 2026-07-17
+
+### Fixed
+
+- **listing:** match sidebar weight placement and ordering
+
 ## [2.12.0] - 2026-07-17
 
 ### Added
