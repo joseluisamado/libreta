@@ -2,14 +2,16 @@
 
 Drives the mounted MCP streamable-HTTP server with a real MCP client over a
 loopback uvicorn (so the app's lifespan — and thus the session manager — runs),
-then exercises the full tool set: list_sources, list_pages, read_page, and the
-create + edit halves of write_page. The write path asserts the change lands on
-disk and is committed, matching Libreta's save lifecycle (R3).
+then exercises the full tool set: list_sources, list_pages, read_page, the
+create + edit halves of write_page, and attach_file (base64 binary → page
+sidecar). The write/attach paths assert the change lands on disk and is
+committed, matching Libreta's save lifecycle (R3).
 """
 
 from __future__ import annotations
 
 import asyncio
+import base64
 import socket
 import threading
 from collections.abc import Iterator
@@ -28,6 +30,14 @@ from libreta.main import create_app
 from libreta.storage.sources import save_sources_sync
 
 from .conftest import make_source
+
+# Smallest valid PNG (1x1 transparent) — real image bytes so _kind_for
+# classifies the attachment as "image" and the round-trip is honest.
+_TINY_PNG = (
+    b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01"
+    b"\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\nIDATx\x9cc\x00\x01"
+    b"\x00\x00\x05\x00\x01\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82"
+)
 
 
 def _free_port() -> int:
@@ -92,7 +102,13 @@ async def _drive(url: str, repos_dir: Path) -> None:
         await session.initialize()
 
         names = {t.name for t in (await session.list_tools()).tools}
-        assert names == {"list_sources", "list_pages", "read_page", "write_page"}
+        assert names == {
+            "list_sources",
+            "list_pages",
+            "read_page",
+            "write_page",
+            "attach_file",
+        }
 
         sources = (await session.call_tool("list_sources", {})).structuredContent
         assert sources is not None
@@ -136,6 +152,54 @@ async def _drive(url: str, repos_dir: Path) -> None:
         assert create_res is not None
         assert create_res["meta"]["weight"] == 20
 
+        # Attach a binary file (base64 over the JSON transport) to a page, then
+        # reference it in the body — the two-step image flow the tools expose.
+        png = base64.b64encode(_TINY_PNG).decode("ascii")
+        attach_res = (
+            await session.call_tool(
+                "attach_file",
+                {
+                    "source": "wiki",
+                    "page": "notes/ideas",
+                    "filename": "diagram.png",
+                    "content_base64": png,
+                },
+            )
+        ).structuredContent
+        assert attach_res is not None
+        # Sidecar-relative path, ready to embed as markdown.
+        assert attach_res["filename"] == ".ideas.md/diagram.png"
+        assert attach_res["kind"] == "image"
+        assert attach_res["deduped"] is False
+
+        # Re-attaching identical bytes dedupes rather than writing a copy.
+        redo = (
+            await session.call_tool(
+                "attach_file",
+                {
+                    "source": "wiki",
+                    "page": "notes/ideas",
+                    "filename": "diagram.png",
+                    "content_base64": png,
+                },
+            )
+        ).structuredContent
+        assert redo is not None
+        assert redo["deduped"] is True
+        assert redo["filename"] == ".ideas.md/diagram.png"
+
+        # Non-base64 payload is a caller error, not a 500.
+        bad = await session.call_tool(
+            "attach_file",
+            {
+                "source": "wiki",
+                "page": "notes/ideas",
+                "filename": "x.png",
+                "content_base64": "not base64!!!",
+            },
+        )
+        assert bad.isError, "invalid base64 should error"
+
         # A body containing a frontmatter fence is a caller mistake: it must be
         # rejected, not persisted as page content.
         fence_res = await session.call_tool(
@@ -160,9 +224,15 @@ async def _drive(url: str, repos_dir: Path) -> None:
     assert "weight: 20" in created
     assert "# Fresh" in created
 
+    # The attachment landed in the page's hidden sidecar with the real bytes.
+    asset = repos_dir / "wiki" / "notes" / ".ideas.md" / "diagram.png"
+    assert asset.read_bytes() == _TINY_PNG
+
     repo = pygit2.Repository(str(repos_dir / "wiki"))
-    last_msg = repo[repo.head.target].message  # type: ignore[attr-defined]
-    assert "fresh.md" in last_msg  # most recent commit is the new page
+    messages = [c.message for c in repo.walk(repo.head.target)]
+    # Both writes were committed (R3): the new page and the attachment.
+    assert any("fresh.md" in m for m in messages)
+    assert any("diagram.png" in m for m in messages)
 
 
 def test_mcp_endpoint_round_trip(mcp_url: str, repos_dir: Path) -> None:

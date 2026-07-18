@@ -15,6 +15,32 @@ Living document. Update as work progresses. Latest at the top.
 
 ---
 
+## 2026-07-18 — Feature: MCP `attach_file` (images/binaries into page sidecars)
+
+**What**: The MCP endpoint (`/mcp`) gains an `attach_file` tool so an MCP client
+(Claude Desktop/Code) can add an image or binary to a page. The file crosses the
+JSON transport as base64, is decoded server-side, and stored in the page's
+hidden sidecar directory (`.<pagename>.md/`) — the same place the web uploader
+puts attachments. It returns the sidecar-relative `filename`
+(`.notes.md/diagram.png`) so the model can then reference it in the body via a
+follow-up `write_page` (`![](.notes.md/diagram.png)`). Storing the file does not
+touch the page body; it's the two-step upload-then-embed flow the web UI uses.
+
+**How**: New tool in `api/mcp.py` reusing the exact upload lifecycle the REST
+handler uses (`store_asset` → `commit_page` → `enqueue_push`), so dedup,
+unique-naming, sidecar placement, and R3 (every save is a commit) are identical
+to `POST /sources/{id}/pages/{path}/assets`. Source id goes through
+`src_store._local_path` for the traversal guard; invalid base64 / empty payloads
+raise `InvalidPathError` (→ tool error, not a 500). No new deps.
+
+**Verified**: backend `ruff`/`mypy --strict`/`pytest` (210 passed). The `/mcp`
+integration test now also drives `attach_file`: asserts the returned
+`.ideas.md/diagram.png` path, `kind == "image"`, dedup on re-attach, an
+invalid-base64 error, real bytes on disk in the sidecar, and the attach commit
+in history.
+
+---
+
 ## 2026-07-17 — Feature: inline weight editing in the folder listing
 
 **What**: The main-panel folder listing ("In this folder") now shows each
