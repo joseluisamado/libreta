@@ -26,6 +26,9 @@ Once connected, Claude has four tools:
 | `write_page` | Create a new page **or** edit an existing one. |
 
 Claude picks the right tools on its own — you just ask in plain language.
+These tools are text-only; to add an **image or file** to a page you upload
+the bytes to Libreta directly and let Claude reference them — see
+[Adding images to a page](#adding-images-to-a-page).
 
 ## Before you start
 
@@ -228,6 +231,67 @@ Tip: name the **source** ("my ops wiki") and the **path** you want
 (`runbooks/deploy.md`) and Claude will get it right the first time. You can
 always review the change afterward in Libreta's UI or with `git log` in the
 source repo — every write is a commit.
+
+## Adding images to a page
+
+The MCP tools deliberately handle **text only** — there is no "upload an
+image" tool. That's not an oversight: an MCP tool argument travels inside the
+model's context, so passing a file's bytes through a tool would mean the model
+generating the whole image as base64 (a 5 MB photo becomes well over a million
+tokens). It can't afford that, and it can't produce bytes it doesn't already
+hold.
+
+So images go in the way the web editor does it — the **bytes are POSTed
+straight to Libreta over plain HTTP**, never through the model — and then the
+page's markdown just *references* the stored file. Two steps:
+
+**1. Upload the file to the page's attachment endpoint.** The bytes go directly
+to the backend as a normal multipart upload:
+
+```bash
+curl -F file=@diagram.png \
+  https://wiki.lan:8091/api/v1/sources/wiki/pages/notes/ideas/assets
+```
+
+- Use the **same base URL as your `/mcp` endpoint**, but with
+  `/api/v1/sources/…` instead of `/mcp` (here `https://wiki.lan:8091`). The
+  bundled proxy forwards `/api/` to the backend on the same host and port you
+  already use for MCP — you don't need to reach the backend's internal port.
+- `sources/wiki` — your source id (from `list_sources`).
+- `pages/notes/ideas` — the page path, **without** the `.md`.
+- `file` — the multipart field name (must be exactly `file`).
+
+The response tells you the path to reference:
+
+```json
+{ "filename": ".ideas.md/diagram.png", "size": 20153,
+  "sha256": "…", "kind": "image", "deduped": false }
+```
+
+The file is now stored in the page's hidden sidecar directory
+(`notes/.ideas.md/`) and **committed** — same as uploading through the web UI.
+(Uploading identical bytes again is deduplicated: you get the same `filename`
+back with `"deduped": true` and no second copy.)
+
+**2. Ask Claude to reference it.** Give Claude the returned `filename` and let
+it edit the page:
+
+> I just uploaded `.ideas.md/diagram.png` to `notes/ideas` in my "wiki" wiki.
+> Read the page and add the image under the "Architecture" heading.
+
+Claude uses `write_page` to drop `![](.ideas.md/diagram.png)` into the body.
+The image bytes never touched the conversation; only the short path did.
+
+> If you're driving Libreta from **Claude Code** (not Desktop), Claude can run
+> the `curl` itself, so the whole thing is one request: "upload
+> `./diagram.png` to `notes/ideas` and embed it." Claude Desktop can't issue
+> arbitrary HTTP, so there you run the upload yourself (or via a script) and
+> hand Claude the returned path.
+
+The same endpoint accepts any file type (PDFs, `.drawio.svg` diagrams, etc.),
+not just images — `kind` in the response is `"image"` or `"file"` accordingly,
+and Claude links non-images with `[text](.page.md/report.pdf)` instead of an
+image embed.
 
 ## Good to know
 

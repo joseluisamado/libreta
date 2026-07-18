@@ -8,17 +8,8 @@ nothing is installed per-machine.
 The tools call the storage layer directly (in-process, no HTTP self-call) and
 go through the same save lifecycle as the REST handlers: ``write_page`` commits
 to the source repo via ``write_source_page`` and then enqueues an async push,
-exactly like ``PUT /api/v1/sources/{id}/pages/{path}``. ``attach_file`` mirrors
-``POST /api/v1/sources/{id}/pages/{path}/assets`` — it stores a binary asset in
-the page's hidden sidecar directory (``.<pagename>.md/``), commits it, and
-enqueues a push. There is no save-without-commit path.
-
-Binary attachments cross the MCP boundary as base64 text (the transport carries
-JSON, not raw bytes). ``attach_file`` decodes the payload, hands the bytes to
-the same ``store_asset`` the upload endpoint uses (so dedup, unique-naming, and
-sidecar placement are identical), and returns the sidecar-relative ``filename``
-(``.<pagename>.md/photo.png``) ready to drop into markdown as
-``![](.<pagename>.md/photo.png)`` via a follow-up ``write_page``.
+exactly like ``PUT /api/v1/sources/{id}/pages/{path}``. There is no
+save-without-commit path.
 
 Scope: assumes a LAN/no-auth Libreta (its current pre-M6 state). The MCP
 transport is unauthenticated; do not expose ``/mcp`` to an untrusted network
@@ -36,8 +27,6 @@ module-level singleton.
 
 from __future__ import annotations
 
-import base64
-import binascii
 from collections.abc import Callable
 from typing import Any
 
@@ -46,11 +35,8 @@ from mcp.server.transport_security import TransportSecuritySettings
 
 from libreta.config import Settings
 from libreta.deps import get_settings
-from libreta.errors import InvalidPathError
 from libreta.services.sync import enqueue_push
 from libreta.storage import sources as src_store
-from libreta.storage.assets import store_asset
-from libreta.storage.repo import commit_page, open_repo
 
 
 def _flatten_pages(nodes: list[Any], acc: list[dict[str, str]]) -> None:
@@ -174,67 +160,5 @@ def build_mcp(settings_provider: Callable[[], Settings] = get_settings) -> FastM
         )
         enqueue_push(source)
         return result.model_dump(mode="json")
-
-    @mcp.tool()
-    async def attach_file(
-        source: str,
-        page: str,
-        filename: str,
-        content_base64: str,
-    ) -> dict[str, Any]:
-        """Attach an image or binary file to a page, storing it in the page's sidecar.
-
-        Use this to add an image (or any binary: PDF, diagram, etc.) that a page
-        embeds or links to. The bytes are stored in the page's hidden sidecar
-        directory (``.<pagename>.md/``) — the same place Libreta's web uploader
-        puts attachments — committed to the source repo, and queued for push.
-
-        Arguments:
-
-        - ``source``: a source id from ``list_sources``.
-        - ``page``: the page path this file belongs to (e.g. ``notes/ideas`` or
-          ``notes/ideas.md``). The page must already exist — create it with
-          ``write_page`` first if needed. The sidecar is derived from this path.
-        - ``filename``: the desired file name (e.g. ``diagram.png``). It is
-          sanitized (directory components stripped, unsafe characters replaced)
-          and de-collided against existing attachments, so the stored name may
-          differ from what you pass — always use the returned ``filename``.
-          ``.md`` names are rejected: a markdown file is a page, not an asset.
-        - ``content_base64``: the file's raw bytes, base64-encoded. The MCP
-          transport is JSON/text, so binary payloads must be base64.
-
-        Returns ``{filename, size, sha256, kind, deduped}`` where ``filename`` is
-        the sidecar-relative path (``.notes.md/diagram.png``) — embed it verbatim
-        in the page body as ``![](.notes.md/diagram.png)`` (for ``kind ==
-        "image"``) or a link (for ``kind == "file"``) via a follow-up
-        ``write_page``. ``deduped`` is true when identical bytes already existed
-        and the stored copy was reused.
-
-        Storing the file does NOT edit the page body — call ``write_page`` after
-        this to reference the returned ``filename`` in the markdown.
-        """
-        try:
-            data = base64.b64decode(content_base64, validate=True)
-        except (binascii.Error, ValueError) as exc:
-            raise InvalidPathError(f"content_base64 is not valid base64: {exc}") from exc
-        if not data:
-            raise InvalidPathError("empty file")
-
-        settings = settings_provider()
-        # _local_path enforces the source-id shape, so a crafted `source`
-        # can't escape repos_dir; store_asset validates the page path.
-        local = src_store._local_path(settings.repos_dir, source).resolve()
-        result = await store_asset(local, page, filename, data, None)
-        if not result.deduped:
-            repo = open_repo(local)
-            await commit_page(repo, result.rel_path, "attach")
-            enqueue_push(source)
-        return {
-            "filename": result.filename,
-            "size": result.size,
-            "sha256": result.sha256,
-            "kind": result.kind,
-            "deduped": result.deduped,
-        }
 
     return mcp

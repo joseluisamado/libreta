@@ -15,29 +15,31 @@ Living document. Update as work progresses. Latest at the top.
 
 ---
 
-## 2026-07-18 — Feature: MCP `attach_file` (images/binaries into page sidecars)
+## 2026-07-18 — Reverted: MCP `attach_file` (base64 binary upload)
 
-**What**: The MCP endpoint (`/mcp`) gains an `attach_file` tool so an MCP client
-(Claude Desktop/Code) can add an image or binary to a page. The file crosses the
-JSON transport as base64, is decoded server-side, and stored in the page's
-hidden sidecar directory (`.<pagename>.md/`) — the same place the web uploader
-puts attachments. It returns the sidecar-relative `filename`
-(`.notes.md/diagram.png`) so the model can then reference it in the body via a
-follow-up `write_page` (`![](.notes.md/diagram.png)`). Storing the file does not
-touch the page body; it's the two-step upload-then-embed flow the web UI uses.
+**What**: Added an `attach_file` MCP tool (base64 → page sidecar) and then
+reverted it the same day (revert of `8227c82`). MCP tool *arguments* are JSON
+in the model's conversation, so a `content_base64` parameter forces the model
+to generate the file's bytes token-by-token into its own context — ~1.33×
+inflation, so a 5 MB image is ~1.7M tokens. It can't produce bytes it doesn't
+already hold, and it can't afford the ones it does. Base64-as-tool-argument is
+the wrong channel for binary.
 
-**How**: New tool in `api/mcp.py` reusing the exact upload lifecycle the REST
-handler uses (`store_asset` → `commit_page` → `enqueue_push`), so dedup,
-unique-naming, sidecar placement, and R3 (every save is a commit) are identical
-to `POST /sources/{id}/pages/{path}/assets`. Source id goes through
-`src_store._local_path` for the traversal guard; invalid base64 / empty payloads
-raise `InvalidPathError` (→ tool error, not a 500). No new deps.
+**Decision**: MCP stays text-page-only. Attaching images/binaries remains a
+web-UI / REST concern (`POST /sources/{id}/pages/{path}/assets`, multipart).
+If MCP binary upload is revisited, the bytes must enter the backend *without*
+passing through the model's token stream — e.g. a server-side path/URL the
+backend reads itself, or an MCP resource handle the client supplies
+out-of-band — never a base64 tool argument.
 
-**Verified**: backend `ruff`/`mypy --strict`/`pytest` (210 passed). The `/mcp`
-integration test now also drives `attach_file`: asserts the returned
-`.ideas.md/diagram.png` path, `kind == "image"`, dedup on re-attach, an
-invalid-base64 error, real bytes on disk in the sidecar, and the attach commit
-in history.
+**Documented the workflow** in `docs/site/claude-desktop.md` ("Adding images
+to a page"): POST the bytes straight to the asset endpoint (bytes never touch
+the conversation), then let Claude reference the returned `.page.md/<file>`
+path via `write_page`. Verified end-to-end against the live endpoint — URL
+shape (`.../pages/<path-no-.md>/assets`, field `file`), returned
+`.ideas.md/diagram.png`, sidecar placement, dedup, and the `attach` commit.
+Claude Code can run the `curl` itself; Claude Desktop can't issue HTTP, so the
+user uploads and hands Claude the path.
 
 ---
 
