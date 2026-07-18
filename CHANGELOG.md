@@ -9,6 +9,12 @@ Entries are generated from [Conventional Commits](https://www.conventionalcommit
 by `scripts/changelog.py` at release time.
 
 
+## [2.14.0] - 2026-07-18
+
+### Added
+
+- **mcp:** add attach_file tool for page images/binaries
+
 ## [2.13.1] - 2026-07-18
 
 ### Fixed
