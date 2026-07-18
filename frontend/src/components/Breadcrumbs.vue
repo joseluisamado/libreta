@@ -1,5 +1,5 @@
 <script setup lang="ts">
-  import { computed } from 'vue'
+  import { computed, ref } from 'vue'
   import { useSourcesStore } from '@/stores/sources'
   import { displaySourceLabel } from '@/utils/sourceLabel'
 
@@ -9,6 +9,31 @@
     sourceId?: string
   }>()
   const sources = useSourcesStore()
+
+  // For git-source pages we can offer a one-click copy of the exact arguments
+  // the Libreta MCP tools expect (``read_page``/``write_page`` take a source id
+  // and a real page path). Watched folders aren't MCP-addressable, so the
+  // button only appears when a sourceId is present.
+  const mcpArgs = computed<string | null>(() => {
+    if (!props.sourceId) return null
+    return `source='${props.sourceId}' path='${props.path}'`
+  })
+
+  const copied = ref(false)
+
+  async function copyMcpArgs(): Promise<void> {
+    if (!mcpArgs.value) return
+    try {
+      await navigator.clipboard.writeText(mcpArgs.value)
+      copied.value = true
+      window.setTimeout(() => {
+        copied.value = false
+      }, 1500)
+    } catch {
+      // Clipboard API can reject (insecure context, denied permission).
+      // Fail quietly rather than throwing in the render path.
+    }
+  }
 
   interface Crumb {
     label: string
@@ -67,15 +92,26 @@
 </script>
 
 <template>
-  <nav aria-label="Breadcrumb" class="text-sm text-slate-500 mb-4">
-    <ol class="flex flex-wrap items-center gap-1">
-      <li v-for="(c, i) in crumbs" :key="i" class="flex items-center gap-1">
-        <span v-if="i > 0" class="text-slate-300">/</span>
-        <RouterLink v-if="c.to" :to="c.to" class="hover:text-blue-600 hover:underline">
-          {{ c.label }}
-        </RouterLink>
-        <span v-else class="text-slate-700 font-medium">{{ c.label }}</span>
-      </li>
-    </ol>
-  </nav>
+  <div class="flex flex-wrap items-start gap-x-3 gap-y-1 mb-4">
+    <nav aria-label="Breadcrumb" class="text-sm text-slate-500">
+      <ol class="flex flex-wrap items-center gap-1">
+        <li v-for="(c, i) in crumbs" :key="i" class="flex items-center gap-1">
+          <span v-if="i > 0" class="text-slate-300">/</span>
+          <RouterLink v-if="c.to" :to="c.to" class="hover:text-blue-600 hover:underline">
+            {{ c.label }}
+          </RouterLink>
+          <span v-else class="text-slate-700 font-medium">{{ c.label }}</span>
+        </li>
+      </ol>
+    </nav>
+    <button
+      v-if="mcpArgs"
+      type="button"
+      class="text-xs text-slate-400 hover:text-blue-600 hover:underline whitespace-nowrap"
+      :title="`Copy MCP arguments to clipboard: ${mcpArgs}`"
+      @click="copyMcpArgs"
+    >
+      {{ copied ? 'Copied!' : 'Copy MCP path' }}
+    </button>
+  </div>
 </template>
