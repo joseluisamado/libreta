@@ -9,6 +9,12 @@ Entries are generated from [Conventional Commits](https://www.conventionalcommit
 by `scripts/changelog.py` at release time.
 
 
+## [2.13.0] - 2026-07-18
+
+### Added
+
+- **frontend:** add "copy MCP path" button to breadcrumbs
+
 ## [2.12.1] - 2026-07-17
 
 ### Fixed
