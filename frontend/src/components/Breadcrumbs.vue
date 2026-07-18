@@ -92,7 +92,7 @@
 </script>
 
 <template>
-  <div class="flex flex-wrap items-start gap-x-3 gap-y-1 mb-4">
+  <div class="flex flex-wrap items-center gap-x-3 gap-y-1 mb-4">
     <nav aria-label="Breadcrumb" class="text-sm text-slate-500">
       <ol class="flex flex-wrap items-center gap-1">
         <li v-for="(c, i) in crumbs" :key="i" class="flex items-center gap-1">
