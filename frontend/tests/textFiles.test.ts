@@ -26,6 +26,14 @@ describe('path classification (viewer routing)', () => {
     expect(isHtmlPath('page.md')).toBe(false)
   })
 
+  it('isTextPath covers nix files and flake.lock', () => {
+    for (const p of ['flake.nix', 'shell.nix', 'dir/configuration.nix', 'flake.lock']) {
+      expect(isTextPath(p)).toBe(true)
+    }
+    // "linux" ends in "nix" but is not a nix file — must not be treated as text.
+    expect(isTextPath('linux')).toBe(false)
+  })
+
   it('html is NOT treated as plain text (routes to HtmlView, not TextView)', () => {
     // isTextPath returns true for .html (it is in EXT_LANG), so routing must
     // check isHtmlPath first. This documents that ordering dependency.

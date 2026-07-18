@@ -44,6 +44,13 @@ _WEBLOC_XML = (
         ("notes.txt", "text"),
         ("style.css", "text"),
         ("Dockerfile", "text"),
+        # Nix: the sole extension is .nix (flake.nix, shell.nix, …); flake.lock
+        # is a fixed-name JSON file. "linux" must NOT match (the old buggy
+        # "nix" endswith rule did).
+        ("flake.nix", "text"),
+        ("configuration.nix", "text"),
+        ("flake.lock", "text"),
+        ("linux.iso", "binary"),
         ("archive.zip", "binary"),
         ("data.bin", "binary"),
     ],

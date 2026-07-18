@@ -451,6 +451,7 @@ _NOEXT_TEXT_NAMES = {
     "vagrantfile",
     "caddyfile",
     "crontab",
+    "flake.lock",
 }
 
 # Non-page kinds that have a dedicated viewer and a preview thumbnail, so they
@@ -537,8 +538,7 @@ def _classify_other(name: str) -> str:
             ".swift",
             ".entitlements",
             ".pbxproj",
-            "nix",
-            "flake",
+            ".nix",
         )
     ):
         return "text"

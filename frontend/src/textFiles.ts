@@ -55,9 +55,10 @@ export const EXT_LANG: Record<string, string> = {
   clj: 'clojure',
   edn: 'clojure',
   el: 'elisp',
+  nix: 'nix',
 }
 
-const NOEXT_TEXT_NAMES = new Set(['dockerfile', 'makefile', '.env'])
+const NOEXT_TEXT_NAMES = new Set(['dockerfile', 'makefile', '.env', 'flake.lock'])
 
 /**
  * True for non-markdown text files that should render in TextView
