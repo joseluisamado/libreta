@@ -9,6 +9,12 @@ Entries are generated from [Conventional Commits](https://www.conventionalcommit
 by `scripts/changelog.py` at release time.
 
 
+## [2.14.2] - 2026-07-18
+
+### Added
+
+- **files:** support nix files (.nix + flake.lock)
+
 ## [2.14.1] - 2026-07-18
 
 ### Fixed
