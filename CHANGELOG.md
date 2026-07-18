@@ -9,6 +9,16 @@ Entries are generated from [Conventional Commits](https://www.conventionalcommit
 by `scripts/changelog.py` at release time.
 
 
+## [2.14.1] - 2026-07-18
+
+### Fixed
+
+- **frontend:** restore deep sidebar folder open-state on load
+
+### Documentation
+
+- **mcp:** document image uploads via direct POST, drop attach_file
+
 ## [2.14.0] - 2026-07-18
 
 ### Added
