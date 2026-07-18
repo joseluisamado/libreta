@@ -9,7 +9,7 @@ import {
   getWatchedChildren,
 } from '@/api/client'
 import type { PageNode, WatchedFolder } from '@/api/types'
-import { isPathLoaded, mergeChildren, mergeReloadedTree } from '@/utils/pageTree'
+import { expandOpenPaths, isPathLoaded, mergeChildren, mergeReloadedTree } from '@/utils/pageTree'
 
 interface State {
   folders: WatchedFolder[]
@@ -97,6 +97,15 @@ export const useWatchedStore = defineStore('watched', {
       } catch (e) {
         this.error = e instanceof Error ? e.message : String(e)
       }
+    },
+    // Re-expand folders the user had open past the shallow fetch depth. See
+    // expandOpenPaths in utils/pageTree for the walk semantics.
+    async expandOpenPaths(label: string, openPaths: string[]): Promise<void> {
+      await expandOpenPaths(
+        openPaths,
+        () => this.trees[label],
+        (p) => this.loadTreeChildren(label, p),
+      )
     },
     async ensurePathExpanded(label: string, path: string): Promise<void> {
       if (!path) return

@@ -36,12 +36,36 @@
     { deep: true },
   )
 
+  // Deep folders arrive as truncation stubs (the tree endpoint is shallow), so
+  // after loading a folder's tree we re-fetch children for every folder the
+  // user had open past that depth. Their open-state lives in the inner
+  // PageTree's own storage key (`libreta:tree-watch-<label>`); without this the
+  // stub renders nothing and no expand event fires to fill it.
+  function readOpenPaths(label: string): string[] {
+    try {
+      const raw = window.localStorage.getItem(`libreta:tree-watch-${label}`)
+      if (!raw) return []
+      const parsed = JSON.parse(raw) as Record<string, boolean>
+      if (typeof parsed !== 'object' || !parsed) return []
+      return Object.entries(parsed)
+        .filter(([, open]) => open !== false)
+        .map(([path]) => path)
+    } catch {
+      return []
+    }
+  }
+
+  async function loadTreeAndRestore(label: string): Promise<void> {
+    await store.loadTree(label)
+    await store.expandOpenPaths(label, readOpenPaths(label))
+  }
+
   store.loadFolders()
 
   // Reload tree data for any folder that was expanded in a previous session
   for (const label of Object.keys(expanded.value)) {
     if (expanded.value[label]) {
-      store.loadTree(label)
+      loadTreeAndRestore(label)
     }
   }
 
@@ -50,7 +74,7 @@
       expanded.value = { ...expanded.value, [label]: false }
     } else {
       expanded.value = { ...expanded.value, [label]: true }
-      store.loadTree(label)
+      loadTreeAndRestore(label)
     }
   }
 

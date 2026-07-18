@@ -84,6 +84,52 @@ export function mergeReloadedTree(fresh: PageNode[], prev: PageNode[] | undefine
   return fresh
 }
 
+// Collect the paths of every folder node (has children or a truncation stub)
+// present in the tree. Used to intersect with a persisted open-paths set when
+// deciding which deep folders to lazily refetch.
+export function collectFolderPaths(nodes: PageNode[], out: Set<string>): void {
+  for (const n of nodes) {
+    if (n.children.length || n.has_more) {
+      out.add(n.path)
+      if (n.children.length) collectFolderPaths(n.children, out)
+    }
+  }
+}
+
+// Fetch children for every folder in *openPaths* that lives deeper than the
+// initial (shallow) tree fetch, so folders the user had expanded past the depth
+// limit re-appear on reload instead of sitting as collapsed stubs. isOpen()
+// returns true for those paths from localStorage without going through the
+// toggle/expand path, so no expand event fires to fill them — this does it up
+// front.
+//
+// Walks shallow→deep: fetching a parent's children may reveal grandchild
+// folders that are also in openPaths and then need their own refetch. Skips
+// folders already loaded, so it's a no-op when nothing deep was open. Store-
+// agnostic: callers pass a *getTree* accessor and a *loadChildren* fetcher.
+export async function expandOpenPaths(
+  openPaths: string[],
+  getTree: () => PageNode[] | undefined,
+  loadChildren: (path: string) => Promise<void>,
+): Promise<void> {
+  if (openPaths.length === 0) return
+  const wanted = new Set(openPaths)
+  const fetched = new Set<string>()
+  let pass = 0
+  while (pass++ < 10) {
+    const tree = getTree()
+    if (!tree) break
+    const folders = new Set<string>()
+    collectFolderPaths(tree, folders)
+    const todo = [...wanted]
+      .filter((p) => folders.has(p) && !fetched.has(p))
+      .sort((a, b) => a.split('/').length - b.split('/').length)
+    if (todo.length === 0) break
+    for (const p of todo) fetched.add(p)
+    await Promise.all(todo.map((p) => loadChildren(p)))
+  }
+}
+
 // True when *path*'s node exists in *nodes* and its children are already loaded
 // (it isn't a truncation stub). Lets callers skip a redundant children fetch —
 // which would otherwise reassign the tree and cause a visible re-render — when

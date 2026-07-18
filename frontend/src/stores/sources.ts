@@ -32,7 +32,7 @@ import type {
   SshKey,
   SshKeyCreate,
 } from '@/api/types'
-import { isPathLoaded, mergeChildren, mergeReloadedTree } from '@/utils/pageTree'
+import { expandOpenPaths, isPathLoaded, mergeChildren, mergeReloadedTree } from '@/utils/pageTree'
 
 interface State {
   sources: GitSource[]
@@ -251,6 +251,16 @@ export const useSourcesStore = defineStore('sources', {
       } catch (e) {
         this.error = e instanceof Error ? e.message : String(e)
       }
+    },
+    // Re-expand folders the user had open past the shallow fetch depth. Shared
+    // by the initial load and the post-sync refresh. See expandOpenPaths in
+    // utils/pageTree for the walk semantics.
+    async expandOpenPaths(sourceId: string, openPaths: string[]): Promise<void> {
+      await expandOpenPaths(
+        openPaths,
+        () => this.trees[sourceId],
+        (p) => this.loadTreeChildren(sourceId, p),
+      )
     },
     // Walk down each ancestor of *path*, fetching children for any segment
     // not already present in the tree. Needed when navigating directly to a

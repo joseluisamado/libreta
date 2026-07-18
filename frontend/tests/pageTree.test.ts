@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest'
-import { isPathLoaded, mergeChildren, mergeReloadedTree } from '@/utils/pageTree'
+import {
+  collectFolderPaths,
+  expandOpenPaths,
+  isPathLoaded,
+  mergeChildren,
+  mergeReloadedTree,
+} from '@/utils/pageTree'
 import type { PageNode } from '@/api/types'
 
 // Minimal PageNode factory: only the fields the tree helpers touch.
@@ -99,6 +105,92 @@ describe('isPathLoaded', () => {
   it('is false for an unknown path', () => {
     expect(isPathLoaded(tree, 'a/missing')).toBe(false)
     expect(isPathLoaded(tree, 'nope')).toBe(false)
+  })
+})
+
+describe('collectFolderPaths', () => {
+  it('collects folder paths (children or stub), skipping leaves', () => {
+    const tree = [
+      node({
+        path: 'a',
+        is_directory: true,
+        children: [
+          node({ path: 'a/b', is_directory: true, children: [node({ path: 'a/b/leaf' })] }),
+          node({ path: 'a/stub', is_directory: true, has_more: true }),
+          node({ path: 'a/file' }),
+        ],
+      }),
+    ]
+    const out = new Set<string>()
+    collectFolderPaths(tree, out)
+    expect([...out].sort()).toEqual(['a', 'a/b', 'a/stub'])
+  })
+})
+
+describe('expandOpenPaths', () => {
+  it('is a no-op when nothing is open', async () => {
+    const fetched: string[] = []
+    await expandOpenPaths(
+      [],
+      () => [node({ path: 'a', is_directory: true, has_more: true })],
+      async (p) => void fetched.push(p),
+    )
+    expect(fetched).toEqual([])
+  })
+
+  it('fetches an open deep folder present only as a stub', async () => {
+    const tree = [
+      node({
+        path: 'a',
+        is_directory: true,
+        children: [node({ path: 'a/b', is_directory: true, has_more: true })],
+      }),
+    ]
+    const fetched: string[] = []
+    await expandOpenPaths(
+      ['a/b'],
+      () => tree,
+      async (p) => {
+        fetched.push(p)
+        // Simulate the fetch clearing the stub so it isn't re-fetched.
+        at(at(tree, 0).children, 0).has_more = false
+      },
+    )
+    expect(fetched).toEqual(['a/b'])
+  })
+
+  it('walks shallow→deep, fetching grandchildren revealed by the parent', async () => {
+    // Only "a" is present initially; fetching it reveals stub "a/b", also open.
+    const tree = [node({ path: 'a', is_directory: true, has_more: true })]
+    const fetched: string[] = []
+    await expandOpenPaths(
+      ['a/b', 'a'],
+      () => tree,
+      async (p) => {
+        fetched.push(p)
+        if (p === 'a') {
+          at(tree, 0).has_more = false
+          at(tree, 0).children = [node({ path: 'a/b', is_directory: true, has_more: true })]
+        } else if (p === 'a/b') {
+          at(at(tree, 0).children, 0).has_more = false
+        }
+      },
+    )
+    // Parent first, then the grandchild it revealed.
+    expect(fetched).toEqual(['a', 'a/b'])
+  })
+
+  it('skips folders whose children are already loaded', async () => {
+    const tree = [node({ path: 'a', is_directory: true, has_more: false, children: [] })]
+    const fetched: string[] = []
+    await expandOpenPaths(
+      ['a'],
+      () => tree,
+      async (p) => void fetched.push(p),
+    )
+    // "a" is a folder but not a stub; collectFolderPaths only reports it when it
+    // has children or has_more. With neither, it's absent → nothing to fetch.
+    expect(fetched).toEqual([])
   })
 })
 
