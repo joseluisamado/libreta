@@ -3,15 +3,19 @@
   import type { PageNode } from '@/api/types'
 
   // The recursive component takes the tree to render, plus an optional
-  // ``rootNamespace`` (the top-level path segment, e.g. "devel" or "hardware").
-  // It's set by the parent on the second-and-deeper recursions so the colored
-  // border rail is consistent across all nested levels of one namespace.
+  // ``hue`` (0–360) picked by the root instance from the *position* of the
+  // first-level folder among its siblings, so consecutive first-level folders
+  // get contiguous hues along the spectrum. The hue is threaded down through
+  // every recursion so the colored rail rails and the subtree background tint
+  // all share one hue per first-level namespace. ``depth`` counts recursion
+  // levels below the first level so the rails can get stronger the deeper we go.
   //
   // openState is owned by the root instance and passed down to children so
   // localStorage is only read/written once per tree, not once per recursive level.
   const props = defineProps<{
     nodes: PageNode[]
-    rootNamespace?: string | null
+    hue?: number | null
+    depth?: number
     linkPrefix?: string
     storageKey?: string
     openState?: Record<string, boolean>
@@ -125,46 +129,68 @@
     return props.onExpand
   }
 
-  // ----- Namespace palette ---------------------------------------------------
+  // ----- Namespace spectrum --------------------------------------------------
+  //
+  // Each first-level folder is coloured by its *position* among its siblings,
+  // walking the hue wheel in even steps so consecutive folders land on
+  // contiguous hues. The hue is then reused for two things per namespace:
+  //   • a very subtle background wash behind the whole first-level subtree, and
+  //   • the vertical rail borders, which get progressively stronger with depth.
+  //
+  // The root instance owns the mapping (it's the only one that sees the whole
+  // list of first-level folders); children just receive the resolved hue.
 
-  // Curated palette: each entry is a Tailwind border colour readable on white,
-  // distinct in hue, intentionally muted so the sidebar doesn't shout. The
-  // exact list is small on purpose — fewer colours = easier to remember which
-  // one means what after a few sessions.
-  const NAMESPACE_PALETTE = [
-    'border-sky-300',
-    'border-emerald-300',
-    'border-amber-400',
-    'border-rose-300',
-    'border-violet-300',
-    'border-teal-300',
-    'border-orange-300',
-    'border-indigo-300',
-  ] as const
+  const isRootTree = props.hue == null && (props.depth ?? 0) === 0
 
-  // Tiny stable hash → palette index. Same namespace always gets same colour.
-  function hashNamespace(ns: string): number {
-    let h = 0
-    for (let i = 0; i < ns.length; i++) {
-      h = (h * 31 + ns.charCodeAt(i)) >>> 0
+  // Golden-angle-ish even spacing keyed off the sibling count so N folders fan
+  // out across the wheel without clustering. Offset 25° nudges folder #1 away
+  // from pure red into a friendlier warm tone.
+  function hueForIndex(index: number, count: number): number {
+    const span = 300 // leave a gap so first and last don't collide as similar reds
+    const step = count > 1 ? span / count : 0
+    return (25 + index * step) % 360
+  }
+
+  // Which hue this node's subtree should use. Root: derived from position.
+  // Deeper: inherited from the prop.
+  function hueFor(index: number): number | null {
+    if (props.hue != null) return props.hue
+    if (isRootTree) return hueForIndex(index, props.nodes.length)
+    return null
+  }
+
+  // Very subtle wash behind a first-level subtree. Only applied once, at the
+  // top of a namespace (root instance), so nested subtrees don't stack tints.
+  function backgroundStyle(index: number): Record<string, string> {
+    if (!isRootTree) return {}
+    const h = hueForIndex(index, props.nodes.length)
+    return { backgroundColor: `hsl(${h} 55% 55% / 0.06)` }
+  }
+
+  // Rail border for a child subtree. Same hue as the namespace; saturation and
+  // darkness climb with depth so deeper rails read as "stronger". Falls back to
+  // a neutral slate rail when there's no hue (shouldn't happen in practice).
+  function railStyle(node: PageNode): Record<string, string> {
+    const h = hueResolved(node)
+    if (h == null) return { borderColor: 'rgb(226 232 240)' } // slate-200
+    const d = childDepth() // 1-based depth of the child rail we're drawing
+    const sat = Math.min(70, 45 + d * 8)
+    const light = Math.max(38, 62 - d * 7)
+    return { borderColor: `hsl(${h} ${sat}% ${light}%)` }
+  }
+
+  // The hue to pass to a child subtree of ``node`` and to colour its rail.
+  function hueResolved(node: PageNode): number | null {
+    if (props.hue != null) return props.hue
+    if (isRootTree) {
+      const idx = props.nodes.indexOf(node)
+      return hueForIndex(idx, props.nodes.length)
     }
-    return h % NAMESPACE_PALETTE.length
+    return null
   }
 
-  function railClass(node: PageNode): string {
-    // The first recursion (top of a namespace) gets coloured by the node's
-    // own first path segment; deeper recursions inherit the rootNamespace
-    // passed in by the parent.
-    const ns = props.rootNamespace ?? node.path.split('/')[0] ?? ''
-    if (!ns) return 'border-slate-200'
-    return NAMESPACE_PALETTE[hashNamespace(ns)] ?? 'border-slate-200'
-  }
-
-  // What we pass to the child <PageTree>: keep the rootNamespace if we already
-  // have one (deep recursion), otherwise seed it from the current node's first
-  // path segment (entering a namespace from the root).
-  function childRootNamespace(node: PageNode): string {
-    return props.rootNamespace ?? node.path.split('/')[0] ?? ''
+  function childDepth(): number {
+    return (props.depth ?? 0) + 1
   }
 
   // Build the link target for a node, accounting for pdf nodes whose viewer
@@ -196,7 +222,13 @@
 
 <template>
   <ul class="text-sm">
-    <li v-for="node in nodes" :key="node.path" class="my-0.5">
+    <li
+      v-for="(node, index) in nodes"
+      :key="node.path"
+      class="my-0.5"
+      :class="{ 'rounded-sm': isRootTree }"
+      :style="backgroundStyle(index)"
+    >
       <div class="flex items-start gap-1">
         <button
           v-if="node.is_directory || node.children.length || node.has_more"
@@ -323,7 +355,8 @@
       <PageTree
         v-if="(node.is_directory || node.children.length || node.has_more) && isOpen(node.path)"
         :nodes="node.children"
-        :root-namespace="childRootNamespace(node)"
+        :hue="hueResolved(node)"
+        :depth="childDepth()"
         :link-prefix="linkPrefix"
         :storage-key="storageKey"
         :open-state="childOpenState()"
@@ -335,7 +368,7 @@
         :on-select="onSelect"
         :selected-path="selectedPath"
         class="ml-3 border-l-2 pl-2"
-        :class="railClass(node)"
+        :style="railStyle(node)"
       />
     </li>
   </ul>
