@@ -207,7 +207,7 @@
             <td class="px-3 py-px align-top">
               <!-- eslint-disable vue/no-v-html -- sanitized: hljs highlight output, input HTML-escaped -->
               <code
-                class="hljs"
+                class="hljs whitespace-pre"
                 :class="language ? `language-${language}` : ''"
                 v-html="
                   line
