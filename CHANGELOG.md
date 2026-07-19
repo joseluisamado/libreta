@@ -9,6 +9,12 @@ Entries are generated from [Conventional Commits](https://www.conventionalcommit
 by `scripts/changelog.py` at release time.
 
 
+## [2.14.3] - 2026-07-19
+
+### Fixed
+
+- **frontend:** preserve leading whitespace in text file viewer
+
 ## [2.14.2] - 2026-07-18
 
 ### Added
