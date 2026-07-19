@@ -9,6 +9,12 @@ Entries are generated from [Conventional Commits](https://www.conventionalcommit
 by `scripts/changelog.py` at release time.
 
 
+## [2.15.0] - 2026-07-19
+
+### Added
+
+- **frontend:** tint sidebar first-level folders by spectrum position
+
 ## [2.14.3] - 2026-07-19
 
 ### Fixed
