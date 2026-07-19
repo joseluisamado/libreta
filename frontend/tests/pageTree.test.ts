@@ -1,4 +1,6 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, beforeAll } from 'vitest'
+import { mount } from '@vue/test-utils'
+import PageTreeComponent from '@/components/PageTree.vue'
 import {
   collectFolderPaths,
   expandOpenPaths,
@@ -288,5 +290,61 @@ describe('mergeReloadedTree', () => {
     const c = at(at(at(merged, 0).children, 0).children, 0)
     expect(c.path).toBe('a/b/c')
     expect(c.children.map((n) => n.path)).toEqual(['a/b/c/leaf'])
+  })
+})
+
+// PageTree owns open/closed state in localStorage; jsdom here has none.
+beforeAll(() => {
+  const store = new Map<string, string>()
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    value: {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => void store.set(k, v),
+      removeItem: (k: string) => void store.delete(k),
+      clear: () => store.clear(),
+    },
+  })
+})
+
+function mountTree(nodes: PageNode[]) {
+  return mount(PageTreeComponent, {
+    props: { nodes },
+    global: { stubs: { RouterLink: { template: '<a><slot /></a>' } } },
+  })
+}
+
+// The three folder states the sidebar must distinguish:
+//   populated  → caret + normal (slate-800) label
+//   stub       → caret (unknown contents, has_more)
+//   empty      → no caret + dimmed (slate-400) label
+describe('PageTree — empty folders', () => {
+  it('renders a confirmed-empty folder dimmed and caret-less', () => {
+    const w = mountTree([node({ path: 'empty', is_directory: true })])
+    // No expand caret: the row uses the leaf spacer instead.
+    expect(w.find('button[aria-label]').exists()).toBe(false)
+    expect(w.find('a').classes()).toContain('text-slate-400')
+  })
+
+  it('keeps the caret and normal label for a populated folder', () => {
+    const w = mountTree([
+      node({ path: 'full', is_directory: true, children: [node({ path: 'full/a' })] }),
+    ])
+    expect(w.find('button[aria-label]').exists()).toBe(true)
+    const label = at(w.findAll('a'), 0)
+    expect(label.classes()).toContain('text-slate-800')
+    expect(label.classes()).not.toContain('text-slate-400')
+  })
+
+  it('keeps the caret for a truncation stub (unknown contents)', () => {
+    const w = mountTree([node({ path: 'stub', is_directory: true, has_more: true })])
+    expect(w.find('button[aria-label]').exists()).toBe(true)
+    expect(w.find('a').classes()).not.toContain('text-slate-400')
+  })
+
+  it('does not render a child subtree under an empty folder', () => {
+    const w = mountTree([node({ path: 'empty', is_directory: true })])
+    // The only <ul> is the root list; no nested rail/list for the empty dir.
+    expect(w.findAll('ul')).toHaveLength(1)
   })
 })

@@ -436,6 +436,14 @@ def deep_fixture(tmp_path: Path) -> Path:
     l2.mkdir()
     (l2 / "2023.md").write_text("# 2023\n", encoding="utf-8")
     (l2 / "2024.md").write_text("# 2024\n", encoding="utf-8")
+    # An empty folder at the same depth as ``archive`` (the depth-limit
+    # boundary). It must resolve to a confirmed-empty node, not a stub.
+    (l1 / "empty").mkdir()
+    # A folder holding only a non-renderable file (no .md/subdir/pdf/etc.): the
+    # sidebar shows nothing inside it, so it also reads as empty.
+    binonly = l1 / "binonly"
+    binonly.mkdir()
+    (binonly / "notes.sqlite").write_bytes(b"\x00\x01")
     return root
 
 
@@ -456,17 +464,29 @@ def test_watched_tree_depth_limit(client_with_watchers: TestClient, deep_fixture
     notes = next(n for n in nodes if n["path"] == "notes")
     assert notes["is_directory"] is True
     assert notes["has_more"] is False
-    assert len(notes["children"]) == 2
 
     child_paths = {c["path"] for c in notes["children"]}
     assert "notes/todo" in child_paths
     assert "notes/archive" in child_paths
 
-    # archive is at depth 1 (>= max_depth), so it is a stub
+    # archive is at depth 1 (>= max_depth) and has content, so it is a stub
     archive = next(c for c in notes["children"] if c["path"] == "notes/archive")
     assert archive["is_directory"] is True
     assert archive["has_more"] is True
     assert archive["children"] == []
+
+    # A truly-empty folder at the boundary is resolved (not a stub): the peek
+    # confirms it has no renderable child, so the sidebar can render it empty.
+    empty = next(c for c in notes["children"] if c["path"] == "notes/empty")
+    assert empty["is_directory"] is True
+    assert empty["has_more"] is False
+    assert empty["children"] == []
+
+    # A folder with only a non-renderable file reads as empty too.
+    binonly = next(c for c in notes["children"] if c["path"] == "notes/binonly")
+    assert binonly["is_directory"] is True
+    assert binonly["has_more"] is False
+    assert binonly["children"] == []
 
     readme = next(n for n in nodes if n["path"] == "readme")
     assert readme["has_more"] is False

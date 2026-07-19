@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import plistlib
 from datetime import UTC, datetime
 from pathlib import Path
@@ -568,6 +569,39 @@ def _read_webloc_url(path: Path) -> str | None:
     return url
 
 
+def _dir_has_renderable_child(dir_path: Path) -> bool:
+    """Whether *dir_path* contains at least one entry the tree would render.
+
+    Mirrors the child-classification in :func:`_build_tree`: a subdirectory,
+    a ``.md`` page, a ``.pdf``, a previewable file, or a ``.webloc`` bookmark
+    counts. Plain "other" files (binaries etc.) do *not* become tree nodes, so
+    a folder holding only those reads as empty in the sidebar.
+
+    Used at the depth-limit boundary to distinguish a *confirmed-empty* folder
+    (emit ``children=[], has_more=False``) from a truncation stub (``has_more``)
+    without recursing — one short-circuited ``scandir`` per boundary folder.
+    """
+    try:
+        with os.scandir(dir_path) as it:
+            for entry in it:
+                if entry.name.startswith("."):
+                    continue
+                try:
+                    if entry.is_dir():
+                        return True
+                except OSError:
+                    continue
+                lower = entry.name.lower()
+                if lower.endswith(".md") or lower.endswith(".pdf"):
+                    return True
+                kind = _classify_other(entry.name)
+                if kind == "weblink" or kind in _PREVIEWABLE_KINDS:
+                    return True
+    except OSError:
+        logger.warning("cannot scan directory %s", dir_path)
+    return False
+
+
 def _build_tree(
     dir_path: Path,
     url_prefix: str,
@@ -648,6 +682,11 @@ def _build_tree(
 
         if hit_max and sub_dir:
             title = head_title if md_file else humanised
+            # At the depth boundary we don't recurse, but a single cheap scan
+            # tells us whether the folder is empty. A confirmed-empty folder is
+            # emitted as a fully-loaded node (has_more=False) so the sidebar can
+            # render it as empty; a folder with content stays a truncation stub.
+            has_children = _dir_has_renderable_child(sub_dir)
             nodes.append(
                 PageNode(
                     path=child_url,
@@ -655,7 +694,7 @@ def _build_tree(
                     filename=md_filename if md_file else name,
                     is_directory=True,
                     children=[],
-                    has_more=True,
+                    has_more=has_children,
                     weight=weight,
                 )
             )

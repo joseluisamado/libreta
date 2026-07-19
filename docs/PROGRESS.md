@@ -15,6 +15,32 @@ Living document. Update as work progresses. Latest at the top.
 
 ---
 
+## 2026-07-19 — Feature: empty folders read as empty in the sidebar
+
+**What**: The sidebar tree now visually distinguishes a *confirmed-empty*
+folder — dimmed label (`text-slate-400`), no expand caret, no nested rail —
+from a populated folder or a truncation stub. "Empty" means nothing the
+sidebar would render: no subdir, `.md`, `.pdf`, previewable, or `.webloc`
+(a folder holding only binaries/other files reads as empty too).
+
+**How it stays honest**: the ambiguity lived at the depth-limit boundary,
+where `_build_tree` stamped `has_more=True` on every folder sight-unseen —
+conflating "has children" with "not yet looked". Added
+`_dir_has_renderable_child()` (one short-circuited `scandir`, no recursion)
+so a boundary folder resolves to a confirmed-empty node (`has_more=False,
+children=[]`) when it has nothing to show, and stays a stub only when it
+genuinely has content. The frontend already modelled the tri-state
+(`has_more=false, children=[]` = "loaded empty"), so no merge/reload changes
+were needed — only the render branch in `PageTree.vue`.
+
+**Emptiness is recomputed from the filesystem, stored nowhere** (R2-clean).
+The markdown round-trip corpus is untouched (R1-safe — this is tree metadata).
+Tests: backend boundary cases (empty dir + binary-only dir) in
+`test_watched_tree_depth_limit`; frontend component render tests for the three
+folder states in `pageTree.test.ts`.
+
+---
+
 ## 2026-07-18 — Reverted: MCP `attach_file` (base64 binary upload)
 
 **What**: Added an `attach_file` MCP tool (base64 → page sidecar) and then

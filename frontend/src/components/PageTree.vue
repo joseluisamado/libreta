@@ -218,6 +218,27 @@
   function isWeblink(node: PageNode): boolean {
     return node.kind === 'weblink' && !!node.target
   }
+
+  // A folder whose children the backend has resolved to be empty. `has_more`
+  // being false means it's not a truncation stub (unknown contents), so an
+  // empty `children` list is authoritative: nothing renders inside. Such
+  // folders get no expand caret and a dimmed label as a quiet visual cue.
+  function isEmptyDir(node: PageNode): boolean {
+    return node.is_directory && !node.children.length && !node.has_more
+  }
+
+  // Whether a node should show an expand caret: any folder with contents, or a
+  // truncation stub. Confirmed-empty folders (isEmptyDir) are excluded so their
+  // row falls through to the leaf spacer, keeping column alignment intact.
+  function hasCaret(node: PageNode): boolean {
+    return (node.is_directory || node.children.length > 0 || !!node.has_more) && !isEmptyDir(node)
+  }
+
+  // A folder-ish node the user can toggle open/closed (drives the selectMode
+  // click handler). Same set as hasCaret.
+  function isExpandable(node: PageNode): boolean {
+    return hasCaret(node)
+  }
 </script>
 
 <template>
@@ -231,7 +252,7 @@
     >
       <div class="flex items-start gap-1">
         <button
-          v-if="node.is_directory || node.children.length || node.has_more"
+          v-if="hasCaret(node)"
           type="button"
           class="shrink-0 w-4 h-4 mt-0.5 flex items-center justify-center text-slate-400 hover:text-slate-700"
           :aria-expanded="isOpen(node.path)"
@@ -271,15 +292,19 @@
           type="button"
           class="flex-1 truncate flex items-center gap-1 text-left"
           :class="[
-            node.is_directory || node.children.length || node.has_more
-              ? 'text-slate-800 font-medium hover:text-blue-600'
-              : 'text-slate-700 hover:text-blue-600',
+            isEmptyDir(node)
+              ? 'text-slate-400 font-medium'
+              : node.is_directory || node.children.length || node.has_more
+                ? 'text-slate-800 font-medium hover:text-blue-600'
+                : 'text-slate-700 hover:text-blue-600',
             selectedPath === node.path ? 'text-blue-700 font-semibold' : '',
           ]"
           @click="
-            node.is_directory || node.children.length || node.has_more
+            isExpandable(node)
               ? toggle(node.path, node)
-              : onSelect?.(node)
+              : node.is_directory
+                ? undefined
+                : onSelect?.(node)
           "
         >
           <span v-if="node.kind === 'pdf'" class="text-[10px] font-semibold text-rose-500 shrink-0"
@@ -319,9 +344,11 @@
           :rel="isWeblink(node) ? 'noopener noreferrer' : undefined"
           class="flex-1 truncate flex items-center gap-1"
           :class="
-            node.is_directory || node.children.length || node.has_more
-              ? 'text-slate-800 font-medium hover:text-blue-600'
-              : 'text-slate-700 hover:text-blue-600'
+            isEmptyDir(node)
+              ? 'text-slate-400 font-medium hover:text-blue-600'
+              : node.is_directory || node.children.length || node.has_more
+                ? 'text-slate-800 font-medium hover:text-blue-600'
+                : 'text-slate-700 hover:text-blue-600'
           "
           active-class="text-blue-700 font-semibold"
         >
@@ -353,7 +380,7 @@
         </component>
       </div>
       <PageTree
-        v-if="(node.is_directory || node.children.length || node.has_more) && isOpen(node.path)"
+        v-if="hasCaret(node) && isOpen(node.path)"
         :nodes="node.children"
         :hue="hueResolved(node)"
         :depth="childDepth()"
