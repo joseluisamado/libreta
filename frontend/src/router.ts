@@ -230,6 +230,30 @@ export const router = createRouter({
   }) as RouterScrollBehavior,
 })
 
+// Keep the browser-tab title in sync with the open page. The page path is
+// the source of truth (matches how pages are referenced everywhere else);
+// routes with no page fall back to a fixed label. Format: "<page> — Libreta".
+const APP_NAME = 'Libreta'
+const STATIC_TITLES: Record<string, string> = {
+  dashboard: 'Dashboard',
+  search: 'Search',
+  admin: 'Admin',
+}
+
+function titleForRoute(to: import('vue-router').RouteLocationNormalized): string {
+  const raw = to.params.path
+  // path(.*)* yields string | string[] depending on how many segments matched.
+  const path = Array.isArray(raw) ? raw.join('/') : (raw ?? '')
+  if (path) return `${path} — ${APP_NAME}`
+  const name = typeof to.name === 'string' ? to.name : ''
+  const label = STATIC_TITLES[name]
+  return label ? `${label} — ${APP_NAME}` : APP_NAME
+}
+
+router.afterEach((to) => {
+  document.title = titleForRoute(to)
+})
+
 // Rendered markdown emits plain <a href="/watch/..."> anchors, which the
 // browser would treat as full-page navigations — wiping our in-memory
 // scrollPositions and breaking back-restore. Intercept same-origin,
