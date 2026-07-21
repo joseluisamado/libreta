@@ -9,6 +9,12 @@ Entries are generated from [Conventional Commits](https://www.conventionalcommit
 by `scripts/changelog.py` at release time.
 
 
+## [2.17.0] - 2026-07-21
+
+### Added
+
+- **frontend:** reflect open page path in the browser-tab title
+
 ## [2.16.0] - 2026-07-19
 
 ### Added
