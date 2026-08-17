@@ -20,12 +20,20 @@ WORKDIR /app
 # and reads ../VERSION, so both must keep that relative layout inside the image:
 # pyproject at /app/backend/pyproject.toml, VERSION at /app/VERSION.
 COPY VERSION ./VERSION
-COPY backend/pyproject.toml ./backend/pyproject.toml
+COPY backend/pyproject.toml backend/uv.lock ./backend/
 COPY backend/src ./backend/src
 
 WORKDIR /app/backend
+# Install from the lockfile, not a fresh resolve: `uv sync --frozen` pins prod
+# to backend/uv.lock (fails loudly if lock and pyproject disagree), so the image
+# can't silently drift from — or omit — a declared dep the way `uv pip install .`
+# once did (that produced a stale image with no `mcp`). --no-dev drops the dev
+# group; --active targets the pre-created /opt/venv the runtime stage copies.
+# --no-editable installs libreta as a real copy into site-packages (like the old
+# wheel install) rather than an editable .pth into /app/backend/src, which the
+# runtime stage doesn't copy — so `import libreta.main` keeps resolving there.
 RUN uv venv /opt/venv \
- && uv pip install --no-cache .
+ && uv sync --frozen --no-dev --active --no-editable --no-cache
 
 # ---------- Runtime stage ----------
 FROM python:3.12-slim AS runtime
