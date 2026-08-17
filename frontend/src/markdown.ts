@@ -194,11 +194,31 @@ export function resolveAssetUrl(
   if (isAbsolute(src) || src.startsWith('#')) return src
   // References include the sidecar prefix (e.g. ".saml.md/photo.png").
   // Resolve relative to the page's parent directory.
+  const resolved = resolveRepoPath(src, pagePath)
+  if (watchedLabel) {
+    return `/api/v1/watch/${encodeURIComponent(watchedLabel)}/assets/${resolved}`
+  }
+  if (sourceId) {
+    return `/api/v1/sources/${sourceId}/assets/${resolved}`
+  }
+  return `${ASSET_BASE}/pages/${resolved}`
+}
+
+interface RenderEnv {
+  pagePath?: string
+  sourceId?: string
+  watchedLabel?: string
+}
+
+// Resolve a relative path (`../foo/bar`, `./baz`, `sib`) against the parent
+// directory of `pagePath`, returning the repo-root-relative result. Shared by
+// asset and page-link resolution — the walk is identical, only the URL prefix
+// differs.
+function resolveRepoPath(rel: string, pagePath: string): string {
   const parts = pagePath.split('/').filter(Boolean)
   const base = parts.slice(0, -1) // parent directory
-  const segments = src.split('/')
   const out = [...base]
-  for (const s of segments) {
+  for (const s of rel.split('/')) {
     if (s === '' || s === '.') continue
     if (s === '..') {
       out.pop()
@@ -206,19 +226,49 @@ export function resolveAssetUrl(
     }
     out.push(s)
   }
-  if (watchedLabel) {
-    return `/api/v1/watch/${encodeURIComponent(watchedLabel)}/assets/${out.join('/')}`
-  }
-  if (sourceId) {
-    return `/api/v1/sources/${sourceId}/assets/${out.join('/')}`
-  }
-  return `${ASSET_BASE}/pages/${out.join('/')}`
+  return out.join('/')
 }
 
-interface RenderEnv {
-  pagePath?: string
-  sourceId?: string
-  watchedLabel?: string
+// Rewrite a relative link to another wiki page (`../foo/bar.md`) into the
+// in-app route for that page, so the click-interceptor in router.ts routes it
+// through Vue Router (document-only navigation) instead of a full-page reload.
+//
+// This is a *render-time only* rewrite: the stored markdown keeps the plain
+// relative `.md` path, which is what GitHub/GitLab/Gitea resolve to the sibling
+// file and what round-trips byte-identically (R1). Only the painted <a href>
+// becomes an app route.
+//
+// The href may carry a trailing `#anchor` and/or `?query`; both are preserved
+// so a link like `foo.md#section` lands on the right route + hash.
+function resolvePageUrl(
+  href: string,
+  pagePath: string,
+  sourceId?: string,
+  watchedLabel?: string,
+): string {
+  const hashIdx = href.indexOf('#')
+  const hash = hashIdx >= 0 ? href.slice(hashIdx) : ''
+  const beforeHash = hashIdx >= 0 ? href.slice(0, hashIdx) : href
+  const queryIdx = beforeHash.indexOf('?')
+  const query = queryIdx >= 0 ? beforeHash.slice(queryIdx) : ''
+  const pathPart = queryIdx >= 0 ? beforeHash.slice(0, queryIdx) : beforeHash
+
+  const resolved = resolveRepoPath(pathPart.replace(/\.md$/i, ''), pagePath)
+  if (watchedLabel) {
+    return `/watch/${encodeURIComponent(watchedLabel)}/${resolved}${query}${hash}`
+  }
+  // sourceId is present for source pages; when neither is set we can't build a
+  // route, so callers must gate on that (see isPageLink use in link_open).
+  return `/source/${sourceId}/${resolved}${query}${hash}`
+}
+
+// A relative link is a wiki-page link when it targets a `.md` file (the shape
+// the editor emits and the shape forges resolve). Absolute URLs, anchors,
+// mailto:, and asset links are handled elsewhere.
+function looksLikePageLink(href: string): boolean {
+  if (isAbsolute(href) || href.startsWith('#') || href.startsWith('mailto:')) return false
+  const pathPart = href.split('#')[0]?.split('?')[0] ?? ''
+  return /\.md$/i.test(pathPart)
 }
 
 // Extensions we treat as "asset" downloads when they appear in a relative
@@ -337,8 +387,13 @@ function patchRenderer(): void {
       const hrefIdx = token.attrIndex('href')
       const attr = token.attrs?.[hrefIdx]
       if (hrefIdx >= 0 && attr) {
-        if (looksLikeAssetHref(attr[1])) {
-          const e = env as RenderEnv
+        const e = env as RenderEnv
+        if (looksLikePageLink(attr[1]) && (e.sourceId || e.watchedLabel)) {
+          // Relative link to a sibling wiki page → in-app route, so navigation
+          // stays inside the SPA (see resolvePageUrl). Stored markdown is
+          // untouched; this only affects the rendered <a href>.
+          attr[1] = resolvePageUrl(attr[1], e.pagePath ?? '', e.sourceId, e.watchedLabel)
+        } else if (looksLikeAssetHref(attr[1])) {
           attr[1] = resolveAssetUrl(attr[1], e.pagePath ?? '', e.sourceId, e.watchedLabel)
         } else if (isExternalUrl(attr[1])) {
           token.attrSet('target', '_blank')

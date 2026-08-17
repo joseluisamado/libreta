@@ -193,6 +193,36 @@
     return p.split('/').map(encodeURIComponent).join('/')
   }
 
+  // Turn a git remote URL into its repository web base
+  // (`https://host/owner/repo`), handling both HTTPS and SSH remotes.
+  // Returns null if the shape isn't recognised.
+  function remoteWebBase(remoteUrl: string): string | null {
+    const url = remoteUrl.trim().replace(/\.git$/i, '')
+    // scp-style SSH: git@host:owner/repo
+    const scp = /^[^@/]+@([^:/]+):(.+)$/.exec(url)
+    if (scp) return `https://${scp[1]}/${scp[2]}`
+    // ssh://git@host/owner/repo  or  https://host/owner/repo
+    try {
+      const u = new URL(url)
+      return `https://${u.host}${u.pathname}`
+    } catch {
+      return null
+    }
+  }
+
+  // Cross-repo target as a forge-portable URL. We only build one for Gitea
+  // sources (the forge we run) — a Gitea file-browse URL is
+  // `<web-base>/src/branch/<branch>/<path>` (verified against gitea.com). For
+  // any other remote we return null and fall back to the Libreta app URL.
+  function giteaForgeUrl(target: PageNode): string | null {
+    const src = sourcesStore.sources.find((s) => s.id === selectedRepo.value)
+    if (!src || !src.gitea_server_id) return null
+    const base = remoteWebBase(src.remote_url)
+    if (!base) return null
+    const branch = src.branch || 'main'
+    return `${base}/src/branch/${encodeURIComponent(branch)}/${encodePath(target.path)}`
+  }
+
   const computedHref = computed<string>(() => {
     if (mode.value === 'external') return externalUrl.value.trim()
     const node = selectedNode.value
@@ -202,8 +232,12 @@
     if (props.sourceId && selectedRepo.value === props.sourceId) {
       return encodePath(relativePath(props.pagePath, node.path))
     }
-    // Cross-repo (or linking from a non-source editor): app-route URL is the
-    // only thing that resolves across repositories in-app.
+    // Cross-repo (or linking from a non-source editor). Prefer a forge-portable
+    // absolute URL so the link also resolves on GitHub/GitLab/Gitea; for now we
+    // can only build one for Gitea sources. Otherwise fall back to the Libreta
+    // app-route URL, which resolves across repositories in-app only.
+    const forge = giteaForgeUrl(node)
+    if (forge) return forge
     return `/source/${selectedRepo.value}/${encodePath(node.path).replace(/\.md$/i, '')}`
   })
 

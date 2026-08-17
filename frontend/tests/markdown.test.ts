@@ -81,6 +81,52 @@ describe('renderMarkdown', () => {
     expect(out).not.toContain('/assets/')
   })
 
+  it('rewrites a relative .md page link to an in-app source route', () => {
+    // Portable on-disk form `../fundamentals/caching.md`, rendered on a page in
+    // interview/aws/storage → app route so clicks stay in the SPA.
+    const out = renderMarkdown(
+      '[caching](../fundamentals/caching.md)',
+      'interview/aws/storage/s3.md',
+      'work',
+    )
+    expect(out).toContain('href="/source/work/interview/aws/fundamentals/caching"')
+    expect(out).not.toContain('.md"')
+  })
+
+  it('rewrites a same-directory .md page link', () => {
+    const out = renderMarkdown('[iam](iam.md)', 'security/root.md', 'work')
+    expect(out).toContain('href="/source/work/security/iam"')
+  })
+
+  it('preserves an anchor fragment on a page link', () => {
+    const out = renderMarkdown('[sec](../ref/api.md#auth)', 'guide/setup.md', 'work')
+    expect(out).toContain('href="/source/work/ref/api#auth"')
+  })
+
+  it('rewrites relative .md page links for watched folders', () => {
+    const out = renderMarkdown('[sib](sibling.md)', 'notes/today.md', undefined, 'journal')
+    expect(out).toContain('href="/watch/journal/notes/sibling"')
+  })
+
+  it('leaves .md links untouched when no source/watch context is known', () => {
+    // Without a sourceId or watchedLabel there is no route to build; the plain
+    // relative link is preserved rather than emitting a broken /source//… URL.
+    const out = renderMarkdown('[x](foo.md)', 'top.md')
+    expect(out).toContain('href="foo.md"')
+    expect(out).not.toContain('/source/')
+  })
+
+  it('leaves absolute forge URLs (cross-repo) as external links', () => {
+    const out = renderMarkdown(
+      '[other repo](https://gitea.example.com/user/wiki/src/branch/main/page.md)',
+      'a/b.md',
+      'work',
+    )
+    expect(out).toContain('href="https://gitea.example.com/user/wiki/src/branch/main/page.md"')
+    expect(out).toContain('target="_blank"')
+    expect(out).not.toContain('/source/work/')
+  })
+
   it('leaves anchor and external links alone', () => {
     const out = renderMarkdown('[a](#x) [b](https://x.com/y.pdf)', 'foo')
     expect(out).toContain('href="#x"')
