@@ -9,6 +9,12 @@ Entries are generated from [Conventional Commits](https://www.conventionalcommit
 by `scripts/changelog.py` at release time.
 
 
+## [2.18.1] - 2026-08-17
+
+### Fixed
+
+- **docker:** install prod deps from uv.lock, not a fresh resolve
+
 ## [2.18.0] - 2026-08-17
 
 ### Added
