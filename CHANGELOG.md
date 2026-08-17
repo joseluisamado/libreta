@@ -9,6 +9,12 @@ Entries are generated from [Conventional Commits](https://www.conventionalcommit
 by `scripts/changelog.py` at release time.
 
 
+## [2.18.0] - 2026-08-17
+
+### Added
+
+- **frontend:** route internal .md links through the SPA, keep them forge-portable
+
 ## [2.17.0] - 2026-07-21
 
 ### Added
