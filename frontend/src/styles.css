@@ -186,16 +186,57 @@
   word-break: normal;
   word-wrap: normal;
 }
-/* Subtle language label in the upper-right of code blocks */
-.prose pre code[data-lang]::before {
-  content: attr(data-lang);
+/* Language label + copy button, docked to the upper-right of code blocks */
+.prose pre .code-header {
   position: absolute;
   top: 6px;
-  right: 10px;
+  right: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.prose pre .code-lang {
   font-size: 11px;
   color: #59636e;
   text-transform: lowercase;
   letter-spacing: 0.02em;
+}
+.prose pre .code-copy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  color: #59636e;
+  background: transparent;
+  cursor: pointer;
+  /* Faint until the block is hovered, so it stays subtle. */
+  opacity: 0;
+  transition:
+    opacity 0.12s ease,
+    background-color 0.12s ease;
+}
+.prose pre:hover .code-copy,
+.prose pre .code-copy:focus-visible {
+  opacity: 1;
+}
+.prose pre .code-copy:hover {
+  background: #eaeef2;
+  border-color: #d0d7de;
+}
+.prose pre .code-copy .code-copy-done {
+  display: none;
+}
+.prose pre .code-copy.copied {
+  opacity: 1;
+  color: #1a7f37;
+}
+.prose pre .code-copy.copied .code-copy-idle {
+  display: none;
+}
+.prose pre .code-copy.copied .code-copy-done {
+  display: inline;
 }
 
 /* Tables */

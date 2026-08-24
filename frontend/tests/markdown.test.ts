@@ -49,6 +49,18 @@ describe('renderMarkdown', () => {
     expect(out).toContain('language-python')
   })
 
+  it('adds a copy button and language label to fenced code', () => {
+    const out = renderMarkdown('```python\nx = 1\n```')
+    expect(out).toContain('class="code-copy"')
+    expect(out).toContain('<span class="code-lang">python</span>')
+  })
+
+  it('adds a copy button to unlabelled code blocks (no language span)', () => {
+    const out = renderMarkdown('```\nplain\n```')
+    expect(out).toContain('class="code-copy"')
+    expect(out).not.toContain('class="code-lang"')
+  })
+
   it('rewrites relative image URLs to the source assets endpoint', () => {
     const out = renderMarkdown('![alt](images/foo.png)', 'recipes/lasagna', 'work')
     expect(out).toContain('/api/v1/sources/work/assets/recipes/images/foo.png')

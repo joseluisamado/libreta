@@ -21,6 +21,66 @@ mermaid.initialize({
   securityLevel: 'antiscript',
 })
 
+// Header bar rendered at the top of every code block: the (optional) language
+// label plus a copy-to-clipboard button. The button is a real <button> so it
+// can receive clicks (a CSS ::before pseudo-element can't); a single delegated
+// listener installed below handles the copy. `lang` comes from the fence info
+// string, so it's HTML-escaped before injection (R6).
+function codeBlockHeader(lang: string): string {
+  const label = lang ? `<span class="code-lang">${escapeHtmlText(lang)}</span>` : ''
+  return (
+    `<div class="code-header">${label}` +
+    `<button type="button" class="code-copy" aria-label="Copy code" title="Copy code">` +
+    COPY_ICON +
+    `</button></div>`
+  )
+}
+
+function escapeHtmlText(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
+// Inline SVGs so the button works fully offline (R5): a clipboard glyph for the
+// idle state and a check for the transient "copied" confirmation.
+const COPY_ICON =
+  '<svg class="code-copy-idle" viewBox="0 0 24 24" width="14" height="14" fill="none" ' +
+  'stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+  '<rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>' +
+  '<path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>' +
+  '<svg class="code-copy-done" viewBox="0 0 24 24" width="14" height="14" fill="none" ' +
+  'stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+  '<polyline points="20 6 9 17 4 12"></polyline></svg>'
+
+// One delegated listener for all rendered code blocks, regardless of which view
+// mounted the HTML. Copies the block's raw text (the <code>'s textContent is the
+// original source — highlighting only wraps it in <span>s) to the clipboard.
+function installCopyHandler(): void {
+  if (typeof document === 'undefined') return
+  document.addEventListener('click', (ev) => {
+    const target = ev.target
+    if (!(target instanceof Element)) return
+    const btn = target.closest('button.code-copy')
+    if (!(btn instanceof HTMLElement)) return
+    const pre = btn.closest('pre')
+    const code = pre?.querySelector('code')
+    if (!code) return
+    const text = code.textContent ?? ''
+    void navigator.clipboard
+      .writeText(text)
+      .then(() => flashCopied(btn))
+      .catch(() => {
+        /* clipboard unavailable (e.g. insecure context) — leave button as-is */
+      })
+  })
+}
+
+function flashCopied(btn: HTMLElement): void {
+  btn.classList.add('copied')
+  window.setTimeout(() => btn.classList.remove('copied'), 1500)
+}
+
+installCopyHandler()
+
 const md = new MarkdownIt({
   html: false, // P4/R6 — strip raw HTML at render. Save-side stripping comes with M2.
   linkify: true,
@@ -30,13 +90,13 @@ const md = new MarkdownIt({
     if (lang && hljs.getLanguage(lang)) {
       try {
         const html = hljs.highlight(str, { language: lang, ignoreIllegals: true }).value
-        return `<pre class="hljs"><code class="hljs language-${lang}" data-lang="${lang}">${html}</code></pre>`
+        return `<pre class="hljs">${codeBlockHeader(lang)}<code class="hljs language-${lang}">${html}</code></pre>`
       } catch {
         /* fall through */
       }
     }
     const escaped = str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    return `<pre class="hljs"><code class="hljs">${escaped}</code></pre>`
+    return `<pre class="hljs">${codeBlockHeader('')}<code class="hljs">${escaped}</code></pre>`
   },
 })
   .use(taskLists, { enabled: false, label: false })
