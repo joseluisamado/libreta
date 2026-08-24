@@ -9,6 +9,12 @@ Entries are generated from [Conventional Commits](https://www.conventionalcommit
 by `scripts/changelog.py` at release time.
 
 
+## [2.19.0] - 2026-08-24
+
+### Added
+
+- **frontend:** add copy-to-clipboard button to rendered code blocks
+
 ## [2.18.1] - 2026-08-17
 
 ### Fixed
