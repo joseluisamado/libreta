@@ -61,6 +61,11 @@ function installCopyHandler(): void {
     if (!(target instanceof Element)) return
     const btn = target.closest('button.code-copy')
     if (!(btn instanceof HTMLElement)) return
+    // Drop the focus a mouse click leaves on the button: some browsers apply
+    // :focus-visible after a click, which would keep the button painted at full
+    // opacity even after the pointer leaves the block. Keyboard focus (tabbing)
+    // still shows it, since blur only fires here on an actual click.
+    btn.blur()
     const pre = btn.closest('pre')
     const code = pre?.querySelector('code')
     if (!code) return
