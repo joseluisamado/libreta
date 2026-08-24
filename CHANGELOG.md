@@ -9,6 +9,12 @@ Entries are generated from [Conventional Commits](https://www.conventionalcommit
 by `scripts/changelog.py` at release time.
 
 
+## [2.19.1] - 2026-08-24
+
+### Fixed
+
+- **frontend:** copy button stays visible after click on first code block
+
 ## [2.19.0] - 2026-08-24
 
 ### Added
