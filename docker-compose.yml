@@ -20,6 +20,11 @@ services:
       LIBRETA_DRAWIO_URL: http://localhost:8093
     volumes:
       - libreta-data:/var/lib/libreta
+      # Watched folder: read-only mirror of the libreta-data git clone.
+      # Libreta reads it but never owns/commits it (watched != source).
+      # Host path is machine-specific: set LIBRETA_WATCH_DIR in .env
+      # (gitignored) to point at your own clone.
+      - ${LIBRETA_WATCH_DIR:-./data/watches/libreta-mirror}:/var/lib/watches/libreta-mirror:ro
     ports:
       - "8092:8080"
     depends_on:
