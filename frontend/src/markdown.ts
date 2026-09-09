@@ -256,9 +256,15 @@ export function resolveAssetUrl(
   sourceId?: string,
   watchedLabel?: string,
 ): string {
-  if (isAbsolute(src) || src.startsWith('#')) return src
+  // A true external/absolute URL (scheme, `//authority`, or `data:`) passes
+  // through untouched. A leading-slash *path* (`/diagrams/x.svg`), however, is
+  // repo-root-relative wiki content, not origin-relative — resolveRepoPath
+  // roots it below. Anchors pass through.
+  if (src.startsWith('#')) return src
+  if (isAbsolute(src) && !looksLikeRootRelativePageLink(src)) return src
   // References include the sidecar prefix (e.g. ".saml.md/photo.png").
-  // Resolve relative to the page's parent directory.
+  // Resolve relative to the page's parent directory (or the repo root, if the
+  // src is leading-slash).
   const resolved = resolveRepoPath(src, pagePath)
   if (watchedLabel) {
     return `/api/v1/watch/${encodeURIComponent(watchedLabel)}/assets/${resolved}`
@@ -279,9 +285,14 @@ interface RenderEnv {
 // directory of `pagePath`, returning the repo-root-relative result. Shared by
 // asset and page-link resolution — the walk is identical, only the URL prefix
 // differs.
+//
+// A leading `/` makes `rel` repo-root-relative (the GitHub/GitLab wiki
+// convention: `/devops/foo` means "from the root of this repo", not "from the
+// site origin"). In that case the walk starts from the repo root rather than
+// the page's parent directory.
 function resolveRepoPath(rel: string, pagePath: string): string {
   const parts = pagePath.split('/').filter(Boolean)
-  const base = parts.slice(0, -1) // parent directory
+  const base = rel.startsWith('/') ? [] : parts.slice(0, -1) // root, or parent directory
   const out = [...base]
   for (const s of rel.split('/')) {
     if (s === '' || s === '.') continue
@@ -334,6 +345,44 @@ function looksLikePageLink(href: string): boolean {
   if (isAbsolute(href) || href.startsWith('#') || href.startsWith('mailto:')) return false
   const pathPart = href.split('#')[0]?.split('?')[0] ?? ''
   return /\.md$/i.test(pathPart)
+}
+
+// App-route prefixes that the renderer itself emits (`/source/…`, `/watch/…`,
+// their editor/media variants) and Libreta's own chrome (`/search`, `/-/…`).
+// A leading-slash href already in one of these shapes is a formed in-app route,
+// not repo content, so it must not be re-resolved as a repo-root path (that
+// would double-prefix it). These never collide with real wiki paths.
+const APP_ROUTE_PREFIXES = [
+  '/source/',
+  '/watch/',
+  '/edit-source/',
+  '/edit-watch/',
+  '/pdf-source/',
+  '/pdf-watch/',
+  '/text-source/',
+  '/text-watch/',
+  '/html-source/',
+  '/html-watch/',
+  '/img-source/',
+  '/img-watch/',
+  '/video-source/',
+  '/video-watch/',
+  '/ebook-source/',
+  '/ebook-watch/',
+  '/search',
+  '/-/',
+]
+
+// A leading-slash href with no scheme and no `//` authority is a
+// repo-root-relative wiki path (the GitHub/GitLab wiki convention), not a
+// browser origin-relative path. It resolves from the current repo's root, so
+// when we know the source/watch we can route it into the SPA rather than
+// letting the browser hit the site origin (which 404s). Protocol-relative
+// `//host/…` URLs stay external, and already-formed app routes pass through
+// untouched.
+function looksLikeRootRelativePageLink(href: string): boolean {
+  if (!href.startsWith('/') || href.startsWith('//')) return false
+  return !APP_ROUTE_PREFIXES.some((p) => href.startsWith(p))
 }
 
 // Extensions we treat as "asset" downloads when they appear in a relative
@@ -397,7 +446,11 @@ const ASSET_LINK_EXTS = new Set([
 ])
 
 function looksLikeAssetHref(href: string): boolean {
-  if (isAbsolute(href) || href.startsWith('#') || href.startsWith('mailto:')) return false
+  // A root-relative path (`/diagrams/x.svg`) is repo content, so it can be an
+  // asset link — don't let the leading slash make isAbsolute() reject it. Only
+  // a *true* external/absolute URL (scheme, `//authority`, `data:`) is exempt.
+  if (isAbsolute(href) && !looksLikeRootRelativePageLink(href)) return false
+  if (href.startsWith('#') || href.startsWith('mailto:')) return false
   const stripped = href.split('#')[0]?.split('?')[0] ?? ''
   const dot = stripped.lastIndexOf('.')
   if (dot < 0) return false
@@ -457,6 +510,16 @@ function patchRenderer(): void {
           // Relative link to a sibling wiki page → in-app route, so navigation
           // stays inside the SPA (see resolvePageUrl). Stored markdown is
           // untouched; this only affects the rendered <a href>.
+          attr[1] = resolvePageUrl(attr[1], e.pagePath ?? '', e.sourceId, e.watchedLabel)
+        } else if (
+          looksLikeRootRelativePageLink(attr[1]) &&
+          !looksLikeAssetHref(attr[1]) &&
+          (e.sourceId || e.watchedLabel)
+        ) {
+          // Repo-root-relative wiki link (`/devops/foo`) → in-app route within
+          // the current source/watch. resolvePageUrl resolves it from the repo
+          // root (leading slash), strips any `.md`, and preserves `#anchor` /
+          // `?query`. Render-time only; stored markdown keeps the plain path.
           attr[1] = resolvePageUrl(attr[1], e.pagePath ?? '', e.sourceId, e.watchedLabel)
         } else if (looksLikeAssetHref(attr[1])) {
           attr[1] = resolveAssetUrl(attr[1], e.pagePath ?? '', e.sourceId, e.watchedLabel)

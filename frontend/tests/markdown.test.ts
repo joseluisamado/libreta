@@ -139,6 +139,69 @@ describe('renderMarkdown', () => {
     expect(out).not.toContain('/source/work/')
   })
 
+  it('rewrites a repo-root-relative page link to an in-app source route', () => {
+    // `/devops/platform/governance/ownership-models` means "from this repo's
+    // root", not the site origin. It resolves within the current source.
+    const out = renderMarkdown(
+      '[ownership](/devops/platform/governance/ownership-models)',
+      'faang/story-triggers-devops.md',
+      'work',
+    )
+    expect(out).toContain('href="/source/work/devops/platform/governance/ownership-models"')
+  })
+
+  it('rewrites a repo-root-relative page link for watched folders', () => {
+    const out = renderMarkdown(
+      '[ownership](/devops/platform/governance/ownership-models)',
+      'faang/story-triggers-devops.md',
+      undefined,
+      'libreta-mirror',
+    )
+    expect(out).toContain(
+      'href="/watch/libreta-mirror/devops/platform/governance/ownership-models"',
+    )
+  })
+
+  it('preserves an anchor on a repo-root-relative page link', () => {
+    const out = renderMarkdown('[grid](/faang/interview#know-your-projects-cold)', 'a/b.md', 'work')
+    expect(out).toContain('href="/source/work/faang/interview#know-your-projects-cold"')
+  })
+
+  it('strips a trailing .md on a repo-root-relative page link', () => {
+    const out = renderMarkdown('[x](/devops/foo.md)', 'a/b.md', 'work')
+    expect(out).toContain('href="/source/work/devops/foo"')
+    expect(out).not.toContain('.md"')
+  })
+
+  it('routes a repo-root-relative asset through the assets endpoint', () => {
+    const out = renderMarkdown('[dia](/diagrams/net.svg)', 'a/b.md', 'work')
+    expect(out).toContain('href="/api/v1/sources/work/assets/diagrams/net.svg"')
+  })
+
+  it('resolves a repo-root-relative image from the repo root', () => {
+    const out = renderMarkdown('![alt](/shared/logo.png)', 'deep/nested/page.md', 'work')
+    expect(out).toContain('/api/v1/sources/work/assets/shared/logo.png')
+  })
+
+  it('leaves an already-formed in-app route untouched (no double-prefix)', () => {
+    const out = renderMarkdown('[other](/source/work/foo/bar)', 'a/b.md', 'work')
+    expect(out).toContain('href="/source/work/foo/bar"')
+    expect(out).not.toContain('/source/work/source/')
+  })
+
+  it('leaves a repo-root-relative link untouched without source/watch context', () => {
+    const out = renderMarkdown('[x](/devops/foo)', 'top.md')
+    expect(out).toContain('href="/devops/foo"')
+    expect(out).not.toContain('/source/')
+    expect(out).not.toContain('/watch/')
+  })
+
+  it('leaves a protocol-relative URL as external', () => {
+    const out = renderMarkdown('[x](//cdn.example.com/lib.js)', 'a/b.md', 'work')
+    expect(out).toContain('href="//cdn.example.com/lib.js"')
+    expect(out).not.toContain('/source/work/')
+  })
+
   it('leaves anchor and external links alone', () => {
     const out = renderMarkdown('[a](#x) [b](https://x.com/y.pdf)', 'foo')
     expect(out).toContain('href="#x"')
