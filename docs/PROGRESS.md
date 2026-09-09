@@ -15,6 +15,44 @@ Living document. Update as work progresses. Latest at the top.
 
 ---
 
+## 2026-09-09 — Feature: unsaved-edit recovery (browser draft buffer)
+
+**What**: Closing the editor tab or refreshing the page no longer loses
+in-progress edits. While a page is being edited, every change is written
+(debounced ~500ms) to a per-page draft in `localStorage`. On reopening a page
+that has a recovered draft differing from the on-disk body, a **blocking modal**
+(`DraftRecoveryModal.vue`) offers **"Continue where I left off"** vs **"Start
+from scratch"**. Works identically for git-source pages and watched pages
+because the buffer lives entirely in the browser.
+
+The prompt is a non-dismissible modal (no backdrop-click / Esc exit) rather than
+an in-page banner: the earlier banner sat above a live editor loaded with the
+on-disk body, so any stray click into the editor emitted an update that
+overwrote the stored draft with the disk body — a one-misclick data loss. Two
+defences now: the modal blocks interaction until an explicit choice, and
+`useDraft.save()` is a hard no-op while a draft is `pending` (awaiting the
+decision), so even a programmatic editor update can't clobber an unresolved
+draft.
+
+**How**: new composable `frontend/src/composables/useDraft.ts` — keyed by
+`source/<id>/<path>` or `watch/<label>/<path>`. It stores `{ body, baseBody,
+savedAt }`; `baseBody` is the on-disk body the draft started from, so a draft
+made against an older disk state is flagged **stale** and the banner warns that
+continuing will overwrite the newer on-disk changes on save. The draft is
+cleared on successful save, on explicit "start from scratch", and on
+cancel-with-discard; a draft that has drifted back to matching disk is dropped
+silently. Wired into both `SourceEditorView.vue` and `WatchedEditorView.vue`
+(near-identical twins). All localStorage access is try/catch-guarded (quota /
+disabled / private mode).
+
+**Principle-clean**: the draft is a *recovery buffer*, not a source of truth —
+the filesystem/git repo stays authoritative (R2), and save is still a commit
+(R3). The markdown round-trip corpus is untouched (R1-safe — nothing in the
+serializer changed). Tests: `tests/useDraft.test.ts` (debounced persist, stale
+detection, equal-to-disk drop, clear, malformed-JSON tolerance).
+
+---
+
 ## 2026-07-19 — Feature: empty folders read as empty in the sidebar
 
 **What**: The sidebar tree now visually distinguishes a *confirmed-empty*

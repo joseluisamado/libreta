@@ -4,8 +4,10 @@
   import { getSourcePage, saveSourcePage } from '@/api/client'
   import type { PageRead } from '@/api/types'
   import { useViewMode } from '@/composables/useViewMode'
+  import { useDraft } from '@/composables/useDraft'
   import Editor from '@/components/Editor/Editor.vue'
   import EditorToolbar from '@/components/Editor/EditorToolbar.vue'
+  import DraftRecoveryModal from '@/components/DraftRecoveryModal.vue'
   import { useSourcesStore } from '@/stores/sources'
 
   const sourcesStore = useSourcesStore()
@@ -79,6 +81,8 @@
 
   const readPagePath = computed(() => `/source/${sourceId.value}/${path.value}`)
 
+  const draft = useDraft(() => `source/${sourceId.value}/${path.value}`)
+
   async function load(): Promise<void> {
     page.value = null
     error.value = null
@@ -86,6 +90,9 @@
     try {
       page.value = await getSourcePage(sourceId.value, path.value)
       sourceText.value = page.value.body
+      // Surface any recoverable draft for this page. Deciding whether to
+      // restore it is deferred to the recovery banner (continue vs. discard).
+      draft.check(page.value.body)
     } catch (e) {
       error.value = e instanceof Error ? e.message : String(e)
     }
@@ -93,12 +100,27 @@
 
   watch([sourceId, path], load, { immediate: true })
 
-  function onUpdate(_markdown: string): void {
+  function restoreDraft(): void {
+    const d = draft.pending.value
+    if (!d) return
+    sourceText.value = d.body
+    editorKey.value++ // force the WYSIWYG editor to re-init from the draft body
     isDirty.value = true
+    draft.pending.value = null // keep the stored draft; only dismiss the banner
+  }
+
+  function discardDraft(): void {
+    draft.clear()
+  }
+
+  function onUpdate(markdown: string): void {
+    isDirty.value = true
+    draft.save(markdown)
   }
 
   function onSourceInput(): void {
     isDirty.value = true
+    draft.save(sourceText.value)
   }
 
   async function onUploadFiles(files: File[]): Promise<void> {
@@ -136,6 +158,7 @@
       // Skip the page write so we don't pile on an empty markdown commit.
       if (page.value && md === page.value.body) {
         isDirty.value = false
+        draft.clear()
         // The diagram-save path committed an asset; refresh the sources
         // list so the sidebar's pending count reflects that new commit.
         void sourcesStore.loadSources()
@@ -143,6 +166,7 @@
         return
       }
       await saveSourcePage(sourceId.value, path.value, { body: md })
+      draft.clear()
       // Refresh the sources list so the sidebar's pending count picks up
       // the new commit immediately rather than waiting for the next poll.
       void sourcesStore.loadSources()
@@ -157,6 +181,9 @@
     if (isDirty.value) {
       const ok = window.confirm('You have unsaved changes. Discard them?')
       if (!ok) return
+      // Discarding means abandoning the edit; drop the recovery draft too so it
+      // does not re-prompt on the next open.
+      draft.clear()
     }
     router.push(readPagePath.value)
   }
@@ -233,6 +260,13 @@
         </button>
       </div>
       <template v-else-if="page">
+        <DraftRecoveryModal
+          :open="draft.pending.value !== null"
+          :age-label="draft.pendingAgeLabel.value"
+          :stale="draft.pendingIsStale.value"
+          @continue="restoreDraft"
+          @discard="discardDraft"
+        />
         <template v-if="mode === 'rendered'">
           <EditorToolbar
             :editor="editorRef?.editor ?? null"
