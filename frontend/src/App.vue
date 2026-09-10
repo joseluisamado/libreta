@@ -26,6 +26,68 @@
 
   const sidebarTab = ref<'repos' | 'watched'>(loadSidebarTab())
 
+  // ----- Sidebar scroll position (survive page refresh) --------------------
+  // The sidebar <aside> is a persistent element (it lives outside <RouterView>
+  // and never unmounts on navigation), so its scroll is only lost on a hard
+  // reload. We persist a single scrollTop and restore it once the async source
+  // tree has rendered — a one-shot restore on mount lands at 0 because the
+  // tree isn't there yet, so we re-apply until the content grows past the
+  // target (same settle-loop idea the router uses for main-scroll restore).
+  const SIDEBAR_SCROLL_KEY = 'libreta:sidebar-scroll'
+  const sidebarEl = ref<HTMLElement | null>(null)
+
+  function loadSidebarScroll(): number {
+    try {
+      const raw = localStorage.getItem(SIDEBAR_SCROLL_KEY)
+      if (raw) {
+        const n = parseInt(raw, 10)
+        if (!Number.isNaN(n) && n >= 0) return n
+      }
+    } catch {
+      /* ignore */
+    }
+    return 0
+  }
+
+  let sidebarScrollPersistPending = false
+  function onSidebarScroll(): void {
+    if (sidebarScrollPersistPending) return
+    sidebarScrollPersistPending = true
+    queueMicrotask(() => {
+      sidebarScrollPersistPending = false
+      const el = sidebarEl.value
+      if (!el) return
+      try {
+        localStorage.setItem(SIDEBAR_SCROLL_KEY, String(el.scrollTop))
+      } catch {
+        /* ignore */
+      }
+    })
+  }
+
+  function restoreSidebarScroll(): void {
+    const el = sidebarEl.value
+    const target = loadSidebarScroll()
+    if (!el || target <= 0) return
+    const start = performance.now()
+    let lastHeight = -1
+    let stable = 0
+    const tick = (): void => {
+      el.scrollTop = target
+      const h = el.scrollHeight
+      if (h === lastHeight) {
+        stable += 1
+        if (stable >= 3) return
+      } else {
+        stable = 0
+        lastHeight = h
+      }
+      if (performance.now() - start >= 1500) return
+      setTimeout(tick, 50)
+    }
+    tick()
+  }
+
   // ----- Sidebar drag-to-resize --------------------------------------------
 
   const SIDEBAR_WIDTH_KEY = 'libreta:sidebar-width'
@@ -106,6 +168,7 @@
   onMounted(() => {
     sourcesStore.loadSources()
     watchedStore.loadFolders()
+    restoreSidebarScroll()
   })
 
   watch(sidebarTab, (v) => {
@@ -275,12 +338,14 @@
     <!-- Sidebar / drawer -->
     <aside
       v-show="!collapsed || drawerOpen"
+      ref="sidebarEl"
       :style="{ width: sidebarWidth + 'px' }"
       class="bg-slate-50 border-slate-200 overflow-y-auto overflow-x-hidden p-4 z-40 fixed inset-y-0 left-0 border-r transition-transform duration-200 md:relative md:shrink-0 md:border-r md:block md:translate-x-0 md:inset-auto"
       :class="[
         drawerOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0',
         dragging ? 'select-none' : '',
       ]"
+      @scroll.passive="onSidebarScroll"
     >
       <!-- Logo + nav links -->
       <div class="flex items-center justify-between mb-4">

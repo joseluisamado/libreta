@@ -1,10 +1,16 @@
 <script setup lang="ts">
-  import { computed, ref, watch } from 'vue'
+  import { computed, nextTick, ref, watch } from 'vue'
   import { useRoute, useRouter } from 'vue-router'
   import { getWatchedPage, saveWatchedPage } from '@/api/client'
   import type { PageRead } from '@/api/types'
   import { useViewMode } from '@/composables/useViewMode'
   import { useDraft } from '@/composables/useDraft'
+  import {
+    captureAnchor,
+    restoreAnchor,
+    setPendingAnchor,
+    takePendingAnchor,
+  } from '@/composables/useAnchorScroll'
   import Editor from '@/components/Editor/Editor.vue'
   import EditorToolbar from '@/components/Editor/EditorToolbar.vue'
   import DraftRecoveryModal from '@/components/DraftRecoveryModal.vue'
@@ -12,6 +18,7 @@
   const route = useRoute()
   const router = useRouter()
   const editorRef = ref<InstanceType<typeof Editor> | null>(null)
+  const scrollEl = ref<HTMLElement | null>(null)
   const page = ref<PageRead | null>(null)
   const error = ref<string | null>(null)
   const isDirty = ref(false)
@@ -23,11 +30,20 @@
   const sourceText = ref('')
   const editorKey = ref(0)
 
-  watch(mode, (newMode) => {
+  watch(mode, async (newMode) => {
+    // Capture the current pane's position before Vue swaps the DOM, so the
+    // rendered ↔ source toggle keeps the user on the same section.
+    const anchor = scrollEl.value
+      ? captureAnchor(scrollEl.value, scrollEl.value, anchorKey.value)
+      : null
     if (newMode === 'source') {
       sourceText.value = editorRef.value?.getMarkdown() ?? sourceText.value
     } else {
       editorKey.value++
+    }
+    if (anchor) {
+      await nextTick()
+      if (scrollEl.value) await restoreAnchor(scrollEl.value, scrollEl.value, anchor)
     }
   })
 
@@ -39,6 +55,9 @@
   })
 
   const readPagePath = computed(() => `/watch/${label.value}/${path.value}`)
+  // Same identity the viewer uses, so a captured anchor is only consumed on
+  // the matching page.
+  const anchorKey = computed(() => `watch/${label.value}/${path.value}`)
 
   const draft = useDraft(() => `watch/${label.value}/${path.value}`)
 
@@ -58,6 +77,29 @@
   }
 
   watch([label, path], load, { immediate: true })
+
+  // Region-preserving scroll across viewer ↔ editor. The editor scrolls in its
+  // own container (scrollEl); headings live inside it in both WYSIWYG (the
+  // ProseMirror DOM) and — where present — the source view. Capture on the way
+  // back to the viewer; consume any anchor the viewer set on the way in.
+  function captureForViewer(): void {
+    if (scrollEl.value)
+      setPendingAnchor(captureAnchor(scrollEl.value, scrollEl.value, anchorKey.value))
+  }
+
+  watch(
+    page,
+    async (p) => {
+      if (!p) return
+      const anchor = takePendingAnchor(anchorKey.value)
+      if (!anchor) return
+      // Wait for the editor/source pane to render its headings before restoring.
+      await nextTick()
+      await nextTick()
+      if (scrollEl.value) await restoreAnchor(scrollEl.value, scrollEl.value, anchor)
+    },
+    { flush: 'post' },
+  )
 
   function restoreDraft(): void {
     const d = draft.pending.value
@@ -119,11 +161,13 @@
       if (page.value && md === page.value.body) {
         isDirty.value = false
         draft.clear()
+        captureForViewer()
         router.push(readPagePath.value)
         return
       }
       await saveWatchedPage(label.value, path.value, { body: md })
       draft.clear()
+      captureForViewer()
       router.push(readPagePath.value)
     } catch (e) {
       saveError.value = e instanceof Error ? e.message : String(e)
@@ -139,6 +183,7 @@
       // does not re-prompt on the next open.
       draft.clear()
     }
+    captureForViewer()
     router.push(readPagePath.value)
   }
 </script>
@@ -199,7 +244,7 @@
       </div>
     </div>
 
-    <div class="flex-1 overflow-y-auto">
+    <div ref="scrollEl" class="flex-1 overflow-y-auto">
       <p v-if="error" class="p-6 text-red-600">
         {{ error }}
         <RouterLink :to="readPagePath" class="underline ml-2">Back to page</RouterLink>

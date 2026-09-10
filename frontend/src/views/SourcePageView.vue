@@ -1,6 +1,6 @@
 <script setup lang="ts">
   import { computed, ref, watch, nextTick } from 'vue'
-  import { useRoute, useRouter } from 'vue-router'
+  import { useRoute, useRouter, onBeforeRouteLeave } from 'vue-router'
   import {
     getSourcePage,
     saveSourcePage,
@@ -24,6 +24,12 @@
   import NameDialog from '@/components/NameDialog.vue'
   import { useNameDialog } from '@/composables/useNameDialog'
   import { pageNameToSlug } from '@/utils/pageName'
+  import {
+    captureAnchor,
+    restoreAnchor,
+    setPendingAnchor,
+    takePendingAnchor,
+  } from '@/composables/useAnchorScroll'
   import hljs from 'highlight.js'
   import 'highlight.js/styles/github.css'
 
@@ -311,9 +317,36 @@
     return renderMarkdown(page.value.body, page.value.path, sourceId.value)
   })
 
+  // Region-preserving scroll across viewer ↔ editor. #main-scroll is the
+  // viewer's scroll container; the .prose div (contentEl) holds the headings
+  // we anchor on. When editing takes over the same page, capture where we
+  // are; when we arrive from the editor, restore to the matching heading.
+  function mainScrollEl(): HTMLElement | null {
+    return document.getElementById('main-scroll')
+  }
+
+  const anchorKey = computed(() => `source/${sourceId.value}/${path.value}`)
+
+  onBeforeRouteLeave((to) => {
+    if (to.name !== 'source-editor') return
+    const container = mainScrollEl()
+    const scope = contentEl.value
+    if (container && scope) setPendingAnchor(captureAnchor(container, scope, anchorKey.value))
+  })
+
+  async function consumePendingAnchor(): Promise<void> {
+    const anchor = takePendingAnchor(anchorKey.value)
+    if (!anchor) return
+    await nextTick()
+    const container = mainScrollEl()
+    const scope = contentEl.value
+    if (container && scope) await restoreAnchor(container, scope, anchor)
+  }
+
   watch([html, mode], async () => {
     await nextTick()
     if (mode.value === 'rendered' && contentEl.value) await renderMermaidIn(contentEl.value)
+    await consumePendingAnchor()
   })
 
   const highlightedSource = computed(() => {
