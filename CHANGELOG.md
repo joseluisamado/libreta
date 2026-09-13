@@ -9,6 +9,17 @@ Entries are generated from [Conventional Commits](https://www.conventionalcommit
 by `scripts/changelog.py` at release time.
 
 
+## [2.20.0] - 2026-09-13
+
+### Added
+
+- **frontend:** remember sidebar and viewer/editor scroll position
+- **frontend:** resolve repo-root-relative wiki links to in-app routes
+
+### Fixed
+
+- **frontend:** make unsaved-edit recovery misclick-proof
+
 ## [2.19.1] - 2026-08-24
 
 ### Fixed
