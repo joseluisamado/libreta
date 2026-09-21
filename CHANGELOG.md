@@ -9,6 +9,12 @@ Entries are generated from [Conventional Commits](https://www.conventionalcommit
 by `scripts/changelog.py` at release time.
 
 
+## [2.21.0] - 2026-09-21
+
+### Changed
+
+- **backend:** serve small repo trees whole instead of depth-limited
+
 ## [2.20.0] - 2026-09-13
 
 ### Added
