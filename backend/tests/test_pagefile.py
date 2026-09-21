@@ -9,7 +9,9 @@ from libreta.storage.pagefile import (
     _as_weight,
     _body_looks_like_frontmatter,
     _classify_other,
+    _is_simple_block,
     _read_webloc_url,
+    _weight_from_yaml_block,
     count_renderable_entries,
     patch_page_meta,
     read_h1_or_fallback,
@@ -589,3 +591,109 @@ def test_small_repo_walk_has_no_truncation_stubs(tmp_path: Path) -> None:
         return False
 
     assert not any_stub(nodes)
+
+
+# ---------------------------------------------------------------------------
+# _weight_from_yaml_block fast path
+# ---------------------------------------------------------------------------
+
+# Reading ``weight`` line-wise instead of via ``yaml.safe_load`` is worth ~3s of
+# a ~3.8s full tree walk on a 1100-page wiki, but it is only safe while it agrees
+# with the parser *exactly* — including on blocks that fail to parse at all, where
+# the correct answer is ``None`` rather than whatever a well-formed neighbouring
+# line says. These cases pin that equivalence; each one is checked against a
+# reference implementation rather than a hand-written expectation, so the test
+# stays honest if the subset the fast path recognises is ever widened.
+_WEIGHT_BLOCKS = [
+    "",
+    "   \n",
+    "weight: 5\n",
+    "weight: -3\n",
+    "weight: +7\n",
+    "weight: 0\n",
+    "weight: 5 # trailing comment\n",
+    "title: Foo\nweight: 12\n",
+    "weight: 12\ntitle: Foo\n",
+    # tags/aliases sequences: the most common real frontmatter shape
+    "tags:\n  - a\n  - b\nweight: 9\n",
+    "tags:\n- a\n- b\nweight: 9\n",
+    # quoted scalars, including a colon-bearing title that *needs* the quotes
+    'title: "Locking: Optimistic vs Pessimistic"\nweight: 4\n',
+    "title: 'single quoted'\nweight: 4\n",
+    # the anchor/alias pair PyYAML emits for a repeated timestamp
+    "created: &id001 2026-07-18 08:00:54+00:00\nupdated: *id001\nweight: 6\n",
+    # --- everything below must fall through to the real parser ---
+    "weight: null\n",
+    "weight:\n",
+    "weight: '5'\n",
+    'weight: "5"\n',
+    "weight: 5.5\n",
+    "weight: abc\n",
+    "weight: true\n",
+    "weight: 1_000\n",
+    "weight: 0x10\n",
+    "weight: [1, 2]\n",
+    "weight: |\n  5\n",
+    "weight: *anc\n",
+    "a: &anc 5\nweight: *anc\n",
+    "<<: *base\nweight: 4\n",
+    "nested:\n  weight: 12\n",
+    "  weight: 12\n",
+    # an undefined alias makes the *whole* block unparseable -> None
+    "title: *nope\nweight: 5\n",
+    # a malformed line does too: `title:5.5` is a scalar, not a mapping
+    "title:5.5\nweight: 5\n",
+    "weight:5\n",
+    # YAML forbids tabs as separators
+    "weight:\t5\n",
+    "weight: 5\t\n",
+    # a second document's keys would win
+    "weight: 3\n---\nweight: 9\n",
+    # inconsistent sequence indentation is invalid YAML
+    "weight: 5\ntags:\n  - a\n- b\n",
+    # duplicate keys: the last one wins
+    "weight: 5\nweight: 6\n",
+    "weight: 5\nweight: '6'\n",
+    "weight: 5\nweight:\n",
+    # not a mapping at all
+    "- just\n- a\nlist\n",
+    "just a string\n",
+]
+
+
+def _weight_reference(block: str) -> int | None:
+    """Read ``weight`` the slow, authoritative way: full ``yaml.safe_load``."""
+    import yaml
+
+    if not block.strip():
+        return None
+    try:
+        data = yaml.safe_load(block)
+    except yaml.YAMLError:
+        return None
+    if not isinstance(data, dict):
+        return None
+    return _as_weight(data.get("weight"))
+
+
+@pytest.mark.parametrize("block", _WEIGHT_BLOCKS)
+def test_weight_fast_path_matches_yaml(block: str) -> None:
+    assert _weight_from_yaml_block(block) == _weight_reference(block)
+
+
+def test_weight_fast_path_actually_engages() -> None:
+    """Guard the *performance* half of the contract.
+
+    Correctness alone can be had by deleting the fast path, so assert that the
+    ordinary shapes really do bypass ``yaml.safe_load`` — otherwise a later
+    tightening of the recognised subset could silently restore the 3s walk.
+    """
+    assert _is_simple_block("title: Foo\nweight: 12\n")
+    assert _is_simple_block("tags:\n  - a\n  - b\nweight: 9\n")
+    assert _is_simple_block('title: "Has: colon"\nweight: 4\n')
+    assert _is_simple_block("created: &id001 2026-07-18\nupdated: *id001\nweight: 6\n")
+    # ...and that the genuinely tricky shapes do not.
+    assert not _is_simple_block("nested:\n  weight: 12\n")
+    assert not _is_simple_block("title: *undefined\nweight: 5\n")
+    assert not _is_simple_block("weight: 3\n---\nweight: 9\n")
+    assert not _is_simple_block("weight: |\n  5\n")

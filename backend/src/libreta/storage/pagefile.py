@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import os
 import plistlib
+import re
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -187,10 +188,115 @@ def _next_nonblank(it: Any) -> str | None:
     return None
 
 
+# One line of the trivial subset the fast path handles: blank, a whole-line
+# comment, ``key: value`` at column 0, or an indented ``- item`` sequence entry.
+#
+# The key is restricted to word characters (so no quoting, no ``?`` explicit
+# key, no flow indicator) and the ``:`` must be followed by a space or end of
+# line — YAML reads ``title:5.5`` as the single scalar ``"title:5.5"``, not a
+# mapping, which is exactly the kind of line that makes a *whole block* fail to
+# parse. Values and sequence items rule out every construct whose meaning spans
+# lines or needs real parsing: quotes, anchors/aliases/merge keys (``&`` ``*``),
+# block scalars (``|`` ``>``), flow collections (``[`` ``{``) and ``#``.
+#
+# Sequence entries are allowed because ``tags:``/``aliases:`` lists are by far
+# the most common frontmatter shape in a real wiki; they cannot introduce a
+# top-level ``weight``, so they are irrelevant to the scan but must not force
+# every tagged page down the slow path.
+_VALUE = r"[^\s&*|>\[\]{}#'\"][^#\t\n]*?"
+# A fully-quoted scalar on one line, e.g. ``title: "Locking: Optimistic"``. These
+# are everywhere in real frontmatter (any title containing a colon needs them)
+# and are inert for the scan, but only when the quote actually closes on the same
+# line — an unterminated quote runs into the following lines and changes how the
+# whole block parses, so it must not match here. Escapes are excluded rather than
+# handled: rare enough to be worth a trip through the parser.
+_QUOTED = r"\"[^\"\\\n]*\"|'[^'\\\n]*'"
+# An anchored or aliased scalar on some *other* key, e.g. the
+# ``created: &id001 <ts>`` / ``updated: *id001`` pair PyYAML emits for a repeated
+# timestamp. These cannot define or redirect a top-level ``weight`` — a merge key
+# (``<<:``) could, and is excluded by the key pattern below — so a block carrying
+# them is still safe to scan, as long as its own ``weight`` line is a plain int.
+_ANCHOR_VALUE = rf"[&*][\w.-]+(?: +{_VALUE})?"
+# The anchor (``&name``) or alias (``*name``) marker in such a value.
+_ANCHOR_REF_RE = re.compile(r": *([&*])([\w.-]+)")
+_SIMPLE_LINE_RE = re.compile(
+    rf" *(?:#.*)?"
+    rf"| *- +(?:{_QUOTED}|{_VALUE}) *(?:#.*)?"
+    rf"|\w[\w.-]*:(?: +(?:{_QUOTED}|{_VALUE}|{_ANCHOR_VALUE}))? *(?:#.*)?"
+)
+# A ``weight: <int>`` line at column 0: a bare integer, optional trailing
+# comment. A float, a quoted value or anything else falls through to the parser.
+_WEIGHT_LINE_RE = re.compile(r"^weight: +([+-]?\d+) *(?:#.*)?$", re.MULTILINE)
+# Any ``weight`` key at column 0, used only to tell "no weight here" from "a
+# weight the fast path could not read".
+_WEIGHT_KEY_RE = re.compile(r"^weight:", re.MULTILINE)
+
+
+def _is_simple_block(block: str) -> bool:
+    """True when *block* is entirely blank/comment/``key: value``/``- item`` lines.
+
+    This is the precondition for reading ``weight`` line-wise. It is deliberately
+    whole-block rather than per-line: one malformed line (``title:5.5``) makes
+    ``yaml.safe_load`` return a string instead of a dict, so the reference result
+    for the *whole* block is ``None`` — and a fast path that read ``weight`` from
+    a neighbouring well-formed line would disagree.
+
+    Sequence entries must also keep a consistent indent within one run, since
+    YAML rejects a block whose items step in and out, and such a block likewise
+    parses to ``None`` rather than to its well-formed lines.
+    """
+    seq_indent: int | None = None
+    anchors: set[str] = set()
+    aliases: set[str] = set()
+    for line in block.splitlines():
+        if _SIMPLE_LINE_RE.fullmatch(line) is None:
+            return False
+        stripped = line.lstrip(" ")
+        if stripped.startswith("- "):
+            indent = len(line) - len(stripped)
+            if seq_indent is None:
+                seq_indent = indent
+            elif indent != seq_indent:
+                return False
+        elif stripped and not stripped.startswith("#"):
+            # A mapping key ends the current sequence run.
+            seq_indent = None
+        marker = _ANCHOR_REF_RE.search(line)
+        if marker is not None:
+            (anchors if marker.group(1) == "&" else aliases).add(marker.group(2))
+    # An alias with no anchor to resolve makes the whole document fail to parse,
+    # which the scan cannot tell from a well-formed block; hand those to YAML.
+    return aliases <= anchors
+
+
 def _weight_from_yaml_block(block: str) -> int | None:
-    """Extract ``weight`` from a small YAML frontmatter block. Never raises."""
+    """Extract ``weight`` from a small YAML frontmatter block. Never raises.
+
+    ``yaml.safe_load`` is the authority here, but it is also, by a wide margin,
+    the single most expensive thing the tree walk does: on a 1100-page wiki it
+    was ~3.0s of a ~3.8s full walk (78%), spent building a throwaway document
+    tree for every page just to read one integer.
+
+    So try a line-wise fast path first, and fall back to the real parser the
+    moment the block looks like anything other than plain ``key: value`` lines.
+    The fast path only ever *skips* YAML when it has found a top-level
+    ``weight: <int>``, or proved there is no top-level ``weight`` key at all, in
+    a block with no multi-document/anchor syntax — so the fallback, not the
+    regex, remains responsible for correctness on anything unusual.
+    """
     if not block.strip():
         return None
+    if _is_simple_block(block):
+        keys = _WEIGHT_KEY_RE.findall(block)
+        if not keys:
+            # No ``weight`` key: nothing for the parser to find.
+            return None
+        # A duplicate key is legal YAML and the *last* one wins. Only trust the
+        # scan when every ``weight`` line parsed as an integer, so a trailing
+        # ``weight:`` (null) or ``weight: '5'`` still reaches the real parser.
+        matches = _WEIGHT_LINE_RE.findall(block)
+        if len(matches) == len(keys):
+            return _as_weight(matches[-1])
     try:
         data = yaml.safe_load(block)
     except yaml.YAMLError:
