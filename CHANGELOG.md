@@ -9,6 +9,12 @@ Entries are generated from [Conventional Commits](https://www.conventionalcommit
 by `scripts/changelog.py` at release time.
 
 
+## [2.21.1] - 2026-09-21
+
+### Changed
+
+- **backend:** read frontmatter weight without full YAML parse
+
 ## [2.21.0] - 2026-09-21
 
 ### Changed
