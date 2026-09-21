@@ -602,6 +602,59 @@ def _dir_has_renderable_child(dir_path: Path) -> bool:
     return False
 
 
+# Node budget for the adaptive tree walk. A repo whose renderable-entry count
+# fits in this many nodes is served whole (``max_depth=None``); anything larger
+# falls back to a depth-limited walk with truncation stubs.
+#
+# Calibrated by measurement, not taste: a full walk costs ~0.11 ms and ~205
+# bytes of JSON per node, both linear in node count. 4000 nodes is therefore
+# ~440 ms and ~800 KiB on dev hardware — and the target box (a NanoPi) is
+# several times slower, which is why this sits well below the point where a
+# full walk stops being a win. For scale: a 1100-page wiki counts ~1100 and is
+# served whole; a 75k-page one counts out in ~7 ms and stays lazy.
+TREE_FULL_BUDGET = 4000
+
+
+def count_renderable_entries(root: Path, budget: int) -> int:
+    """Count renderable entries under *root*, abandoning the walk past *budget*.
+
+    Used to decide whether a repo is small enough to serve as one complete tree.
+    Deliberately much cheaper than :func:`walk_tree`: ``os.scandir`` only, with
+    no file reads, no frontmatter parsing and no ``PageNode`` construction — the
+    three things that make the real walk expensive. Counts directories and
+    ``.md`` files, which is a close enough proxy for node count to size the
+    decision (non-page leaf kinds are a small minority and only ever make the
+    estimate conservative in the safe direction).
+
+    Returns as soon as the running count exceeds *budget*, so the cost is
+    bounded by the budget rather than by the size of the tree: a huge repo is
+    rejected in milliseconds instead of being fully counted.
+    """
+    seen = 0
+    stack: list[Path] = [root]
+    while stack:
+        current = stack.pop()
+        try:
+            with os.scandir(current) as it:
+                for entry in it:
+                    if entry.name.startswith("."):
+                        continue
+                    try:
+                        if entry.is_dir():
+                            stack.append(Path(entry.path))
+                            seen += 1
+                        elif entry.name.lower().endswith(".md"):
+                            seen += 1
+                    except OSError:
+                        continue
+        except OSError:
+            logger.warning("cannot scan directory %s", current)
+            continue
+        if seen > budget:
+            return seen
+    return seen
+
+
 def _build_tree(
     dir_path: Path,
     url_prefix: str,
@@ -804,6 +857,39 @@ def walk_tree(root: Path, max_depth: int | None = None) -> list[PageNode]:
                 node.other_files = root_other
                 break
     return nodes
+
+
+def resolve_tree_depth(
+    root: Path, requested: int | None, budget: int = TREE_FULL_BUDGET
+) -> int | None:
+    """Pick the depth to walk *root* at: ``None`` (whole tree) or *requested*.
+
+    A depth-limited tree is not free for the client: every folder the user has
+    expanded past the cutoff arrives as a truncation stub and costs one extra
+    HTTP round-trip to fill. Restoring a fully-expanded sidebar that way meant
+    ~200 requests funnelled through the browser's 6-connection HTTP/1.1 limit —
+    measurably more total work than simply serving the tree whole.
+
+    So: probe the repo cheaply (:func:`count_renderable_entries`, bounded by
+    *budget*) and, when it fits, walk it complete so the client needs no
+    follow-up fetches at all. Large repos keep the depth limit, where lazy
+    filling genuinely pays — a full walk there is seconds and tens of MiB.
+
+    *requested* ``None`` already means "everything", so it short-circuits, and a
+    *budget* of 0 or less disables the whole-tree path (always depth-limit).
+    """
+    if requested is None:
+        return None
+    if budget <= 0:
+        return requested
+    try:
+        if not root.exists():
+            return requested
+    except OSError:
+        return requested
+    if count_renderable_entries(root, budget) <= budget:
+        return None
+    return requested
 
 
 def walk_children(root: Path, raw_path: str) -> tuple[list[PageNode], list[OtherFile]]:

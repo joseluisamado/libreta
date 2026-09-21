@@ -131,7 +131,9 @@ async def get_watched_tree(
     if entry is None:
         return []
     watched_root = Path(entry["path"]).expanduser().resolve()
-    return await walk_watched_tree(watched_root, max_depth=depth)
+    return await walk_watched_tree(
+        watched_root, max_depth=depth, full_budget=settings.tree_full_budget
+    )
 
 
 @router.get("/{label}/children/{path:path}", response_model=DirChildren)

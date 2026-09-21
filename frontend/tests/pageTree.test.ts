@@ -111,7 +111,7 @@ describe('isPathLoaded', () => {
 })
 
 describe('collectFolderPaths', () => {
-  it('collects folder paths (children or stub), skipping leaves', () => {
+  it('collects only truncation stubs, not already-loaded folders', () => {
     const tree = [
       node({
         path: 'a',
@@ -125,7 +125,43 @@ describe('collectFolderPaths', () => {
     ]
     const out = new Set<string>()
     collectFolderPaths(tree, out)
-    expect([...out].sort()).toEqual(['a', 'a/b', 'a/stub'])
+    // 'a' and 'a/b' already carry their children — refetching them would be a
+    // round-trip that changes nothing. Only the stub needs filling.
+    expect([...out].sort()).toEqual(['a/stub'])
+  })
+
+  it('finds stubs nested inside already-loaded folders', () => {
+    const tree = [
+      node({
+        path: 'a',
+        is_directory: true,
+        children: [
+          node({
+            path: 'a/b',
+            is_directory: true,
+            children: [node({ path: 'a/b/deep', is_directory: true, has_more: true })],
+          }),
+        ],
+      }),
+    ]
+    const out = new Set<string>()
+    collectFolderPaths(tree, out)
+    expect([...out]).toEqual(['a/b/deep'])
+  })
+
+  it('returns nothing for a fully-loaded tree (the small-repo case)', () => {
+    // What the backend now sends for a repo under the node budget: no stubs, so
+    // the restore path issues zero follow-up requests.
+    const tree = [
+      node({
+        path: 'a',
+        is_directory: true,
+        children: [node({ path: 'a/b', is_directory: true, children: [node({ path: 'a/b/c' })] })],
+      }),
+    ]
+    const out = new Set<string>()
+    collectFolderPaths(tree, out)
+    expect([...out]).toEqual([])
   })
 })
 

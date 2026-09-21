@@ -398,7 +398,9 @@ async def get_source_tree(
     settings: Annotated[Settings, Depends(get_settings)],
     depth: int = 2,
 ) -> list[PageNode]:
-    return await src_store.walk_source_tree(settings.repos_dir, source_id, max_depth=depth)
+    return await src_store.walk_source_tree(
+        settings.repos_dir, source_id, max_depth=depth, full_budget=settings.tree_full_budget
+    )
 
 
 @router.get("/{source_id}/children/{path:path}", response_model=DirChildren)

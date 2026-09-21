@@ -28,6 +28,14 @@ class Settings(BaseSettings):
     # Sources config file, relative to meta_dir (reuses the .meta convention).
     sources_config: str = ".meta/sources.json"
 
+    # Node budget for serving a source/watched tree whole instead of
+    # depth-limited. A repo that probes at or under this many renderable entries
+    # is sent complete, so the sidebar needs no follow-up children requests to
+    # restore its expanded state; larger repos keep the lazy, stubbed walk.
+    # See pagefile.resolve_tree_depth for the measurements behind the default.
+    # Set to 0 to always use the depth limit.
+    tree_full_budget: int = 4000
+
     # Browser-facing URL for the drawio embed iframe. Must resolve in the
     # *user's browser*, not the api container — the iframe is loaded by the
     # SPA, not proxied through the api. Default matches the published host

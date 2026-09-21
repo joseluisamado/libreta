@@ -118,11 +118,17 @@ async def resolve_watched_file(meta_dir: Path, label: str, raw_path: str) -> tup
 # ---------------------------------------------------------------------------
 
 
+def _walk_tree_adaptive(root: Path, max_depth: int | None, full_budget: int) -> list[PageNode]:
+    """Probe then walk, in one worker thread (see pagefile.resolve_tree_depth)."""
+    return pagefile.walk_tree(root, pagefile.resolve_tree_depth(root, max_depth, full_budget))
+
+
 async def walk_watched_tree(
     watched_root: Path,
     max_depth: int | None = None,
+    full_budget: int = pagefile.TREE_FULL_BUDGET,
 ) -> list[PageNode]:
-    return await asyncio.to_thread(pagefile.walk_tree, watched_root, max_depth)
+    return await asyncio.to_thread(_walk_tree_adaptive, watched_root, max_depth, full_budget)
 
 
 async def walk_watched_children(

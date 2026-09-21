@@ -10,8 +10,64 @@ Living document. Update as work progresses. Latest at the top.
 
 **Current milestone**: M5 — v1.0 release ✅ (post-1.0 hardening pass shipped 2026-05-13)
 **Next milestone**: post-1.0 hardening / M6 (multi-user & auth)
-**Next action**: cut a release and deploy the MCP endpoint over LAN TLS
-(`make release-current TLS_HOSTNAME=<lan-name>`), then `claude mcp add`.
+**Next action**: sidebar expand-all / collapse-all icons + the
+`{mode, except}` open-state storage format (deferred from 2026-09-21).
+
+---
+
+## 2026-09-21 — Perf: adaptive tree depth (sidebar restore no longer fans out)
+
+**What**: Refreshing a page with a heavily-expanded sidebar had a visible lag
+that scaled with how much was expanded. Cause: the tree endpoint is
+depth-limited (`depth=2`), so every folder open past the cutoff arrived as a
+truncation stub, and `expandOpenPaths` issued **one HTTP request per open
+folder** to refill them on every mount (and again after every sync).
+
+Measured on the 1098-page `libreta-data` wiki: 198 children requests
+(~450 ms server CPU) on top of the tree fetch, funnelled through the browser's
+6-connection HTTP/1.1 limit — roughly 34 sequential rounds. Serving that repo
+*whole* costs one 175 ms request. The depth ladder is counter-intuitive:
+`depth=3` (296 ms) is **slower** than `depth=None` (189 ms), because the
+boundary `_dir_has_renderable_child` probes cost more than just recursing.
+
+**How**: the backend now decides. `pagefile.count_renderable_entries()` is a
+cheap `os.scandir`-only probe (no file reads, no parsing) that bails out as
+soon as it exceeds a budget, so a huge repo is rejected in ~7 ms rather than
+fully counted. `pagefile.resolve_tree_depth()` uses it to pick `None` (whole
+tree) for repos within `Settings.tree_full_budget` (default 4000 nodes) and
+keeps the depth limit above it. Probe + walk run in one worker thread.
+
+The budget is calibrated, not guessed: a full walk costs ~0.11 ms and ~205
+bytes of JSON per node, both linear, so 4000 nodes ≈ 440 ms / 800 KiB on dev
+hardware — deliberately conservative because the target box is slower. Set
+`LIBRETA_TREE_FULL_BUDGET=0` to force the old lazy behaviour.
+
+Also fixed a frontend bug that would have cancelled the win:
+`collectFolderPaths()` collected *every* folder with children, not just
+truncation stubs, so the restore refetched all 198 folders even once the tree
+arrived complete. It now collects only `has_more` stubs — for a fully-loaded
+tree it returns nothing and the restore makes zero requests.
+
+**Result**: 199 HTTP requests → 1; ~3x less server CPU for this wiki. Large
+repos keep the lazy path, where it genuinely pays (a full walk of a 74k-page
+synthetic repo is 9.1 s / 17.8 MiB).
+
+**Decisions**:
+- *Server-side, not client-side.* The client can't know a repo's size before
+  asking, and this keeps large-repo protection in one place.
+- *Node budget, not a depth bump.* Depth is a bad proxy for cost — a flat wide
+  repo and a deep narrow one differ by orders of magnitude at the same depth.
+
+**Tests**: 8 backend tests for the probe/resolver (including bail-out and the
+"small repo has no stubs" invariant) and 3 frontend tests for the corrected
+stub collection. The two watch tests that assert truncation behaviour now use
+a `client_lazy_tree` fixture (`tree_full_budget=0`) so the lazy machinery stays
+covered. Backend 222 passed, frontend 160 passed (round-trip corpus green).
+
+**Deferred**: the sidebar expand-all / collapse-all icons, and the
+`{mode, except}` open-state storage format — both are now much cheaper to build
+on top of this, since a small repo's tree arrives complete and expanding
+everything costs no extra requests.
 
 ---
 

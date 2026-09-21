@@ -784,12 +784,20 @@ def _validate_source_path(raw_path: str) -> None:
 # ---------------------------------------------------------------------------
 
 
+def _walk_tree_adaptive(root: Path, max_depth: int | None, full_budget: int) -> list[PageNode]:
+    """Probe then walk, in one worker thread (see pagefile.resolve_tree_depth)."""
+    return pagefile.walk_tree(root, pagefile.resolve_tree_depth(root, max_depth, full_budget))
+
+
 async def walk_source_tree(
     repos_dir: Path,
     source_id: str,
     max_depth: int | None = None,
+    full_budget: int = pagefile.TREE_FULL_BUDGET,
 ) -> list[PageNode]:
-    return await asyncio.to_thread(pagefile.walk_tree, _local_path(repos_dir, source_id), max_depth)
+    return await asyncio.to_thread(
+        _walk_tree_adaptive, _local_path(repos_dir, source_id), max_depth, full_budget
+    )
 
 
 async def walk_source_children(

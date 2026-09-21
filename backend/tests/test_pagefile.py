@@ -10,13 +10,16 @@ from libreta.storage.pagefile import (
     _body_looks_like_frontmatter,
     _classify_other,
     _read_webloc_url,
+    count_renderable_entries,
     patch_page_meta,
     read_h1_or_fallback,
     read_page_file,
     read_page_head,
     read_weight,
+    resolve_tree_depth,
     sanitize_page_meta,
     walk_children,
+    walk_tree,
     write_page_file,
 )
 
@@ -511,3 +514,78 @@ def test_wrappers_delegate_to_head(tmp_path: Path) -> None:
     f.write_text("---\nweight: 40\n---\n\n# The Title\n")
     assert read_weight(f) == 40
     assert read_h1_or_fallback(f, "FB") == "The Title"
+
+
+# ---------------------------------------------------------------------------
+# Adaptive tree depth (count_renderable_entries / resolve_tree_depth)
+# ---------------------------------------------------------------------------
+
+
+def _make_tree(root: Path, branching: int, depth: int) -> None:
+    """Build a synthetic wiki: *branching* folders per level, 1 page each."""
+    if depth == 0:
+        return
+    for i in range(branching):
+        sub = root / f"f{i}"
+        sub.mkdir(parents=True, exist_ok=True)
+        (sub / "page.md").write_text("# Page\n")
+        _make_tree(sub, branching, depth - 1)
+
+
+def test_count_renderable_entries_counts_dirs_and_pages(tmp_path: Path) -> None:
+    (tmp_path / "a").mkdir()
+    (tmp_path / "a" / "one.md").write_text("# One\n")
+    (tmp_path / "two.md").write_text("# Two\n")
+    # 1 dir + 2 pages
+    assert count_renderable_entries(tmp_path, 100) == 3
+
+
+def test_count_renderable_entries_skips_dotfiles(tmp_path: Path) -> None:
+    (tmp_path / "keep.md").write_text("# Keep\n")
+    (tmp_path / ".hidden").mkdir()
+    (tmp_path / ".hidden" / "nope.md").write_text("# Nope\n")
+    (tmp_path / ".secret.md").write_text("# Secret\n")
+    assert count_renderable_entries(tmp_path, 100) == 1
+
+
+def test_count_renderable_entries_bails_out_past_budget(tmp_path: Path) -> None:
+    _make_tree(tmp_path, 4, 4)  # comfortably over the budget below
+    # Stops counting shortly after exceeding the budget rather than walking all.
+    counted = count_renderable_entries(tmp_path, 10)
+    assert counted > 10
+    assert counted < 100  # nowhere near the full tree
+
+
+def test_resolve_tree_depth_serves_small_repo_whole(tmp_path: Path) -> None:
+    _make_tree(tmp_path, 2, 3)
+    assert resolve_tree_depth(tmp_path, 2, budget=1000) is None
+
+
+def test_resolve_tree_depth_keeps_limit_for_large_repo(tmp_path: Path) -> None:
+    _make_tree(tmp_path, 4, 4)
+    assert resolve_tree_depth(tmp_path, 2, budget=10) == 2
+
+
+def test_resolve_tree_depth_passes_through_none(tmp_path: Path) -> None:
+    """A caller asking for everything already gets everything — no probe."""
+    assert resolve_tree_depth(tmp_path, None, budget=1) is None
+
+
+def test_resolve_tree_depth_missing_root_keeps_request(tmp_path: Path) -> None:
+    assert resolve_tree_depth(tmp_path / "gone", 2, budget=1000) == 2
+
+
+def test_small_repo_walk_has_no_truncation_stubs(tmp_path: Path) -> None:
+    """The point of the whole exercise: a small repo needs no follow-up fetches."""
+    _make_tree(tmp_path, 2, 4)
+    nodes = walk_tree(tmp_path, resolve_tree_depth(tmp_path, 2, budget=1000))
+
+    def any_stub(ns: list[object]) -> bool:
+        for n in ns:
+            if getattr(n, "has_more", False):
+                return True
+            if any_stub(getattr(n, "children", [])):
+                return True
+        return False
+
+    assert not any_stub(nodes)

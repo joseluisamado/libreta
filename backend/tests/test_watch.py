@@ -22,6 +22,21 @@ def client_with_watchers(meta_dir: Path) -> TestClient:
 
 
 @pytest.fixture
+def client_lazy_tree(meta_dir: Path) -> TestClient:
+    """Client with the whole-tree budget disabled, forcing depth-limited walks.
+
+    The tree endpoint normally serves a small repo complete (no truncation
+    stubs), which is exactly what the test fixtures are. Setting
+    ``tree_full_budget=0`` keeps the lazy/stub machinery under test — it still
+    runs in production for repos above the budget.
+    """
+    pygit2.init_repository(str(meta_dir))
+    app = create_app()
+    app.dependency_overrides[get_settings] = lambda: Settings(meta_dir=meta_dir, tree_full_budget=0)
+    return TestClient(app)
+
+
+@pytest.fixture
 def watched_fixture(tmp_path: Path) -> Path:
     """Create a temporary directory with some markdown files for watching."""
     root = tmp_path / "ext-wiki"
@@ -447,13 +462,13 @@ def deep_fixture(tmp_path: Path) -> Path:
     return root
 
 
-def test_watched_tree_depth_limit(client_with_watchers: TestClient, deep_fixture: Path) -> None:
+def test_watched_tree_depth_limit(client_lazy_tree: TestClient, deep_fixture: Path) -> None:
     """depth=1 returns root + immediate children; deeper dirs are stubs."""
-    client_with_watchers.post(
+    client_lazy_tree.post(
         "/api/v1/watch/folders",
         json={"label": "deep", "path": str(deep_fixture)},
     )
-    r = client_with_watchers.get("/api/v1/watch/deep/tree?depth=1")
+    r = client_lazy_tree.get("/api/v1/watch/deep/tree?depth=1")
     assert r.status_code == 200
     nodes = r.json()
     paths = {n["path"] for n in nodes}
@@ -492,14 +507,14 @@ def test_watched_tree_depth_limit(client_with_watchers: TestClient, deep_fixture
     assert readme["has_more"] is False
 
 
-def test_watched_children_endpoint(client_with_watchers: TestClient, deep_fixture: Path) -> None:
+def test_watched_children_endpoint(client_lazy_tree: TestClient, deep_fixture: Path) -> None:
     """GET .../children/{path} returns one level of immediate children."""
-    client_with_watchers.post(
+    client_lazy_tree.post(
         "/api/v1/watch/folders",
         json={"label": "deep", "path": str(deep_fixture)},
     )
     # depth=0: everything at root is a stub
-    r = client_with_watchers.get("/api/v1/watch/deep/tree?depth=0")
+    r = client_lazy_tree.get("/api/v1/watch/deep/tree?depth=0")
     assert r.status_code == 200
     nodes = r.json()
     assert len(nodes) == 2  # readme + notes
@@ -510,7 +525,7 @@ def test_watched_children_endpoint(client_with_watchers: TestClient, deep_fixtur
     # Fetch children of "notes" via the children endpoint. Children come
     # back with full paths (rooted at the watched repo) so the frontend can
     # merge them into the existing tree without rewriting.
-    r2 = client_with_watchers.get("/api/v1/watch/deep/children/notes")
+    r2 = client_lazy_tree.get("/api/v1/watch/deep/children/notes")
     assert r2.status_code == 200
     data = r2.json()
     children = data["children"]

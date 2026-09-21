@@ -84,15 +84,19 @@ export function mergeReloadedTree(fresh: PageNode[], prev: PageNode[] | undefine
   return fresh
 }
 
-// Collect the paths of every folder node (has children or a truncation stub)
-// present in the tree. Used to intersect with a persisted open-paths set when
-// deciding which deep folders to lazily refetch.
+// Collect the paths of every *unfilled* folder in the tree — i.e. truncation
+// stubs, whose children the backend hasn't sent yet. Used to intersect with a
+// persisted open-paths set when deciding which deep folders to lazily refetch.
+//
+// Folders that already carry their children are deliberately excluded: fetching
+// them would be a round-trip that changes nothing. That matters now that the
+// backend serves small repos as one complete tree (pagefile.resolve_tree_depth)
+// — without this filter every open folder still looked "fetchable" and the
+// restore fired ~200 pointless requests, which was the whole cost being removed.
 export function collectFolderPaths(nodes: PageNode[], out: Set<string>): void {
   for (const n of nodes) {
-    if (n.children.length || n.has_more) {
-      out.add(n.path)
-      if (n.children.length) collectFolderPaths(n.children, out)
-    }
+    if (n.has_more) out.add(n.path)
+    if (n.children.length) collectFolderPaths(n.children, out)
   }
 }
 
