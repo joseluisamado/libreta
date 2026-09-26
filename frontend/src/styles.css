@@ -267,8 +267,13 @@
   background-color: #f6f8fa;
 }
 
-/* Images */
+/* Images. Tailwind's preflight makes every img `display: block`, which breaks
+   a markdown image written mid-sentence (e.g. a small badge) onto its own
+   line. Markdown images are inline content, so render them inline; an image
+   alone in its paragraph still sits on its own line. */
 .prose img {
+  display: inline-block;
+  vertical-align: middle;
   max-width: 100%;
   box-sizing: content-box;
   border-radius: 4px;
