@@ -9,6 +9,12 @@ Entries are generated from [Conventional Commits](https://www.conventionalcommit
 by `scripts/changelog.py` at release time.
 
 
+## [2.22.0] - 2026-09-26
+
+### Fixed
+
+- **frontend:** render markdown images inline
+
 ## [2.21.1] - 2026-09-21
 
 ### Changed
