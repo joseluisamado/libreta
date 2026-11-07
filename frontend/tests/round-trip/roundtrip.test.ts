@@ -8,6 +8,7 @@ import Link from '@tiptap/extension-link'
 import { Table, TableRow, TableHeader, TableCell } from '@tiptap/extension-table'
 import Image from '@tiptap/extension-image'
 import { Markdown } from 'tiptap-markdown'
+import { DetailsMarkup } from '@/components/Editor/extensions/DetailsMarkup'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
 import { Fragment, type Node as PMNode } from '@tiptap/pm/model'
 import { readFileSync, writeFileSync } from 'node:fs'
@@ -114,6 +115,7 @@ const fixtures = [
   'images.md',
   'file-attachments.md',
   'mermaid.md',
+  'details-summary.md',
 ]
 
 function readFixture(name: string): string {
@@ -146,6 +148,7 @@ function createEditor() {
       TableHeader,
       TableCell,
       TableHeaderGuard,
+      DetailsMarkup,
       Image.configure({ inline: true }),
       Markdown.configure({
         // Match the editor: parse raw HTML so `<br>` round-trips (see Editor.vue).

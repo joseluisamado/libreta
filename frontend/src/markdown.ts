@@ -14,6 +14,7 @@ import katex from 'katex'
 import mermaid from 'mermaid'
 import 'katex/dist/katex.min.css'
 import 'highlight.js/styles/github.css'
+import { scanDetailsRun, type DetailsLine } from '@/lib/details'
 
 mermaid.initialize({
   startOnLoad: false,
@@ -224,8 +225,9 @@ md.renderer.rules.math_block = renderBlockMath
 // editor emits `<br>` as the GFM line break inside a table cell (it cannot hold
 // a second paragraph); the viewer must show it as a break, not as text.
 //
-// This is the *only* raw-HTML construct we render. `<br>` is inert — no script,
-// no attributes, no event handlers — so allowing it does not relax R6. We match
+// This is the only *inline* raw-HTML construct we render (the only block one is
+// `<details>`, below). `<br>` is inert — no script, no attributes, no event
+// handlers — so allowing it does not relax R6. We match
 // `<br>`, `<br/>`, `<br />` (any inner spacing) case-insensitively; anything
 // else, including `<br onload=…>` or any tag with attributes, stays escaped.
 const BR_LITERAL = /<br\s*\/?>/i // non-global: `.split` still splits on every match
@@ -243,6 +245,104 @@ md.renderer.rules.text = (tokens, idx, options, env, self) => {
     .map((segment) => md.utils.escapeHtml(segment))
     .join('<br>')
 }
+
+// Collapsible `<details>` / `<summary>` blocks. The allow-list lives in
+// lib/details.ts. With `html: false` those tag lines would otherwise merge
+// into a paragraph and escape, so a block rule claims them first and emits
+// tokens whose HTML we build ourselves: only `open` and a validated `name`
+// reach the output, and the summary text is always escaped (R6). The Markdown
+// between an opening and a closing line renders as usual.
+//
+// A tag that doesn't pair up stays visible as escaped text, so an author's
+// mistake shows instead of silently folding away the rest of the page. Pairs
+// must open and close inside the same container (top level, one list item, one
+// blockquote), which keeps the emitted HTML well nested.
+function detailsBlock(
+  state: StateBlock,
+  startLine: number,
+  endLine: number,
+  silent: boolean,
+): boolean {
+  const run = scanDetailsRun(state, startLine, endLine)
+  if (!run) return false
+  if (silent) return true
+  const rawLines = run.raw.split('\n')
+  let line = 0
+  for (const entry of run.lines) {
+    const span = entry.kind === 'open' && entry.summary !== null ? 2 : 1
+    const token = state.push(entry.kind === 'open' ? 'details_open' : 'details_close', '', 0)
+    token.block = true
+    token.meta = entry
+    token.content = rawLines.slice(line, line + span).join('\n')
+    token.map = [startLine + line, startLine + line + span]
+    line += span
+  }
+  state.line = run.nextLine
+  return true
+}
+
+// Pair `details_open` / `details_close` tokens; turn any leftover into a plain
+// paragraph of its source text, which the inline pass then escapes.
+type CoreState = Parameters<Parameters<Inst['core']['ruler']['after']>[2]>[0]
+type Token = CoreState['tokens'][number]
+
+function pairDetails(state: CoreState): void {
+  const tokens = state.tokens
+  const unpaired = new Set<number>()
+  const stack: number[] = []
+  tokens.forEach((t, i) => {
+    if (t.nesting === -1) {
+      // Leaving a container: whatever opened inside it can no longer close.
+      while (stack.length && (tokens[stack[stack.length - 1] ?? 0]?.level ?? 0) > t.level) {
+        unpaired.add(stack.pop() ?? 0)
+      }
+    }
+    if (t.type === 'details_open') stack.push(i)
+    if (t.type === 'details_close') {
+      const top = stack[stack.length - 1]
+      if (top !== undefined && tokens[top]?.level === t.level) stack.pop()
+      else unpaired.add(i)
+    }
+  })
+  for (const i of stack) unpaired.add(i)
+  if (unpaired.size === 0) return
+
+  const out: Token[] = []
+  tokens.forEach((t, i) => {
+    if (!unpaired.has(i)) {
+      out.push(t)
+      return
+    }
+    const open = new state.Token('paragraph_open', 'p', 1)
+    const inline = new state.Token('inline', '', 0)
+    const close = new state.Token('paragraph_close', 'p', -1)
+    open.block = close.block = true
+    open.map = t.map
+    open.level = close.level = t.level
+    inline.level = t.level + 1
+    inline.content = t.content
+    inline.map = t.map
+    inline.children = []
+    out.push(open, inline, close)
+  })
+  state.tokens = out
+}
+
+md.block.ruler.before('html_block', 'details_block', detailsBlock, {
+  alt: ['paragraph', 'reference', 'blockquote', 'list'],
+})
+md.core.ruler.after('block', 'details_pair', pairDetails)
+md.renderer.rules.details_open = (tokens, idx) => {
+  const entry = tokens[idx]?.meta as DetailsLine | undefined
+  if (entry?.kind !== 'open') return ''
+  const open = entry.open ? ' open' : ''
+  // `name` already matched [A-Za-z0-9_-]+; escape anyway as belt and braces.
+  const name = entry.name !== null ? ` name="${md.utils.escapeHtml(entry.name)}"` : ''
+  const summary =
+    entry.summary !== null ? `<summary>${md.utils.escapeHtml(entry.summary)}</summary>\n` : ''
+  return `<details${open}${name}>\n${summary}`
+}
+md.renderer.rules.details_close = () => '</details>\n'
 
 const ASSET_BASE = '/api/v1/assets'
 

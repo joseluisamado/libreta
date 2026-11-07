@@ -471,7 +471,7 @@ This is the trickiest part of the system. We must:
 
 ### Approach
 
-- **Parser:** a single canonical markdown-it instance, configured identically in Python (markdown-it-py) and TS (markdown-it). Same plugins, same options. This guarantees the api's server-rendered HTML matches the editor's view.
+- **Parser:** a single canonical markdown-it instance, configured identically in Python (markdown-it-py) and TS (markdown-it). Same plugins, same options. This guarantees the api's server-rendered HTML matches the editor's view. (As of 2026-11-07 the backend renders no Markdown: `markdown-it-py` is a dependency but unused in `backend/src`, so viewer-only extensions such as `<br>` and `<details>` live in the TS instance alone. Mirror them if server-side rendering is ever added.)
 - **Serializer:** the editor exports TipTap state to markdown using `tiptap-markdown` for common nodes, with custom serializers for non-trivial nodes (tables, diagram embed, callout).
 - **Stability tests:** the test suite includes a corpus of representative `.md` files. Each is parsed → serialized and compared byte-for-byte. Any drift is a bug.
 
@@ -483,14 +483,30 @@ A ProseMirror `appendTransaction` guard (`TableHeaderGuard` in `Editor.vue`) nor
 
 Because `<br>` must parse *back* into a hardBreak on reload (otherwise it re-escapes to `&lt;br&gt;` and breaks the round-trip), the editor's `tiptap-markdown` parser runs with `html: true`. This affects only the editor's **client-side** parser; R6's protection is render-time DOMPurify sanitization, which is unchanged (markdown-page saves already write the body verbatim — there is no save-time HTML scrub to weaken). The `tables-cell-linebreak.md` fixture pins the `<br>`-in-cell round-trip.
 
-The read-only viewer (`markdown.ts`, client-side markdown-it with `html: false`) would otherwise escape that `<br>` to text. A narrow custom `text` render rule renders **only** the literal `<br>` / `<br/>` / `<br />` as a real line break and leaves every other raw HTML tag escaped — `<br>` is the single raw-HTML construct we render. It is inert (no script, no attributes, no handlers), so this does not relax R6; a tag with attributes (e.g. `<b onmouseover=…>`) still escapes. This is the only place the viewer interprets raw HTML.
+The read-only viewer (`markdown.ts`, client-side markdown-it with `html: false`) would otherwise escape that `<br>` to text. A narrow custom `text` render rule renders **only** the literal `<br>` / `<br/>` / `<br />` as a real line break and leaves every other raw HTML tag escaped. It is inert (no script, no attributes, no handlers), so this does not relax R6; a tag with attributes (e.g. `<b onmouseover=…>`) still escapes. `<br>` is the only *inline* raw-HTML construct the viewer interprets; the only *block* one is `<details>` (next section).
+
+#### Collapsible `<details>` blocks (2026-11-07)
+
+The viewer renders `<details>` / `<summary>` collapsible blocks, as Gitea and GitHub do, so pages that use them (e.g. an accordion of photo sets sharing one `name`) display the same in Libreta as on the forge. This is CommonMark raw HTML, not new syntax, so it is consistent with P4; it is the second (and only block-level) exception to "the viewer escapes raw HTML", approved by the user on 2026-11-07 after the R6 escalation.
+
+The allow-list is exact and lives in `frontend/src/lib/details.ts`. A run of tag lines (a CommonMark HTML block: from its first line to the next blank line) is recognised only if *every* line in it is one of:
+
+- `<details>`, optionally with a bare `open` and/or `name="[A-Za-z0-9_-]+"`, in any order, each at most once;
+- `<summary>text</summary>` on one line, directly after a `<details>` line;
+- `</details>`.
+
+Anything else in the run (another attribute, an event handler, a valued `open`, another tag) disqualifies the whole run, which escapes as before. A block rule in `markdown.ts` claims recognised runs before `paragraph`, so the output is well-formed (`<details>` is never wrapped in `<p>`), and the HTML is built by the renderer, not passed through: only `open` and the validated `name` are emitted, and the summary text is always HTML-escaped (`<summary><b>X</b></summary>` shows the literal `<b>`). The Markdown between the opening and closing lines renders normally.
+
+A core pass pairs opening and closing tags within the same container (top level, one list item, one blockquote). A tag that doesn't pair up — an orphan `</details>`, an unclosed `<details>`, a pair split across containers — renders as escaped text, so a mistake is visible rather than silently folding away the rest of the page.
+
+In the editor (R1), the `DetailsMarkup` node (`frontend/src/components/Editor/extensions/DetailsMarkup.ts`) hooks the same scanner into tiptap-markdown's markdown-it instance. Each recognised run becomes a read-only atom chip holding its exact source lines, which serializes back verbatim; the blocks in between stay ordinary editable nodes. Without it the editor's schema dropped the tags and kept only the summary text. The `details-summary.md` fixture pins the round-trip. Raw HTML *outside* this allow-list is still not preserved by the WYSIWYG editor (see "Supported markdown features").
 
 ### Supported markdown features
 
 - CommonMark core
 - GFM tables, task lists, strikethrough, autolinks
 - Fenced code blocks with language hints
-- Inline HTML (preserved verbatim, not edited via WYSIWYG)
+- Inline HTML: rendered escaped by the viewer, except `<br>` and allow-listed `<details>` / `<summary>` blocks (see above). The WYSIWYG editor preserves only those constructs verbatim; other raw HTML is not yet preserved by a WYSIWYG save — use Source mode for such pages.
 - YAML frontmatter (treated as metadata, not body)
 - Wiki-style links: `[[Page Title]]` (custom plugin)
 - Drawio embed: `![alt](path/to/file.drawio.svg)` — detected by extension

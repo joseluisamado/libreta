@@ -225,3 +225,128 @@ describe('renderMarkdown', () => {
     expect(out).not.toContain('katex')
   })
 })
+
+describe('renderMarkdown — <details> / <summary>', () => {
+  const ACCORDION = [
+    '<details name="faq" open>',
+    '<summary>First question</summary>',
+    '',
+    '![one](.setup.md/one.png)',
+    '',
+    '</details>',
+    '',
+    '<details name="faq">',
+    '<summary>Second question</summary>',
+    '',
+    '![two](.setup.md/two.png)',
+    '',
+    '</details>',
+  ].join('\n')
+
+  it('renders the shared-name accordion as two details blocks', () => {
+    const out = renderMarkdown(ACCORDION, 'guides/setup', 'work')
+    expect(out).toContain('<details open name="faq">\n<summary>First question</summary>')
+    expect(out).toContain('<details name="faq">\n<summary>Second question</summary>')
+    expect(out.match(/<\/details>/g)).toHaveLength(2)
+    expect(out).not.toContain('&lt;details')
+    // Never wrapped in a paragraph (invalid HTML the browser would have to repair).
+    expect(out).not.toMatch(/<p>\s*<(\/)?details/)
+  })
+
+  it('keeps rendering Markdown inside the block', () => {
+    const out = renderMarkdown(ACCORDION, 'guides/setup', 'work')
+    expect(out).toContain('<img src="/api/v1/sources/work/assets/guides/.setup.md/one.png"')
+    const list = renderMarkdown('<details>\n\n- **bold** item\n\n</details>')
+    expect(list).toMatch(/<details>\n<ul>\n<li><strong>bold<\/strong> item<\/li>/)
+  })
+
+  it('accepts open and name in either order, and no attributes at all', () => {
+    expect(renderMarkdown('<details open name="a-1_b">\n\nx\n\n</details>')).toContain(
+      '<details open name="a-1_b">',
+    )
+    expect(renderMarkdown('<details name="a-1_b" open>\n\nx\n\n</details>')).toContain(
+      '<details open name="a-1_b">',
+    )
+    expect(renderMarkdown('<details name="a">\n\nx\n\n</details>')).toContain('<details name="a">')
+    expect(renderMarkdown('<details>\n\nx\n\n</details>')).toContain('<details>\n<p>x</p>')
+  })
+
+  it('escapes the summary text', () => {
+    const out = renderMarkdown(
+      '<details>\n<summary><b onclick="x()">X</b> & Y</summary>\n\n</details>',
+    )
+    expect(out).toContain('<summary>&lt;b onclick=&quot;x()&quot;&gt;X&lt;/b&gt; &amp; Y</summary>')
+    expect(out).not.toContain('<b ')
+  })
+
+  it.each([
+    ['an event handler', '<details onclick="evil()">'],
+    ['a style attribute', '<details style="color:red">'],
+    ['a class attribute', '<details class="x">'],
+    ['an invalid name value', '<details name="a b">'],
+    ['a quote-breaking name', '<details name="a"onclick="x">'],
+    ['an unquoted name', '<details name=a>'],
+    ['a valued open', '<details open="open">'],
+    ['a repeated attribute', '<details open open>'],
+  ])('keeps <details> with %s escaped', (_label, tag) => {
+    const out = renderMarkdown(`${tag}\n\nbody\n\n</details>`)
+    expect(out).not.toMatch(/<details[\s>]/)
+    expect(out).toContain('&lt;details')
+  })
+
+  it('rejects the whole run when any line in it is not allow-listed', () => {
+    const out = renderMarkdown(
+      '<details>\n<summary>S</summary>\n<img src=x onerror="evil()">\n\n</details>',
+    )
+    expect(out).not.toMatch(/<details[\s>]/)
+    expect(out).not.toContain('<img src=x')
+  })
+
+  it('keeps summary with attributes, or summary not right after <details>, escaped', () => {
+    const attr = renderMarkdown('<details>\n<summary onclick="x()">S</summary>\n\n</details>')
+    expect(attr).not.toContain('<summary')
+    const stray = renderMarkdown('<summary>S</summary>')
+    expect(stray).toContain('&lt;summary&gt;')
+  })
+
+  it('keeps <details> inside inline text escaped', () => {
+    const out = renderMarkdown('Click <details open> to see')
+    expect(out).toContain('<p>Click &lt;details open&gt; to see</p>')
+  })
+
+  it('shows an orphan </details> as text', () => {
+    const out = renderMarkdown('Para.\n\n</details>\n\nMore.')
+    expect(out).toContain('<p>&lt;/details&gt;</p>')
+    expect(out).not.toContain('</details>\n')
+  })
+
+  it('shows an unclosed <details> as text instead of folding the rest away', () => {
+    const out = renderMarkdown('<details>\n<summary>S</summary>\n\nRest of the page.')
+    expect(out).not.toMatch(/<details[\s>]/)
+    expect(out).toContain('&lt;details&gt;')
+    expect(out).toContain('<p>Rest of the page.</p>')
+  })
+
+  it('does not pair tags across containers', () => {
+    const out = renderMarkdown('> <details>\n\n</details>')
+    expect(out).not.toMatch(/<details[\s>]/)
+    expect(out).not.toContain('</details>\n')
+  })
+
+  it('pairs tags inside a blockquote, and nested blocks', () => {
+    const quoted = renderMarkdown(
+      '> <details open>\n> <summary>Q</summary>\n>\n> body\n>\n> </details>',
+    )
+    expect(quoted).toMatch(
+      /<blockquote>\n<details open>\n<summary>Q<\/summary>\n<p>body<\/p>\n<\/details>\n<\/blockquote>/,
+    )
+    const nested = renderMarkdown('<details>\n\n<details>\n\ninner\n\n</details>\n\n</details>')
+    expect(nested.match(/<details>/g)).toHaveLength(2)
+    expect(nested.match(/<\/details>/g)).toHaveLength(2)
+  })
+
+  it('treats an indented tag line as code', () => {
+    const out = renderMarkdown('    <details>\n\n</details>')
+    expect(out).toContain('&lt;details&gt;')
+  })
+})

@@ -15,6 +15,27 @@ Living document. Update as work progresses. Latest at the top.
 
 ---
 
+## 2026-11-07 — Viewer renders `<details>` / `<summary>`; editor preserves them
+
+**What**: JAMMAs pages use `<details name="…">` blocks as an accordion (Gitea
+renders them natively); Libreta showed the tags as literal text. Worse, the
+WYSIWYG editor silently dropped the tags on save (an R1 hole), keeping only
+the summary text.
+
+**How**: an exact allow-list in `frontend/src/lib/details.ts` (`<details>`
+with bare `open` / `name="[A-Za-z0-9_-]+"`, a one-line `<summary>` right after
+it, `</details>`), shared by a viewer block rule + pairing pass in
+`markdown.ts` and a new `DetailsMarkup` atom node in the editor that keeps the
+tag lines verbatim. Unpaired tags render as escaped text. R6 escalation
+approved by the user (option 3 of three). Fixture `details-summary.md`.
+
+**Decisions**: unclosed/orphan tags stay visible as text rather than
+auto-closing (which would hide the rest of the page). Other raw HTML is still
+not preserved by WYSIWYG saves — a general raw-HTML-block node is a possible
+follow-up.
+
+---
+
 ## 2026-09-21 — Perf: adaptive tree depth (sidebar restore no longer fans out)
 
 **What**: Refreshing a page with a heavily-expanded sidebar had a visible lag

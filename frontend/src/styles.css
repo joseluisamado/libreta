@@ -144,6 +144,25 @@
   border-left: 0.25em solid #d1d9e0;
 }
 
+/* Collapsible <details> blocks (the one raw-HTML block the viewer renders; see
+   lib/details.ts). Tailwind's preflight sets `summary { display: list-item }`,
+   which keeps the browser's disclosure triangle. */
+.prose details {
+  margin: 0 0 16px;
+}
+.prose summary {
+  cursor: pointer;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.prose details:not([open]) > summary {
+  margin-bottom: 0;
+}
+.prose details[open] {
+  padding-left: 1em;
+  border-left: 0.25em solid #d1d9e0;
+}
+
 .prose hr {
   margin: 24px 0;
   border: 0;

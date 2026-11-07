@@ -24,6 +24,7 @@
   import { resolveAssetUrl } from '@/markdown'
   import { getMarkdownFromStorage } from '@/markdownStorage'
   import DrawioModal from './DrawioModal.vue'
+  import { DetailsMarkup } from './extensions/DetailsMarkup'
   import LinkModal from './LinkModal.vue'
 
   const props = defineProps<{
@@ -444,6 +445,7 @@
       TableHeader,
       TableCell,
       TableHeaderGuard,
+      DetailsMarkup,
       PageScopedImage.configure({
         // Inline images live inside paragraphs (`![alt](photo.jpg)` mid-sentence).
         // Tiptap's default is block-level; switch to inline so prosemirror-markdown
@@ -973,6 +975,24 @@
   .libreta-editor :deep(ul),
   .libreta-editor :deep(ol) {
     padding-left: 1.5rem;
+  }
+
+  /* `<details>` / `<summary>` tag lines (DetailsMarkup): read-only source chip. */
+  .libreta-editor :deep(.details-markup) {
+    margin: 0.5rem 0;
+    padding: 0.25rem 0.5rem;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.8125rem;
+    white-space: pre-wrap;
+    color: #64748b;
+    background-color: #f8fafc;
+    border: 1px dashed #cbd5e1;
+    border-radius: 0.25rem;
+    user-select: none;
+  }
+
+  .libreta-editor :deep(.details-markup.ProseMirror-selectednode) {
+    outline: 2px solid #93c5fd;
   }
 
   .libreta-editor :deep(blockquote) {
