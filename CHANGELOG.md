@@ -9,6 +9,12 @@ Entries are generated from [Conventional Commits](https://www.conventionalcommit
 by `scripts/changelog.py` at release time.
 
 
+## [2.23.0] - 2026-11-07
+
+### Added
+
+- **frontend:** render <details>/<summary> blocks in the viewer
+
 ## [2.22.0] - 2026-09-26
 
 ### Fixed
