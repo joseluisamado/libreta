@@ -15,6 +15,30 @@ Living document. Update as work progresses. Latest at the top.
 
 ---
 
+## 2026-11-07 — Wider `<details>` allow-list (one-line opener, closer runs, summary tags)
+
+**What**: a read-only scan of all ten sources found `<details>` forms that
+v2.23.0 still escaped: one-line `<details><summary>…</summary>` (homeops,
+Work), `</details></details>` closer lines, and `<b>`/`<code>`/`<i>`/
+`<strong>` inside summaries (Work). Second R6 escalation, approved.
+
+**How**: `lib/details.ts` accepts the one-line opener and N closers per
+line; `renderSummary` rebuilds summaries from escaped text plus bare,
+nested `<b>`/`<strong>`/`<i>`/`<em>`/`<code>` (code content literal), and
+escapes the whole summary on anything else. Fixture
+`details-summary-forms.md`.
+
+**Checked on real pages** (in memory, nothing written): 773 blocks in the
+31 affected homeops/Work files now render; 2148 of 2173 tag lines survive
+an editor save unchanged (the editor only adds blank lines between
+blocks). The 25 others, and 9 blocks that still escape, are malformed runs
+in Work `rapid-review.md` (a Markdown line inside the HTML block, no blank
+line), which Gitea also shows as literal text. ~194 inline blocks in table
+cells (Work `leetcode-hints.md`, `interview-study-plan-first-interview.md`)
+are out of scope and still escape.
+
+---
+
 ## 2026-11-07 — Viewer renders `<details>` / `<summary>`; editor preserves them
 
 **What**: JAMMAs pages use `<details name="…">` blocks as an accordion (Gitea

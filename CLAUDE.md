@@ -65,7 +65,7 @@ The SQLite index is **never** authoritative. Anything in it must be regenerable 
 
 Markdown allows raw HTML. We strip `<script>` and event-handler attributes at save and at render. If a feature would require relaxing this, escalate before implementing.
 
-The page viewer escapes raw HTML except for two approved, exactly allow-listed constructs: a bare `<br>` (inline) and `<details>` / `<summary>` blocks (block; `open` and `name` only, summary text escaped — see `frontend/src/lib/details.ts` and ARCHITECTURE.md "Collapsible `<details>` blocks"). Widening either allow-list, or adding a third construct, is a new escalation.
+The page viewer escapes raw HTML except for two approved, exactly allow-listed constructs: a bare `<br>` (inline) and `<details>` / `<summary>` blocks (block; `open` and `name` only; the summary is rebuilt from escaped text plus bare `<b>`/`<strong>`/`<i>`/`<em>`/`<code>` — see `frontend/src/lib/details.ts` and ARCHITECTURE.md "Collapsible `<details>` blocks"). Widening either allow-list, or adding a third construct, is a new escalation.
 
 ---
 

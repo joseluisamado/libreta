@@ -350,3 +350,132 @@ describe('renderMarkdown — <details> / <summary>', () => {
     expect(out).toContain('&lt;details&gt;')
   })
 })
+
+describe('renderMarkdown — one-line opener and multi-closer forms', () => {
+  it('renders <details><summary>…</summary> on one line', () => {
+    const out = renderMarkdown('<details><summary>Source</summary>\n\nbody\n\n</details>')
+    expect(out).toContain('<details>\n<summary>Source</summary>\n<p>body</p>\n</details>')
+  })
+
+  it('applies the same attribute rules to the one-line opener', () => {
+    expect(
+      renderMarkdown('<details name="g" open> <summary>S</summary>\n\nx\n\n</details>'),
+    ).toContain('<details open name="g">\n<summary>S</summary>')
+    for (const tag of [
+      '<details class="x"><summary>S</summary>',
+      '<details onclick="evil()"><summary>S</summary>',
+      '<details open="open"><summary>S</summary>',
+      '<details><summary onclick="evil()">S</summary>',
+      '<details><summary>S</summary> trailing text',
+    ]) {
+      const out = renderMarkdown(`${tag}\n\nx\n\n</details>`)
+      expect(out, tag).not.toMatch(/<details[\s>]/)
+      expect(out, tag).toContain('&lt;details')
+    }
+  })
+
+  it('rejects a second summary after a one-line opener', () => {
+    const out = renderMarkdown('<details><summary>A</summary>\n<summary>B</summary>\n\n</details>')
+    expect(out).not.toMatch(/<details[\s>]/)
+  })
+
+  it('closes one level per </details> on a closer line', () => {
+    const out = renderMarkdown(
+      '<details><summary>Outer</summary>\n\nouter\n\n<details><summary>Inner</summary>\n\ninner\n\n</details> </details>',
+    )
+    expect(out).toContain(
+      '<details>\n<summary>Outer</summary>\n<p>outer</p>\n<details>\n<summary>Inner</summary>\n<p>inner</p>\n</details>\n</details>',
+    )
+    expect(out).not.toContain('&lt;')
+  })
+
+  it('ends a list that runs straight into </details></details>', () => {
+    const src = [
+      '<details><summary>Short answer</summary>',
+      '',
+      'Paragraph text.',
+      '',
+      '<details><summary>Long answer</summary>',
+      '',
+      '- one',
+      '- two',
+      '</details></details>',
+      '',
+      'After.',
+    ].join('\n')
+    const out = renderMarkdown(src)
+    expect(out).toContain('<li>two</li>\n</ul>\n</details>\n</details>\n<p>After.</p>')
+    expect(out.match(/<details>/g)).toHaveLength(2)
+    expect(out).not.toContain('&lt;')
+  })
+
+  it('ends a paragraph that runs straight into </details>', () => {
+    const out = renderMarkdown('<details>\n\nline one\nline two\n</details>')
+    expect(out).toContain('<p>line one\nline two</p>\n</details>')
+  })
+
+  it('mixes one-line and two-line openers', () => {
+    const out = renderMarkdown(
+      '<details>\n<summary>Two-line</summary>\n\n<details><summary>One-line</summary>\n\nx\n\n</details>\n</details>',
+    )
+    expect(out).toContain(
+      '<details>\n<summary>Two-line</summary>\n<details>\n<summary>One-line</summary>\n<p>x</p>\n</details>\n</details>',
+    )
+  })
+
+  it.each([['</details></div>'], ['</details>x'], ['</details><details>']])(
+    'keeps the closer line %s escaped',
+    (closer) => {
+      const out = renderMarkdown(`<details>\n\nx\n\n${closer}`)
+      expect(out).not.toMatch(/<\/details>\n/)
+      expect(out).toContain('&lt;/details&gt;')
+    },
+  )
+
+  it('shows extra closers on a closer line as text', () => {
+    const out = renderMarkdown('<details>\n\nx\n\n</details></details>')
+    expect(out.match(/<\/details>\n/g)).toHaveLength(1)
+    expect(out).toContain('<p>&lt;/details&gt;</p>')
+  })
+})
+
+describe('renderMarkdown — inline tags in <summary>', () => {
+  const summary = (inner: string): string => {
+    const out = renderMarkdown(`<details>\n<summary>${inner}</summary>\n\n</details>`)
+    return /<summary>(.*)<\/summary>/.exec(out)?.[1] ?? '(no summary)'
+  }
+
+  it.each([
+    ['<b>Response metadata</b> — the fields', '<b>Response metadata</b> — the fields'],
+    ['<strong>Day 0</strong> · done', '<strong>Day 0</strong> · done'],
+    ['an <i>aside</i> and <em>stress</em>', 'an <i>aside</i> and <em>stress</em>'],
+    ['<b>bold <i>both</i></b>', '<b>bold <i>both</i></b>'],
+    ['<B>upper</B>', '<b>upper</b>'],
+    ['a < b & c > d', 'a &lt; b &amp; c &gt; d'],
+  ])('renders %s', (inner, html) => {
+    expect(summary(inner)).toBe(html)
+  })
+
+  it('keeps <code> content literal', () => {
+    expect(summary('run <code>ls <b>-l</b> & echo</code> now')).toBe(
+      'run <code>ls &lt;b&gt;-l&lt;/b&gt; &amp; echo</code> now',
+    )
+  })
+
+  it.each([
+    ['an attribute', '<b onclick="evil()">X</b>'],
+    ['a style attribute', '<b style="x">X</b>'],
+    ['a disallowed tag', '<span>X</span>'],
+    ['a <br>', 'X<br>Y'],
+    ['an unclosed tag', '<b>X'],
+    ['a stray closer', 'X</b>'],
+    ['mismatched nesting', '<b><i>X</b></i>'],
+    ['an unclosed <code>', '<code>X'],
+    ['a comment', '<!-- x -->X'],
+    ['an image', '<img src=x onerror="evil()">'],
+  ])('escapes the whole summary with %s', (_label, inner) => {
+    const out = summary(inner)
+    expect(out).not.toMatch(/<[a-z]/i)
+    expect(out).toContain('&lt;')
+  })
+})

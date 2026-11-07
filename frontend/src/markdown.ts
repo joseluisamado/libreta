@@ -14,7 +14,7 @@ import katex from 'katex'
 import mermaid from 'mermaid'
 import 'katex/dist/katex.min.css'
 import 'highlight.js/styles/github.css'
-import { scanDetailsRun, type DetailsLine } from '@/lib/details'
+import { renderSummary, scanDetailsRun, type DetailsTag } from '@/lib/details'
 
 mermaid.initialize({
   startOnLoad: false,
@@ -250,7 +250,8 @@ md.renderer.rules.text = (tokens, idx, options, env, self) => {
 // lib/details.ts. With `html: false` those tag lines would otherwise merge
 // into a paragraph and escape, so a block rule claims them first and emits
 // tokens whose HTML we build ourselves: only `open` and a validated `name`
-// reach the output, and the summary text is always escaped (R6). The Markdown
+// reach the output, and the summary is rebuilt by `renderSummary` (escaped
+// text plus a few bare inline tags), never passed through (R6). The Markdown
 // between an opening and a closing line renders as usual.
 //
 // A tag that doesn't pair up stays visible as escaped text, so an author's
@@ -266,16 +267,12 @@ function detailsBlock(
   const run = scanDetailsRun(state, startLine, endLine)
   if (!run) return false
   if (silent) return true
-  const rawLines = run.raw.split('\n')
-  let line = 0
-  for (const entry of run.lines) {
-    const span = entry.kind === 'open' && entry.summary !== null ? 2 : 1
-    const token = state.push(entry.kind === 'open' ? 'details_open' : 'details_close', '', 0)
+  for (const tag of run.tags) {
+    const token = state.push(tag.kind === 'open' ? 'details_open' : 'details_close', '', 0)
     token.block = true
-    token.meta = entry
-    token.content = rawLines.slice(line, line + span).join('\n')
-    token.map = [startLine + line, startLine + line + span]
-    line += span
+    token.meta = tag
+    token.content = tag.src
+    token.map = [startLine + tag.line, startLine + tag.line + tag.span]
   }
   state.line = run.nextLine
   return true
@@ -333,13 +330,13 @@ md.block.ruler.before('html_block', 'details_block', detailsBlock, {
 })
 md.core.ruler.after('block', 'details_pair', pairDetails)
 md.renderer.rules.details_open = (tokens, idx) => {
-  const entry = tokens[idx]?.meta as DetailsLine | undefined
+  const entry = tokens[idx]?.meta as DetailsTag | undefined
   if (entry?.kind !== 'open') return ''
   const open = entry.open ? ' open' : ''
   // `name` already matched [A-Za-z0-9_-]+; escape anyway as belt and braces.
   const name = entry.name !== null ? ` name="${md.utils.escapeHtml(entry.name)}"` : ''
   const summary =
-    entry.summary !== null ? `<summary>${md.utils.escapeHtml(entry.summary)}</summary>\n` : ''
+    entry.summary !== null ? `<summary>${renderSummary(entry.summary)}</summary>\n` : ''
   return `<details${open}${name}>\n${summary}`
 }
 md.renderer.rules.details_close = () => '</details>\n'

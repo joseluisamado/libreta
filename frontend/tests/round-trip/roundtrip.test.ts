@@ -116,6 +116,7 @@ const fixtures = [
   'file-attachments.md',
   'mermaid.md',
   'details-summary.md',
+  'details-summary-forms.md',
 ]
 
 function readFixture(name: string): string {

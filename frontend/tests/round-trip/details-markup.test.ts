@@ -59,4 +59,30 @@ describe('DetailsMarkup', () => {
     expect(atoms).toEqual(['</details>'])
     editor.destroy()
   })
+
+  it('keeps one-line openers, closer runs and summary tags as atoms', () => {
+    const editor = load(
+      '<details><summary><b>Short</b> answer</summary>\n\nx\n\n<details><summary>Long</summary>\n\ny\n\n</details></details>',
+    )
+    const atoms: string[] = []
+    editor.state.doc.descendants((n) => {
+      if (n.type.name === 'detailsMarkup') atoms.push(String(n.attrs['source']))
+    })
+    expect(atoms).toEqual([
+      '<details><summary><b>Short</b> answer</summary>',
+      '<details><summary>Long</summary>',
+      '</details></details>',
+    ])
+    editor.destroy()
+  })
+
+  it('keeps a closer that a list runs into, adding only the blank line', () => {
+    // The editor separates every pair of blocks with a blank line (its usual
+    // normalization); the tag line itself comes back unchanged.
+    const editor = load('<details><summary>S</summary>\n\n- one\n- two\n</details></details>')
+    expect(getMarkdown(editor)).toBe(
+      '<details><summary>S</summary>\n\n- one\n- two\n\n</details></details>',
+    )
+    editor.destroy()
+  })
 })
